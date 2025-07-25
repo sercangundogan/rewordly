@@ -437,7 +437,10 @@ class RewordlyContentScript {
     const text = rewrittenText.textContent;
 
     if (text && text !== '') {
-      navigator.clipboard.writeText(text).then(() => {
+      // Clean the text by removing quotes from start and end
+      const cleanText = text.trim().replace(/^["']|["']$/g, '');
+      
+      navigator.clipboard.writeText(cleanText).then(() => {
         // Show success feedback
         const copyBtn = this.modal?.querySelector('.rewordly-copy-btn') as HTMLButtonElement;
         if (copyBtn) {
