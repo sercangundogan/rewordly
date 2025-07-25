@@ -2,13 +2,13 @@
   "manifest_version": 3,
   "name": "Rewordly",
   "version": "1.0.0",
-  "description": "Rewrite selected text using OpenAI's GPT API to improve grammar, clarity, and fluency.",
+  "description": "Rewrite selected text using Rewordly API to improve grammar, clarity, and fluency.",
   "permissions": [
     "activeTab",
     "storage"
   ],
   "host_permissions": [
-    "https://api.openai.com/*"
+    "https://rewordly-web.vercel.app/*"
   ],
   "background": {
     "service_worker": "background.js"

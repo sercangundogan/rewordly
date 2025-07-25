@@ -6,11 +6,9 @@
 // Handle extension installation
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === 'install') {
-    // Set default configuration with environment variables
+    // Set default configuration
     chrome.storage.sync.set({
-      rewordlyEnabled: true,
-      rewordlyApiKey: '',
-      rewordlyModel: 'gpt-3.5-turbo'
+      rewordlyEnabled: true
     });
     
     // Open welcome page or show notification
@@ -27,23 +25,21 @@ chrome.runtime.onStartup.addListener(() => {
 chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
   switch (request.type) {
     case 'GET_CONFIG':
-      chrome.storage.sync.get(['rewordlyEnabled', 'rewordlyApiKey', 'rewordlyModel'], (result) => {
+      chrome.storage.sync.get(['rewordlyEnabled'], (result) => {
         sendResponse(result);
       });
       return true; // Keep message channel open for async response
       
     case 'SET_CONFIG':
       chrome.storage.sync.set({
-        rewordlyEnabled: request.config.enabled,
-        rewordlyApiKey: request.config.apiKey,
-        rewordlyModel: request.config.model
+        rewordlyEnabled: request.config.enabled
       }, () => {
         sendResponse({ success: true });
       });
       return true;
       
-    case 'TEST_API_KEY':
-      testApiKey(request.apiKey).then((isValid) => {
+    case 'TEST_API':
+      testApi().then((isValid) => {
         sendResponse({ isValid });
       }).catch((error) => {
         sendResponse({ isValid: false, error: error.message });
@@ -56,17 +52,21 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
   }
 });
 
-// Test API key validity
-async function testApiKey(apiKey: string): Promise<boolean> {
+// Test API validity
+async function testApi(): Promise<boolean> {
   try {
-    const response = await fetch('https://api.openai.com/v1/models', {
+    const response = await fetch('https://rewordly-web.vercel.app/api/rewrite', {
+      method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiKey}`
-      }
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        text: 'Test'
+      })
     });
     return response.ok;
   } catch (error) {
-    console.error('API key test failed:', error);
+    console.error('API test failed:', error);
     return false;
   }
 }

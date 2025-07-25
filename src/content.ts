@@ -5,15 +5,11 @@
 
 interface RewordlyConfig {
   enabled: boolean;
-  apiKey: string;
-  model: string;
 }
 
 class RewordlyContentScript {
   private config: RewordlyConfig = {
-    enabled: true,
-    apiKey: '',
-    model: 'gpt-3.5-turbo'
+    enabled: true
   };
   
   private floatingButton: HTMLButtonElement | null = null;
@@ -52,19 +48,11 @@ class RewordlyContentScript {
 
   private async loadConfig(): Promise<void> {
     try {
-      const result = await chrome.storage.sync.get(['rewordlyEnabled', 'rewordlyApiKey', 'rewordlyModel']);
+      const result = await chrome.storage.sync.get(['rewordlyEnabled']);
       // Use environment variables as defaults if not set in storage
       this.config.enabled = result['rewordlyEnabled'] !== false;
-      // Prioritize injected API key, then Chrome storage, then empty string
-      this.config.apiKey = process.env['OPENAI_API_KEY'] || result['rewordlyApiKey'] || '';
-      this.config.model = result['rewordlyModel'] || process.env['DEFAULT_MODEL'] || 'gpt-3.5-turbo';
       
-      console.log('Rewordly: Config loaded - API Key available:', !!this.config.apiKey);
-      
-      // Show warning if no API key is available
-      if (!this.config.apiKey) {
-        console.warn('Rewordly: No API key found. Please set your OpenAI API key in the extension popup.');
-      }
+      console.log('Rewordly: Config loaded - Extension enabled:', this.config.enabled);
     } catch (error) {
       console.error('Failed to load Rewordly config:', error);
     }
@@ -304,15 +292,8 @@ class RewordlyContentScript {
 
   private async handleRewriteClick(): Promise<void> {
     console.log('Rewordly: Rewrite button clicked');
-    console.log('Rewordly: API Key available:', !!this.config.apiKey);
     console.log('Rewordly: Selected text:', this.selectedText);
     
-    if (!this.config.apiKey) {
-      console.log('Rewordly: No API key found');
-      this.showError('Please set your OpenAI API key in the extension popup.');
-      return;
-    }
-
     if (this.isProcessing) {
       console.log('Rewordly: Already processing');
       return;
@@ -324,39 +305,26 @@ class RewordlyContentScript {
     this.isProcessing = true;
 
     try {
-      console.log('Rewordly: Calling OpenAI API');
+      console.log('Rewordly: Calling Rewordly API');
       const rewrittenText = await this.rewriteText(this.selectedText);
       console.log('Rewordly: API response received:', rewrittenText);
       this.displayRewrittenText(rewrittenText);
     } catch (error) {
       console.error('Rewordly: Error rewriting text:', error);
-      this.showError('Failed to rewrite text. Please check your API key and try again.');
+      this.showError('Failed to rewrite text. Please try again.');
     } finally {
       this.isProcessing = false;
     }
   }
 
   private async rewriteText(text: string): Promise<string> {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetch('https://rewordly-web.vercel.app/api/rewrite', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.config.apiKey}`
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: this.config.model,
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a helpful assistant that rewrites text to improve grammar, clarity, and fluency while preserving the original meaning. Provide only the rewritten text without any explanations or additional formatting.'
-          },
-          {
-            role: 'user',
-            content: `Please rewrite the following text to improve its grammar, clarity, and fluency while preserving the original meaning: "${text}"`
-          }
-        ],
-        max_tokens: 500,
-        temperature: 0.7
+        text: text
       })
     });
 
@@ -365,7 +333,7 @@ class RewordlyContentScript {
     }
 
     const data = await response.json();
-    return data.choices[0]?.message?.content?.trim() || 'Failed to rewrite text.';
+    return data.rewritten || 'Failed to rewrite text.';
   }
 
   private showModal(): void {

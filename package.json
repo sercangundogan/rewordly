@@ -1,7 +1,7 @@
 {
   "name": "rewordly",
   "version": "1.0.0",
-  "description": "A Chrome extension that rewrites selected text using OpenAI's GPT API",
+  "description": "A Chrome extension that rewrites selected text using Rewordly API",
   "main": "src/content.ts",
   "scripts": {
     "build": "node build.js",
@@ -13,8 +13,7 @@
   },
   "keywords": [
     "chrome-extension",
-    "openai",
-    "gpt",
+    "rewordly",
     "text-rewriting",
     "typescript"
   ],

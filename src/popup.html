@@ -88,6 +88,31 @@
       background: #9ca3af;
       cursor: not-allowed;
     }
+    .status {
+      margin-top: 15px;
+      padding: 10px;
+      border-radius: 6px;
+      font-size: 14px;
+      text-align: center;
+    }
+    .status.success {
+      background: #f0fdf4;
+      color: #059669;
+      border: 1px solid #10b981;
+    }
+    .status.error {
+      background: #fef2f2;
+      color: #dc2626;
+      border: 1px solid #ef4444;
+    }
+    .status.info {
+      background: #eff6ff;
+      color: #2563eb;
+      border: 1px solid #3b82f6;
+    }
+    .status.hidden {
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -108,17 +133,11 @@
     </div>
   </div>
   
-  <div class="form-group">
-    <label for="model">Model</label>
-    <select id="model">
-      <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-      <option value="gpt-4">GPT-4</option>
-      <option value="gpt-4-turbo">GPT-4 Turbo</option>
-    </select>
-  </div>
-  
-  <button class="button" id="testApiKey">Test API Key</button>
+  <button class="button" id="saveBtn">Save Settings</button>
+  <button class="button" id="testBtn" style="margin-top: 10px;">Test API</button>
   <button class="button" id="resetSettings" style="margin-top: 10px; background: #ef4444;">Reset Settings</button>
+  
+  <div id="status" class="status hidden"></div>
   
   <script src="popup.js"></script>
 </body>
