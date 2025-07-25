@@ -378,6 +378,9 @@ class RewordlyContentScript {
 
     this.modal.style.display = 'flex';
     
+    // Hide the floating button when modal is open
+    this.hideFloatingButton();
+    
     // Trigger animation
     setTimeout(() => {
       this.modal?.classList.add('show');
@@ -422,31 +425,74 @@ class RewordlyContentScript {
   }
 
   private copyRewrittenText(): void {
-    const rewrittenText = this.modal?.querySelector('.rewordly-rewritten-text') as HTMLParagraphElement;
-    if (rewrittenText && rewrittenText.textContent) {
-      navigator.clipboard.writeText(rewrittenText.textContent).then(() => {
+    if (!this.modal) return;
+
+    const rewrittenText = this.modal.querySelector('.rewordly-rewritten-text') as HTMLParagraphElement;
+    const text = rewrittenText.textContent;
+
+    if (text && text !== '') {
+      navigator.clipboard.writeText(text).then(() => {
+        // Show success feedback
         const copyBtn = this.modal?.querySelector('.rewordly-copy-btn') as HTMLButtonElement;
         if (copyBtn) {
           const originalText = copyBtn.textContent;
           copyBtn.textContent = 'Copied!';
+          copyBtn.style.background = '#10b981';
           setTimeout(() => {
             copyBtn.textContent = originalText;
+            copyBtn.style.background = '';
           }, 2000);
         }
+      }).catch(err => {
+        console.error('Failed to copy text:', err);
       });
     }
   }
 
   private replaceOriginalText(): void {
-    const selection = window.getSelection();
-    const rewrittenText = this.modal?.querySelector('.rewordly-rewritten-text') as HTMLParagraphElement;
-    
-    if (selection && selection.rangeCount > 0 && rewrittenText?.textContent) {
-      const range = selection.getRangeAt(0);
-      range.deleteContents();
-      range.insertNode(document.createTextNode(rewrittenText.textContent));
-      this.hideModal();
+    if (!this.modal) return;
+
+    const rewrittenText = this.modal.querySelector('.rewordly-rewritten-text') as HTMLParagraphElement;
+    const newText = rewrittenText.textContent;
+
+    if (newText && newText !== '' && !newText.startsWith('Error:')) {
+      // Find the original selection and replace it
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        
+        // Create a span with special styling for the replaced text
+        const replacedSpan = document.createElement('span');
+        replacedSpan.textContent = newText;
+        replacedSpan.className = 'rewordly-replaced-text';
+        replacedSpan.style.cssText = `
+          background: linear-gradient(120deg, #a8edea 0%, #fed6e3 100%);
+          padding: 2px 4px;
+          border-radius: 4px;
+          border-left: 3px solid #667eea;
+          font-weight: 500;
+          transition: all 0.3s ease;
+        `;
+        
+        // Replace the selected text with the new styled text
+        range.deleteContents();
+        range.insertNode(replacedSpan);
+        
+        // Clear the selection
+        selection.removeAllRanges();
+        
+        // Add a subtle animation
+        setTimeout(() => {
+          replacedSpan.style.transform = 'scale(1.02)';
+          setTimeout(() => {
+            replacedSpan.style.transform = 'scale(1)';
+          }, 200);
+        }, 100);
+      }
     }
+    
+    // Close the modal after replacement
+    this.hideModal();
   }
 }
 
