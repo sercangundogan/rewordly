@@ -1,188 +1,407 @@
 /**
  * Rewordly Extension Styles
  * Styles for floating button and modal components
+ * Using high specificity and !important to override website CSS
  */
 
 /* Floating Button Styles */
 .rewordly-floating-button {
-  position: fixed;
-  display: none;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border: none;
-  border-radius: 20px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  z-index: 2147483647; /* Maximum z-index value */
-  transition: all 0.2s ease;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  pointer-events: auto;
-  user-select: none;
-  -webkit-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
+  position: fixed !important;
+  display: none !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 8px 12px !important;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+  color: white !important;
+  border: none !important;
+  border-radius: 20px !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+  z-index: 2147483647 !important; /* Maximum z-index value */
+  transition: all 0.2s ease !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  pointer-events: auto !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+  margin: 0 !important;
+  line-height: 1.2 !important;
+  text-decoration: none !important;
+  outline: none !important;
+  box-sizing: border-box !important;
+  min-width: auto !important;
+  max-width: none !important;
+  width: auto !important;
+  height: auto !important;
+  overflow: visible !important;
+  text-align: left !important;
+  vertical-align: baseline !important;
+  white-space: nowrap !important;
+  word-wrap: normal !important;
+  direction: ltr !important;
+  text-transform: none !important;
+  text-indent: 0 !important;
+  text-shadow: none !important;
+  letter-spacing: normal !important;
+  word-spacing: normal !important;
+  font-style: normal !important;
+  font-variant: normal !important;
+  font-stretch: normal !important;
+  font-size-adjust: none !important;
+  font-kerning: auto !important;
+  font-feature-settings: normal !important;
+  font-language-override: normal !important;
+  font-synthesis: weight style !important;
+  font-variant-alternates: normal !important;
+  font-variant-caps: normal !important;
+  font-variant-east-asian: normal !important;
+  font-variant-ligatures: normal !important;
+  font-variant-numeric: normal !important;
+  font-variant-position: normal !important;
+  font-variation-settings: normal !important;
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
+}
+
+.rewordly-floating-button.show {
+  display: flex !important;
 }
 
 .rewordly-floating-button:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+  transform: translateY(-1px) !important;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2) !important;
 }
 
 .rewordly-floating-button:active {
-  transform: translateY(0);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  transform: translateY(0) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
 }
 
 .rewordly-floating-button svg {
-  width: 16px;
-  height: 16px;
-  stroke: currentColor;
-  stroke-width: 2;
-  fill: none;
+  width: 16px !important;
+  height: 16px !important;
+  stroke: currentColor !important;
+  stroke-width: 2 !important;
+  fill: none !important;
+  display: inline-block !important;
+  vertical-align: middle !important;
 }
 
 /* Modal Styles */
 .rewordly-modal {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.5);
-  display: none;
-  justify-content: center;
-  align-items: center;
-  z-index: 10001;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  opacity: 0;
-  transition: opacity 0.3s ease;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  background: rgba(0, 0, 0, 0.5) !important;
+  display: none !important;
+  justify-content: center !important;
+  align-items: center !important;
+  z-index: 2147483646 !important; /* Just below floating button */
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  opacity: 0 !important;
+  transition: opacity 0.3s ease !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  outline: none !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+  pointer-events: auto !important;
 }
 
 .rewordly-modal.show {
-  opacity: 1;
+  opacity: 1 !important;
+  display: flex !important;
 }
 
 .rewordly-modal-content {
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
-  max-width: 600px;
-  width: 90%;
-  max-height: 80vh;
-  overflow: hidden;
-  transform: translateY(-20px) scale(0.95);
-  opacity: 0;
-  transition: all 0.3s ease;
+  background: white !important;
+  border-radius: 12px !important;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15) !important;
+  max-width: 600px !important;
+  width: 90% !important;
+  max-height: 80vh !important;
+  overflow: hidden !important;
+  transform: translateY(-20px) scale(0.95) !important;
+  opacity: 0 !important;
+  transition: all 0.3s ease !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  outline: none !important;
+  box-sizing: border-box !important;
+  position: relative !important;
+  display: flex !important;
+  flex-direction: column !important;
 }
 
 .rewordly-modal.show .rewordly-modal-content {
-  transform: translateY(0) scale(1);
-  opacity: 1;
+  transform: translateY(0) scale(1) !important;
+  opacity: 1 !important;
 }
 
 .rewordly-modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 20px 24px;
-  border-bottom: 1px solid #e1e5e9;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  padding: 20px 24px !important;
+  border-bottom: 1px solid #e1e5e9 !important;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+  color: white !important;
+  margin: 0 !important;
+  border: none !important;
+  outline: none !important;
+  box-sizing: border-box !important;
+  position: relative !important;
+  flex-shrink: 0 !important;
 }
 
 .rewordly-modal-header h3 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
+  margin: 0 !important;
+  font-size: 18px !important;
+  font-weight: 600 !important;
+  color: white !important;
+  padding: 0 !important;
+  border: none !important;
+  outline: none !important;
+  background: none !important;
+  line-height: 1.2 !important;
+  text-decoration: none !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  word-spacing: normal !important;
+  font-style: normal !important;
+  font-variant: normal !important;
+  font-stretch: normal !important;
+  font-size-adjust: none !important;
+  font-kerning: auto !important;
+  font-feature-settings: normal !important;
+  font-language-override: normal !important;
+  font-synthesis: weight style !important;
+  font-variant-alternates: normal !important;
+  font-variant-caps: normal !important;
+  font-variant-east-asian: normal !important;
+  font-variant-ligatures: normal !important;
+  font-variant-numeric: normal !important;
+  font-variant-position: normal !important;
+  font-variation-settings: normal !important;
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
 }
 
 .rewordly-close-btn {
-  background: none;
-  border: none;
-  color: white;
-  font-size: 24px;
-  cursor: pointer;
-  padding: 0;
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  transition: background-color 0.2s ease;
+  background: none !important;
+  border: none !important;
+  color: white !important;
+  font-size: 24px !important;
+  cursor: pointer !important;
+  padding: 0 !important;
+  width: 32px !important;
+  height: 32px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 50% !important;
+  transition: background-color 0.2s ease !important;
+  margin: 0 !important;
+  line-height: 1 !important;
+  text-decoration: none !important;
+  outline: none !important;
+  box-sizing: border-box !important;
+  position: relative !important;
+  overflow: visible !important;
+  text-align: center !important;
+  vertical-align: middle !important;
+  white-space: nowrap !important;
+  word-wrap: normal !important;
+  direction: ltr !important;
+  text-transform: none !important;
+  text-indent: 0 !important;
+  text-shadow: none !important;
+  letter-spacing: normal !important;
+  word-spacing: normal !important;
+  font-style: normal !important;
+  font-variant: normal !important;
+  font-stretch: normal !important;
+  font-size-adjust: none !important;
+  font-kerning: auto !important;
+  font-feature-settings: normal !important;
+  font-language-override: normal !important;
+  font-synthesis: weight style !important;
+  font-variant-alternates: normal !important;
+  font-variant-caps: normal !important;
+  font-variant-east-asian: normal !important;
+  font-variant-ligatures: normal !important;
+  font-variant-numeric: normal !important;
+  font-variant-position: normal !important;
+  font-variation-settings: normal !important;
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
 }
 
 .rewordly-close-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.1) !important;
 }
 
 .rewordly-modal-body {
-  padding: 24px;
-  max-height: 400px;
-  overflow-y: auto;
+  padding: 24px !important;
+  max-height: 400px !important;
+  overflow-y: auto !important;
+  margin: 0 !important;
+  border: none !important;
+  outline: none !important;
+  box-sizing: border-box !important;
+  position: relative !important;
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
 }
 
 .rewordly-original,
 .rewordly-rewritten {
-  margin-bottom: 20px;
+  margin-bottom: 20px !important;
+  margin-top: 0 !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  outline: none !important;
+  box-sizing: border-box !important;
+  position: relative !important;
+  display: block !important;
 }
 
 .rewordly-original h4,
 .rewordly-rewritten h4 {
-  margin: 0 0 12px 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: #374151;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  margin: 0 0 12px 0 !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  color: #374151 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+  padding: 0 !important;
+  border: none !important;
+  outline: none !important;
+  background: none !important;
+  line-height: 1.2 !important;
+  text-decoration: none !important;
+  white-space: normal !important;
+  word-wrap: normal !important;
+  direction: ltr !important;
+  text-indent: 0 !important;
+  text-shadow: none !important;
+  word-spacing: normal !important;
+  font-style: normal !important;
+  font-variant: normal !important;
+  font-stretch: normal !important;
+  font-size-adjust: none !important;
+  font-kerning: auto !important;
+  font-feature-settings: normal !important;
+  font-language-override: normal !important;
+  font-synthesis: weight style !important;
+  font-variant-alternates: normal !important;
+  font-variant-caps: normal !important;
+  font-variant-east-asian: normal !important;
+  font-variant-ligatures: normal !important;
+  font-variant-numeric: normal !important;
+  font-variant-position: normal !important;
+  font-variation-settings: normal !important;
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
 }
 
 .rewordly-rewritten-text {
-  background: #f9fafb;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 16px;
-  margin: 12px 0;
-  font-size: 14px;
-  line-height: 1.6;
-  color: #374151;
-  transition: all 0.3s ease;
-  opacity: 0;
-  transform: translateY(10px);
+  background: #f9fafb !important;
+  border: 1px solid #e5e7eb !important;
+  border-radius: 8px !important;
+  padding: 16px !important;
+  margin: 12px 0 !important;
+  font-size: 14px !important;
+  line-height: 1.6 !important;
+  color: #374151 !important;
+  transition: all 0.3s ease !important;
+  opacity: 0 !important;
+  transform: translateY(10px) !important;
+  border-left: 4px solid #10b981 !important;
+  background: #f0fdf4 !important;
+  margin-top: 0 !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  outline: none !important;
+  box-sizing: border-box !important;
+  position: relative !important;
+  display: block !important;
+  white-space: pre-wrap !important;
+  word-wrap: break-word !important;
+  direction: ltr !important;
+  text-align: left !important;
+  text-indent: 0 !important;
+  text-shadow: none !important;
+  letter-spacing: normal !important;
+  word-spacing: normal !important;
+  font-style: normal !important;
+  font-variant: normal !important;
+  font-stretch: normal !important;
+  font-size-adjust: none !important;
+  font-kerning: auto !important;
+  font-feature-settings: normal !important;
+  font-language-override: normal !important;
+  font-synthesis: weight style !important;
+  font-variant-alternates: normal !important;
+  font-variant-caps: normal !important;
+  font-variant-east-asian: normal !important;
+  font-variant-ligatures: normal !important;
+  font-variant-numeric: normal !important;
+  font-variant-position: normal !important;
+  font-variation-settings: normal !important;
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
 }
 
+.rewordly-original-text.show,
 .rewordly-rewritten-text.show {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-.rewordly-rewritten-text {
-  border-left-color: #10b981;
-  background: #f0fdf4;
+  opacity: 1 !important;
+  transform: translateY(0) !important;
+  display: block !important;
 }
 
 /* Loading Spinner */
 .rewordly-loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-  gap: 12px;
+  display: none !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 20px !important;
+  gap: 12px !important;
+  margin: 0 !important;
+  border: none !important;
+  outline: none !important;
+  box-sizing: border-box !important;
+  position: relative !important;
+}
+
+.rewordly-loading.show {
+  display: flex !important;
 }
 
 .rewordly-spinner {
-  width: 32px;
-  height: 32px;
-  border: 3px solid #f3f4f6;
-  border-top: 3px solid #667eea;
-  border-radius: 50%;
-  animation: rewordly-spin 1s linear infinite;
+  width: 32px !important;
+  height: 32px !important;
+  border: 3px solid #f3f4f6 !important;
+  border-top: 3px solid #667eea !important;
+  border-radius: 50% !important;
+  animation: rewordly-spin 1s linear infinite !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  outline: none !important;
+  box-sizing: border-box !important;
+  position: relative !important;
+  display: block !important;
 }
 
 @keyframes rewordly-spin {
@@ -191,98 +410,171 @@
 }
 
 .rewordly-loading p {
-  margin: 0;
-  color: #6b7280;
-  font-size: 14px;
-  font-weight: 500;
+  margin: 0 !important;
+  color: #6b7280 !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  padding: 0 !important;
+  border: none !important;
+  outline: none !important;
+  background: none !important;
+  line-height: 1.2 !important;
+  text-decoration: none !important;
+  white-space: normal !important;
+  word-wrap: normal !important;
+  direction: ltr !important;
+  text-align: center !important;
+  text-indent: 0 !important;
+  text-shadow: none !important;
+  letter-spacing: normal !important;
+  word-spacing: normal !important;
+  font-style: normal !important;
+  font-variant: normal !important;
+  font-stretch: normal !important;
+  font-size-adjust: none !important;
+  font-kerning: auto !important;
+  font-feature-settings: normal !important;
+  font-language-override: normal !important;
+  font-synthesis: weight style !important;
+  font-variant-alternates: normal !important;
+  font-variant-caps: normal !important;
+  font-variant-east-asian: normal !important;
+  font-variant-ligatures: normal !important;
+  font-variant-numeric: normal !important;
+  font-variant-position: normal !important;
+  font-variation-settings: normal !important;
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
 }
 
 /* Modal Footer */
 .rewordly-modal-footer {
-  display: flex;
-  gap: 12px;
-  padding: 20px;
-  border-top: 1px solid #e5e7eb;
-  background: #f9fafb;
+  display: flex !important;
+  gap: 12px !important;
+  padding: 20px !important;
+  border-top: 1px solid #e5e7eb !important;
+  background: #f9fafb !important;
+  margin: 0 !important;
+  border-bottom: none !important;
+  border-left: none !important;
+  border-right: none !important;
+  outline: none !important;
+  box-sizing: border-box !important;
+  position: relative !important;
+  flex-shrink: 0 !important;
 }
 
 .rewordly-copy-btn,
 .rewordly-replace-btn {
-  flex: 1;
-  padding: 10px 16px;
-  border: none;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  font-family: inherit;
+  flex: 1 !important;
+  padding: 10px 16px !important;
+  border: none !important;
+  border-radius: 6px !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+  font-family: inherit !important;
+  margin: 0 !important;
+  line-height: 1.2 !important;
+  text-decoration: none !important;
+  outline: none !important;
+  box-sizing: border-box !important;
+  position: relative !important;
+  display: inline-block !important;
+  vertical-align: middle !important;
+  white-space: nowrap !important;
+  word-wrap: normal !important;
+  direction: ltr !important;
+  text-align: center !important;
+  text-transform: none !important;
+  text-indent: 0 !important;
+  text-shadow: none !important;
+  letter-spacing: normal !important;
+  word-spacing: normal !important;
+  font-style: normal !important;
+  font-variant: normal !important;
+  font-stretch: normal !important;
+  font-size-adjust: none !important;
+  font-kerning: auto !important;
+  font-feature-settings: normal !important;
+  font-language-override: normal !important;
+  font-synthesis: weight style !important;
+  font-variant-alternates: normal !important;
+  font-variant-caps: normal !important;
+  font-variant-east-asian: normal !important;
+  font-variant-ligatures: normal !important;
+  font-variant-numeric: normal !important;
+  font-variant-position: normal !important;
+  font-variation-settings: normal !important;
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
 }
 
 .rewordly-copy-btn {
-  background: #f3f4f6;
-  color: #374151;
-  border: 1px solid #d1d5db;
+  background: #f3f4f6 !important;
+  color: #374151 !important;
+  border: 1px solid #d1d5db !important;
 }
 
 .rewordly-copy-btn:hover {
-  background: #e5e7eb;
-  transform: translateY(-1px);
+  background: #e5e7eb !important;
+  transform: translateY(-1px) !important;
 }
 
 .rewordly-replace-btn {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+  color: white !important;
 }
 
 .rewordly-replace-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3) !important;
 }
 
 .rewordly-copy-btn:active,
 .rewordly-replace-btn:active {
-  transform: translateY(0);
+  transform: translateY(0) !important;
 }
 
 /* Responsive Design */
 @media (max-width: 768px) {
   .rewordly-modal-content {
-    width: 95%;
-    margin: 20px;
+    width: 95% !important;
+    margin: 20px !important;
   }
   
   .rewordly-modal-header {
-    padding: 16px 20px;
+    padding: 16px 20px !important;
   }
   
   .rewordly-modal-body {
-    padding: 20px;
+    padding: 20px !important;
   }
   
   .rewordly-modal-footer {
-    padding: 16px 20px;
-    flex-direction: column;
+    padding: 16px 20px !important;
+    flex-direction: column !important;
   }
   
   .rewordly-copy-btn,
   .rewordly-replace-btn {
-    width: 100%;
+    width: 100% !important;
   }
 }
 
 /* Error State */
 .rewordly-rewritten-text.error {
-  border-left-color: #ef4444;
-  background: #fef2f2;
-  color: #dc2626;
+  border-left-color: #ef4444 !important;
+  background: #fef2f2 !important;
+  color: #dc2626 !important;
 }
 
 /* Success State */
 .rewordly-rewritten-text.success {
-  border-left-color: #10b981;
-  background: #f0fdf4;
-  color: #059669;
+  border-left-color: #10b981 !important;
+  background: #f0fdf4 !important;
+  color: #059669 !important;
 }
 
 /* Accessibility */
@@ -290,18 +582,18 @@
 .rewordly-close-btn:focus,
 .rewordly-copy-btn:focus,
 .rewordly-replace-btn:focus {
-  outline: 2px solid #667eea;
-  outline-offset: 2px;
+  outline: 2px solid #667eea !important;
+  outline-offset: 2px !important;
 }
 
 /* High contrast mode support */
 @media (prefers-contrast: high) {
   .rewordly-floating-button {
-    border: 2px solid white;
+    border: 2px solid white !important;
   }
   
   .rewordly-modal-content {
-    border: 2px solid #000;
+    border: 2px solid #000 !important;
   }
 }
 
@@ -310,14 +602,68 @@
   .rewordly-floating-button,
   .rewordly-copy-btn,
   .rewordly-replace-btn {
-    transition: none;
+    transition: none !important;
   }
   
   .rewordly-modal-content {
-    animation: none;
+    animation: none !important;
   }
   
   .rewordly-spinner {
-    animation: none;
+    animation: none !important;
   }
+}
+
+/* Replace badge styles */
+.rewordly-replace-badge {
+  position: fixed !important;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+  color: white !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  padding: 2px 6px !important;
+  border-radius: 10px !important;
+  box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3) !important;
+  opacity: 0 !important;
+  transform: scale(0.8) !important;
+  transition: all 0.3s ease !important;
+  z-index: 2147483645 !important;
+  white-space: nowrap !important;
+  pointer-events: none !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+  margin: 0 !important;
+  border: none !important;
+  outline: none !important;
+  box-sizing: border-box !important;
+  line-height: 1.2 !important;
+  text-decoration: none !important;
+  text-align: center !important;
+  vertical-align: baseline !important;
+  word-wrap: normal !important;
+  direction: ltr !important;
+  text-transform: none !important;
+  text-indent: 0 !important;
+  text-shadow: none !important;
+  letter-spacing: normal !important;
+  word-spacing: normal !important;
+  font-style: normal !important;
+  font-variant: normal !important;
+  font-stretch: normal !important;
+  font-size-adjust: none !important;
+  font-kerning: auto !important;
+  font-feature-settings: normal !important;
+  font-language-override: normal !important;
+  font-synthesis: weight style !important;
+  font-variant-alternates: normal !important;
+  font-variant-caps: normal !important;
+  font-variant-east-asian: normal !important;
+  font-variant-ligatures: normal !important;
+  font-variant-numeric: normal !important;
+  font-variant-position: normal !important;
+  font-variation-settings: normal !important;
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
 } 

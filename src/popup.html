@@ -268,6 +268,80 @@
       font-size: 12px;
       color: #6b7280;
     }
+    
+    /* Success and Error Messages */
+    .rewordly-success-message,
+    .rewordly-error-message {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      z-index: 10000;
+      transform: translateX(400px);
+      opacity: 0;
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      max-width: 300px;
+      border: 1px solid #e5e7eb;
+    }
+    
+    .rewordly-success-message.show,
+    .rewordly-error-message.show {
+      transform: translateX(0);
+      opacity: 1;
+    }
+    
+    .rewordly-success-message {
+      border-left: 4px solid #10b981;
+    }
+    
+    .rewordly-error-message {
+      border-left: 4px solid #ef4444;
+    }
+    
+    .success-icon,
+    .error-icon {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: bold;
+      flex-shrink: 0;
+    }
+    
+    .success-icon {
+      background: #10b981;
+      color: white;
+    }
+    
+    .error-icon {
+      background: #ef4444;
+      color: white;
+    }
+    
+    .success-text,
+    .error-text {
+      font-size: 14px;
+      font-weight: 500;
+      margin: 0;
+      line-height: 1.4;
+    }
+    
+    .success-text {
+      color: #059669;
+    }
+    
+    .error-text {
+      color: #dc2626;
+    }
   </style>
 </head>
 <body>
@@ -288,8 +362,6 @@
           <button class="toggle" id="enabledToggle" type="button" aria-label="Toggle extension"></button>
         </div>
       </div>
-      
-      <button class="button" id="saveBtn">Save Settings</button>
       
       <a href="https://coff.ee/sercangundogan" target="_blank" class="coffee-link">
         <span class="coffee-icon">☕</span>

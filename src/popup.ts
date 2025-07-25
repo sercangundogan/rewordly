@@ -41,16 +41,10 @@ class RewordlyPopup {
   }
 
   private setupEventListeners(): void {
-    // Save button
-    const saveBtn = document.getElementById('saveBtn') as HTMLButtonElement;
-    saveBtn.addEventListener('click', this.saveSettings.bind(this));
-
     // Toggle switch
     if (this.enabledToggle) {
       this.enabledToggle.addEventListener('click', this.toggleEnabled.bind(this));
     }
-
-
   }
 
   private updateUI(): void {
@@ -79,26 +73,7 @@ class RewordlyPopup {
     }
   }
 
-  private async saveSettings(): Promise<void> {
-    try {
-      await chrome.storage.sync.set({
-        rewordlyEnabled: this.settings.enabled
-      });
-
-      this.showStatus('Settings saved successfully!', 'success');
-      
-      // Notify content scripts about the update
-      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tabs[0]?.id) {
-        chrome.tabs.sendMessage(tabs[0].id, { type: 'SETTINGS_UPDATED' });
-      }
-    } catch (error) {
-      console.error('Failed to save settings:', error);
-      this.showStatus('Failed to save settings. Please try again.', 'error');
-    }
-  }
-
-  private toggleEnabled(): void {
+  private async toggleEnabled(): Promise<void> {
     this.settings.enabled = !this.settings.enabled;
     
     if (this.enabledToggle) {
@@ -108,19 +83,101 @@ class RewordlyPopup {
         this.enabledToggle.classList.remove('active');
       }
     }
+
+    // Auto-save settings
+    await this.saveSettings();
   }
 
+  private async saveSettings(): Promise<void> {
+    try {
+      await chrome.storage.sync.set({
+        rewordlyEnabled: this.settings.enabled
+      });
 
+      this.showSuccessMessage();
+      
+      // Notify content scripts about the update
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tabs[0]?.id) {
+        chrome.tabs.sendMessage(tabs[0].id, { type: 'SETTINGS_UPDATED' });
+      }
+    } catch (error) {
+      console.error('Failed to save settings:', error);
+      this.showErrorMessage('Failed to save settings. Please try again.');
+    }
+  }
 
-  private showStatus(message: string, type: 'success' | 'error' | 'info'): void {
-    const statusElement = document.getElementById('status') as HTMLDivElement;
-    statusElement.textContent = message;
-    statusElement.className = `status ${type}`;
-    statusElement.classList.remove('hidden');
+  private showSuccessMessage(): void {
+    // Remove any existing success message
+    const existingMessage = document.querySelector('.rewordly-success-message');
+    if (existingMessage) {
+      existingMessage.remove();
+    }
 
-    // Auto-hide after 5 seconds
+    // Create success message element
+    const successMessage = document.createElement('div');
+    successMessage.className = 'rewordly-success-message';
+    successMessage.innerHTML = `
+      <div class="success-icon">✓</div>
+      <div class="success-text">Settings saved!</div>
+    `;
+
+    // Add to the content area
+    const content = document.querySelector('.content');
+    if (content) {
+      content.appendChild(successMessage);
+    }
+
+    // Trigger animation
     setTimeout(() => {
-      statusElement.classList.add('hidden');
+      successMessage.classList.add('show');
+    }, 10);
+
+    // Auto-remove after 3 seconds
+    setTimeout(() => {
+      successMessage.classList.remove('show');
+      setTimeout(() => {
+        if (successMessage.parentNode) {
+          successMessage.remove();
+        }
+      }, 300);
+    }, 3000);
+  }
+
+  private showErrorMessage(message: string): void {
+    // Remove any existing error message
+    const existingMessage = document.querySelector('.rewordly-error-message');
+    if (existingMessage) {
+      existingMessage.remove();
+    }
+
+    // Create error message element
+    const errorMessage = document.createElement('div');
+    errorMessage.className = 'rewordly-error-message';
+    errorMessage.innerHTML = `
+      <div class="error-icon">⚠</div>
+      <div class="error-text">${message}</div>
+    `;
+
+    // Add to the content area
+    const content = document.querySelector('.content');
+    if (content) {
+      content.appendChild(errorMessage);
+    }
+
+    // Trigger animation
+    setTimeout(() => {
+      errorMessage.classList.add('show');
+    }, 10);
+
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+      errorMessage.classList.remove('show');
+      setTimeout(() => {
+        if (errorMessage.parentNode) {
+          errorMessage.remove();
+        }
+      }, 300);
     }, 5000);
   }
 }

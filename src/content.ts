@@ -44,11 +44,16 @@ class RewordlyContentScript {
     
     // Set up observer for dynamically loaded content
     this.setupContentObserver();
+    
+    // Listen for settings updates from popup
+    this.setupMessageListener();
   }
 
   private async loadConfig(): Promise<void> {
     try {
       const result = await chrome.storage.sync.get(['rewordlyEnabled']);
+      console.log('Rewordly: Raw storage result:', result);
+      
       // Use environment variables as defaults if not set in storage
       this.config.enabled = result['rewordlyEnabled'] !== false;
       
@@ -113,6 +118,23 @@ class RewordlyContentScript {
     });
   }
 
+  private setupMessageListener(): void {
+    // Listen for messages from popup/background script
+    chrome.runtime.onMessage.addListener((request) => {
+      if (request.type === 'SETTINGS_UPDATED') {
+        // Reload config when settings are updated
+        this.loadConfig().then(() => {
+          console.log('Rewordly: Settings updated - Extension enabled:', this.config.enabled);
+          
+          // Hide button if extension is disabled
+          if (!this.config.enabled) {
+            this.hideFloatingButton();
+          }
+        });
+      }
+    });
+  }
+
   private handleScroll(): void {
     // Hide the button when scrolling
     this.hideFloatingButton();
@@ -138,21 +160,33 @@ class RewordlyContentScript {
   private checkAndShowButton(): void {
     // Don't show button if modal is open
     if (this.isModalOpen) {
+      console.log('Rewordly: Modal is open, not showing button');
+      return;
+    }
+
+    // Check if extension is enabled
+    if (!this.config.enabled) {
+      console.log('Rewordly: Extension is disabled, not showing button');
       return;
     }
 
     const selection = window.getSelection();
     if (!selection || selection.toString().trim() === '') {
+      console.log('Rewordly: No text selected');
       this.hideFloatingButton();
       return;
     }
 
     const selectedText = selection.toString().trim();
+    console.log('Rewordly: Selected text length:', selectedText.length);
+    
     if (selectedText.length < 3) {
+      console.log('Rewordly: Text too short, not showing button');
       this.hideFloatingButton();
       return;
     }
 
+    console.log('Rewordly: Showing floating button for text:', selectedText.substring(0, 50) + '...');
     this.selectedText = selectedText;
     this.showFloatingButton();
   }
@@ -280,13 +314,13 @@ class RewordlyContentScript {
       // Set the button position
       this.floatingButton.style.left = `${buttonX}px`;
       this.floatingButton.style.top = `${buttonY}px`;
-      this.floatingButton.style.display = 'flex';
+      this.floatingButton.classList.add('show');
     }
   }
 
   private hideFloatingButton(): void {
     if (this.floatingButton) {
-      this.floatingButton.style.display = 'none';
+      this.floatingButton.classList.remove('show');
     }
   }
 
@@ -344,29 +378,22 @@ class RewordlyContentScript {
     const loading = this.modal.querySelector('.rewordly-loading') as HTMLDivElement;
 
     originalText.textContent = this.selectedText;
+    originalText.classList.add('show');
     rewrittenText.textContent = '';
-    loading.style.display = 'flex';
-    rewrittenText.style.display = 'none';
+    loading.classList.add('show');
+    rewrittenText.classList.remove('show');
 
-    this.modal.style.display = 'flex';
+    this.modal.classList.add('show');
     this.isModalOpen = true; // Set flag when modal opens
     
     // Hide the floating button when modal is open
     this.hideFloatingButton();
-    
-    // Trigger animation
-    setTimeout(() => {
-      this.modal?.classList.add('show');
-    }, 10);
   }
 
   private hideModal(): void {
     if (this.modal) {
       this.modal.classList.remove('show');
       this.isModalOpen = false; // Clear flag when modal closes
-      setTimeout(() => {
-        this.modal!.style.display = 'none';
-      }, 300);
     }
   }
 
@@ -376,14 +403,9 @@ class RewordlyContentScript {
     const rewrittenText = this.modal.querySelector('.rewordly-rewritten-text') as HTMLParagraphElement;
     const loading = this.modal.querySelector('.rewordly-loading') as HTMLDivElement;
 
-    loading.style.display = 'none';
+    loading.classList.remove('show');
     rewrittenText.textContent = text;
-    rewrittenText.style.display = 'block';
-    
-    // Trigger animation
-    setTimeout(() => {
-      rewrittenText.classList.add('show');
-    }, 10);
+    rewrittenText.classList.add('show');
   }
 
   private showError(message: string): void {
@@ -392,10 +414,10 @@ class RewordlyContentScript {
     const rewrittenText = this.modal.querySelector('.rewordly-rewritten-text') as HTMLParagraphElement;
     const loading = this.modal.querySelector('.rewordly-loading') as HTMLDivElement;
 
-    loading.style.display = 'none';
+    loading.classList.remove('show');
     rewrittenText.textContent = `Error: ${message}`;
-    rewrittenText.style.display = 'block';
-    rewrittenText.style.color = '#e74c3c';
+    rewrittenText.classList.add('show');
+    rewrittenText.classList.add('error');
   }
 
   private copyRewrittenText(): void {
