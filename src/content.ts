@@ -479,14 +479,14 @@ class RewordlyContentScript {
         const textNode = document.createTextNode(newText);
         container.appendChild(textNode);
         
-        // Create the badge
+        // Create a separate badge element
         const badge = document.createElement('span');
         badge.className = 'rewordly-replace-badge';
         badge.textContent = 'Replaced';
         badge.style.cssText = `
-          position: absolute;
-          top: -8px;
-          right: -8px;
+          position: fixed;
+          top: ${range.getBoundingClientRect().top - 20}px;
+          left: ${range.getBoundingClientRect().right + 5}px;
           background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
           color: white;
           font-size: 10px;
@@ -506,7 +506,8 @@ class RewordlyContentScript {
           -ms-user-select: none;
         `;
         
-        container.appendChild(badge);
+        // Add badge to body
+        document.body.appendChild(badge);
         
         // Replace the selected text with the new text and badge
         range.deleteContents();
