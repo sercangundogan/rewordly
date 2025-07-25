@@ -54,10 +54,16 @@ class RewordlyContentScript {
       const result = await chrome.storage.sync.get(['rewordlyEnabled', 'rewordlyApiKey', 'rewordlyModel']);
       // Use environment variables as defaults if not set in storage
       this.config.enabled = result['rewordlyEnabled'] !== false;
-      this.config.apiKey = result['rewordlyApiKey'] || process.env['OPENAI_API_KEY'] || '';
+      // Prioritize injected API key, then Chrome storage, then empty string
+      this.config.apiKey = process.env['OPENAI_API_KEY'] || result['rewordlyApiKey'] || '';
       this.config.model = result['rewordlyModel'] || process.env['DEFAULT_MODEL'] || 'gpt-3.5-turbo';
       
       console.log('Rewordly: Config loaded - API Key available:', !!this.config.apiKey);
+      
+      // Show warning if no API key is available
+      if (!this.config.apiKey) {
+        console.warn('Rewordly: No API key found. Please set your OpenAI API key in the extension popup.');
+      }
     } catch (error) {
       console.error('Failed to load Rewordly config:', error);
     }

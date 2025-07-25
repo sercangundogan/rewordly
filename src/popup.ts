@@ -16,28 +16,33 @@ class RewordlyPopup {
     model: 'gpt-3.5-turbo'
   };
 
+  private enabledToggle: HTMLInputElement | null = null;
+  private modelSelect: HTMLSelectElement | null = null;
+
   constructor() {
     this.init();
   }
 
   private async init(): Promise<void> {
+    // Initialize UI elements
+    this.enabledToggle = document.getElementById('enabledToggle') as HTMLInputElement;
+    this.modelSelect = document.getElementById('model') as HTMLSelectElement;
+    
+    // Load settings
     await this.loadSettings();
+    
+    // Set up event listeners
     this.setupEventListeners();
-    this.updateUI();
   }
 
   private async loadSettings(): Promise<void> {
     try {
-      const result = await chrome.storage.sync.get([
-        'rewordlyEnabled',
-        'rewordlyApiKey',
-        'rewordlyModel'
-      ]);
-
-      // Use environment variables as defaults if not set in storage
+      const result = await chrome.storage.sync.get(['rewordlyEnabled', 'rewordlyApiKey', 'rewordlyModel']);
       this.settings.enabled = result['rewordlyEnabled'] !== false;
       this.settings.apiKey = result['rewordlyApiKey'] || '';
       this.settings.model = result['rewordlyModel'] || 'gpt-3.5-turbo';
+      
+      this.updateUI();
     } catch (error) {
       console.error('Failed to load settings:', error);
     }
@@ -69,16 +74,54 @@ class RewordlyPopup {
   }
 
   private updateUI(): void {
-    // Update input fields
-    const modelSelect = document.getElementById('model') as HTMLSelectElement;
-    const enabledToggle = document.getElementById('enabledToggle') as HTMLDivElement;
-
-    modelSelect.value = this.settings.model;
+    if (this.enabledToggle) {
+      this.enabledToggle.checked = this.settings.enabled;
+    }
+    if (this.modelSelect) {
+      this.modelSelect.value = this.settings.model;
+    }
     
-    if (this.settings.enabled) {
-      enabledToggle.classList.add('active');
-    } else {
-      enabledToggle.classList.remove('active');
+    // Update API key status
+    const apiKeyStatus = document.getElementById('api-key-status');
+    if (apiKeyStatus) {
+      if (this.settings.apiKey) {
+        apiKeyStatus.innerHTML = `
+          <div style="background: #f0fdf4; border: 1px solid #10b981; border-radius: 8px; padding: 12px; margin-bottom: 20px;">
+            <div style="display: flex; align-items: center; margin-bottom: 8px;">
+              <span style="color: #059669; font-size: 16px; margin-right: 8px;">✅</span>
+              <span style="font-weight: 600; color: #059669;">API Key Set</span>
+            </div>
+            <p style="margin: 0; color: #059669; font-size: 12px;">
+              Your OpenAI API key is configured and ready to use.
+            </p>
+          </div>
+        `;
+      } else {
+        apiKeyStatus.innerHTML = `
+          <div style="background: #fef2f2; border: 1px solid #ef4444; border-radius: 8px; padding: 12px; margin-bottom: 20px;">
+            <div style="display: flex; align-items: center; margin-bottom: 8px;">
+              <span style="color: #dc2626; font-size: 16px; margin-right: 8px;">⚠️</span>
+              <span style="font-weight: 600; color: #dc2626;">API Key Required</span>
+            </div>
+            <p style="margin: 0; color: #dc2626; font-size: 12px;">
+              Please enter your OpenAI API key to use the rewrite feature.
+            </p>
+            <input type="password" id="api-key-input" placeholder="sk-..." style="width: 100%; margin-top: 8px; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
+            <button id="save-api-key" style="margin-top: 8px; padding: 6px 12px; background: #059669; color: white; border: none; border-radius: 4px; cursor: pointer;">Save API Key</button>
+          </div>
+        `;
+        
+        // Add event listener for save button
+        const saveButton = document.getElementById('save-api-key');
+        const apiKeyInput = document.getElementById('api-key-input') as HTMLInputElement;
+        if (saveButton && apiKeyInput) {
+          saveButton.addEventListener('click', () => {
+            this.settings.apiKey = apiKeyInput.value;
+            chrome.storage.sync.set({ rewordlyApiKey: this.settings.apiKey });
+            this.updateUI();
+          });
+        }
+      }
     }
   }
 
