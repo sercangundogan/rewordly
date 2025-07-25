@@ -55,19 +55,13 @@ function injectEnvironmentVariables(filePath) {
   try {
     let content = fs.readFileSync(filePath, 'utf8');
     
-    // Replace environment variable placeholders with actual values
-    const envVars = {
-      'OPENAI_API_KEY': process.env.OPENAI_API_KEY || '',
-      'DEFAULT_MODEL': process.env.DEFAULT_MODEL || 'gpt-3.5-turbo',
-      'ENABLED_BY_DEFAULT': process.env.ENABLED_BY_DEFAULT || 'true'
-    };
+    // Direct API key injection (you can replace this with your actual API key)
+    const apiKey = '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';
     
     // Replace process.env references with literal values
-    Object.entries(envVars).forEach(([key, value]) => {
-      const placeholder = `process.env['${key}']`;
-      const replacement = typeof value === 'string' ? `'${value}'` : value;
-      content = content.replace(new RegExp(placeholder, 'g'), replacement);
-    });
+    content = content.replace(/process\.env\['OPENAI_API_KEY'\]/g, `'${apiKey}'`);
+    content = content.replace(/process\.env\['DEFAULT_MODEL'\]/g, "'gpt-3.5-turbo'");
+    content = content.replace(/process\.env\['ENABLED_BY_DEFAULT'\]/g, "'true'");
     
     fs.writeFileSync(filePath, content);
     log(`✓ Injected environment variables into ${filePath}`, 'green');

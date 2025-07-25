@@ -54,8 +54,10 @@ class RewordlyContentScript {
       const result = await chrome.storage.sync.get(['rewordlyEnabled', 'rewordlyApiKey', 'rewordlyModel']);
       // Use environment variables as defaults if not set in storage
       this.config.enabled = result['rewordlyEnabled'] !== false;
-      this.config.apiKey = result['rewordlyApiKey'] || '';
-      this.config.model = result['rewordlyModel'] || 'gpt-3.5-turbo';
+      this.config.apiKey = result['rewordlyApiKey'] || process.env['OPENAI_API_KEY'] || '';
+      this.config.model = result['rewordlyModel'] || process.env['DEFAULT_MODEL'] || 'gpt-3.5-turbo';
+      
+      console.log('Rewordly: Config loaded - API Key available:', !!this.config.apiKey);
     } catch (error) {
       console.error('Failed to load Rewordly config:', error);
     }
@@ -291,22 +293,33 @@ class RewordlyContentScript {
   }
 
   private async handleRewriteClick(): Promise<void> {
+    console.log('Rewordly: Rewrite button clicked');
+    console.log('Rewordly: API Key available:', !!this.config.apiKey);
+    console.log('Rewordly: Selected text:', this.selectedText);
+    
     if (!this.config.apiKey) {
+      console.log('Rewordly: No API key found');
       this.showError('Please set your OpenAI API key in the extension popup.');
       return;
     }
 
-    if (this.isProcessing) return;
+    if (this.isProcessing) {
+      console.log('Rewordly: Already processing');
+      return;
+    }
 
+    console.log('Rewordly: Starting rewrite process');
     this.hideFloatingButton();
     this.showModal();
     this.isProcessing = true;
 
     try {
+      console.log('Rewordly: Calling OpenAI API');
       const rewrittenText = await this.rewriteText(this.selectedText);
+      console.log('Rewordly: API response received:', rewrittenText);
       this.displayRewrittenText(rewrittenText);
     } catch (error) {
-      console.error('Error rewriting text:', error);
+      console.error('Rewordly: Error rewriting text:', error);
       this.showError('Failed to rewrite text. Please check your API key and try again.');
     } finally {
       this.isProcessing = false;
@@ -358,11 +371,19 @@ class RewordlyContentScript {
     rewrittenText.style.display = 'none';
 
     this.modal.style.display = 'flex';
+    
+    // Trigger animation
+    setTimeout(() => {
+      this.modal?.classList.add('show');
+    }, 10);
   }
 
   private hideModal(): void {
     if (this.modal) {
-      this.modal.style.display = 'none';
+      this.modal.classList.remove('show');
+      setTimeout(() => {
+        this.modal!.style.display = 'none';
+      }, 300);
     }
   }
 
@@ -375,6 +396,11 @@ class RewordlyContentScript {
     loading.style.display = 'none';
     rewrittenText.textContent = text;
     rewrittenText.style.display = 'block';
+    
+    // Trigger animation
+    setTimeout(() => {
+      rewrittenText.classList.add('show');
+    }, 10);
   }
 
   private showError(message: string): void {
