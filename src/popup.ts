@@ -50,9 +50,7 @@ class RewordlyPopup {
       this.enabledToggle.addEventListener('click', this.toggleEnabled.bind(this));
     }
 
-    // Reset button
-    const resetBtn = document.getElementById('resetSettings') as HTMLButtonElement;
-    resetBtn.addEventListener('click', this.resetSettings.bind(this));
+
   }
 
   private updateUI(): void {
@@ -112,17 +110,7 @@ class RewordlyPopup {
     }
   }
 
-  private async resetSettings(): Promise<void> {
-    if (confirm('Are you sure you want to reset all settings? This will reset to defaults.')) {
-      this.settings = {
-        enabled: true
-      };
 
-      await chrome.storage.sync.clear();
-      this.updateUI();
-      this.showStatus('Settings reset to defaults.', 'info');
-    }
-  }
 
   private showStatus(message: string, type: 'success' | 'error' | 'info'): void {
     const statusElement = document.getElementById('status') as HTMLDivElement;
