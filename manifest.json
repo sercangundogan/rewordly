@@ -5,10 +5,12 @@
   "description": "Rewrite selected text using Rewordly API to improve grammar, clarity, and fluency.",
   "permissions": [
     "activeTab",
-    "storage"
+    "storage",
+    "tabs"
   ],
   "host_permissions": [
-    "https://rewordly-web.vercel.app/*"
+    "https://rewordly-web.vercel.app/*",
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "background.js"
