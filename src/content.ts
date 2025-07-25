@@ -499,6 +499,11 @@ class RewordlyContentScript {
           transition: all 0.3s ease;
           z-index: 10000;
           white-space: nowrap;
+          pointer-events: none;
+          user-select: none;
+          -webkit-user-select: none;
+          -moz-user-select: none;
+          -ms-user-select: none;
         `;
         
         container.appendChild(badge);
