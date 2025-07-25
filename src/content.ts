@@ -475,8 +475,9 @@ class RewordlyContentScript {
           margin: 0 2px;
         `;
         
-        // Create the text node
-        const textNode = document.createTextNode(newText);
+        // Create the text node - ensure no quotes
+        const cleanText = newText.trim().replace(/^["']|["']$/g, ''); // Remove quotes from start/end
+        const textNode = document.createTextNode(cleanText);
         container.appendChild(textNode);
         
         // Create a separate badge element
