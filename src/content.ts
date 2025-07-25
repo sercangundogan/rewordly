@@ -20,6 +20,13 @@ class RewordlyContentScript {
   private modal: HTMLDivElement | null = null;
   private selectedText: string = '';
   private isProcessing: boolean = false;
+  private observer: MutationObserver | null = null;
+
+  // Store bound event handlers to allow proper removal
+  private boundHandleTextSelection = this.handleTextSelection.bind(this);
+  private boundHandleOutsideClick = this.handleOutsideClick.bind(this);
+  private boundHandleKeyDown = this.handleKeyDown.bind(this);
+  private boundHandleScroll = this.handleScroll.bind(this);
 
   constructor() {
     this.init();
@@ -37,6 +44,9 @@ class RewordlyContentScript {
     
     // Create modal (initially hidden)
     this.createModal();
+    
+    // Set up observer for dynamically loaded content
+    this.setupContentObserver();
   }
 
   private async loadConfig(): Promise<void> {
@@ -52,15 +62,63 @@ class RewordlyContentScript {
   }
 
   private setupEventListeners(): void {
+    // Remove existing listeners to prevent duplicates
+    document.removeEventListener('mouseup', this.boundHandleTextSelection);
+    document.removeEventListener('keyup', this.boundHandleTextSelection);
+    document.removeEventListener('click', this.boundHandleOutsideClick);
+    document.removeEventListener('keydown', this.boundHandleKeyDown);
+    window.removeEventListener('scroll', this.boundHandleScroll);
+    
     // Listen for text selection completion (mouseup) and keyboard selection
-    document.addEventListener('mouseup', this.handleTextSelection.bind(this));
-    document.addEventListener('keyup', this.handleTextSelection.bind(this));
+    document.addEventListener('mouseup', this.boundHandleTextSelection, true);
+    document.addEventListener('keyup', this.boundHandleTextSelection, true);
     
     // Listen for clicks outside to hide button/modal
-    document.addEventListener('click', this.handleOutsideClick.bind(this));
+    document.addEventListener('click', this.boundHandleOutsideClick, true);
     
     // Listen for escape key to close modal
-    document.addEventListener('keydown', this.handleKeyDown.bind(this));
+    document.addEventListener('keydown', this.boundHandleKeyDown, true);
+    
+    // Listen for scroll events to reposition button if needed
+    window.addEventListener('scroll', this.boundHandleScroll, true);
+  }
+
+  private setupContentObserver(): void {
+    // Create a MutationObserver to watch for dynamically loaded content
+    this.observer = new MutationObserver((mutations) => {
+      let shouldReattach = false;
+      
+      mutations.forEach((mutation) => {
+        if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+          // Check if new text nodes or elements were added
+          mutation.addedNodes.forEach((node) => {
+            if (node.nodeType === Node.TEXT_NODE || 
+                (node.nodeType === Node.ELEMENT_NODE && 
+                 (node as Element).textContent && 
+                 (node as Element).textContent!.trim().length > 0)) {
+              shouldReattach = true;
+            }
+          });
+        }
+      });
+      
+      // If new content was added, reattach event listeners
+      if (shouldReattach) {
+        this.setupEventListeners();
+      }
+    });
+    
+    // Start observing the document body for changes
+    this.observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true
+    });
+  }
+
+  private handleScroll(): void {
+    // Hide the button when scrolling
+    this.hideFloatingButton();
   }
 
   private handleTextSelection(event: Event): void {
@@ -190,38 +248,39 @@ class RewordlyContentScript {
       const range = selection.getRangeAt(0);
       const rects = range.getBoundingClientRect();
       
-      // Calculate position relative to viewport
-      const buttonX = rects.right + window.scrollX + 10;
-      const buttonY = rects.top + window.scrollY - 10;
+      // Get viewport dimensions
+      const viewportWidth = window.innerWidth;
+      const buttonWidth = 120;
+      const buttonHeight = 40;
       
-      // Ensure button stays within viewport bounds
-      const buttonWidth = 120; // Approximate button width
-      const buttonHeight = 40; // Approximate button height
+      // Calculate position to the right of the selected text
+      let buttonX = rects.right + 10;
+      let buttonY = rects.top - 10;
       
-      let finalX = buttonX;
-      let finalY = buttonY;
-      
-      // Adjust if button would go off the right edge
-      if (buttonX + buttonWidth > window.innerWidth) {
-        finalX = rects.left + window.scrollX - buttonWidth - 10;
+      // If button would go off the right edge, position it to the left of the selection
+      if (buttonX + buttonWidth > viewportWidth) {
+        buttonX = rects.left - buttonWidth - 10;
       }
       
-      // Adjust if button would go off the bottom edge
+      // If button would go off the left edge, position it at the left edge
+      if (buttonX < 0) {
+        buttonX = 10;
+      }
+      
+      // If button would go off the top edge, position it below the selection
+      if (buttonY < 0) {
+        buttonY = rects.bottom + 10;
+      }
+      
+      // If button would go off the bottom edge, position it above the selection
       if (buttonY + buttonHeight > window.innerHeight) {
-        finalY = rects.bottom + window.scrollY + 10;
+        buttonY = rects.top - buttonHeight - 10;
       }
       
-      // Ensure button doesn't go off the top edge
-      if (finalY < window.scrollY) {
-        finalY = window.scrollY + 10;
-      }
-      
-      this.floatingButton.style.left = `${finalX}px`;
-      this.floatingButton.style.top = `${finalY}px`;
+      // Set the button position
+      this.floatingButton.style.left = `${buttonX}px`;
+      this.floatingButton.style.top = `${buttonY}px`;
       this.floatingButton.style.display = 'flex';
-      
-      // Force a reflow to ensure the button is visible
-      this.floatingButton.offsetHeight;
     }
   }
 
