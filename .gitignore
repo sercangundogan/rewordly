@@ -17,6 +17,9 @@ build/
 .env.test.local
 .env.production.local
 
+# Configuration files with sensitive data
+config.js
+
 # IDE files
 .vscode/
 .idea/

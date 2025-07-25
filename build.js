@@ -55,8 +55,8 @@ function injectEnvironmentVariables(filePath) {
   try {
     let content = fs.readFileSync(filePath, 'utf8');
     
-    // Direct API key injection (replace with your actual API key)
-    const apiKey = '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';
+    // Remove hardcoded API key for security - users must provide their own
+    const apiKey = ''; // Empty string - users must set their own key
     const model = 'gpt-3.5-turbo';
     const enabled = 'true';
     
