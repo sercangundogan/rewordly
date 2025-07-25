@@ -1,0 +1,40 @@
+{
+  "name": "rewordly",
+  "version": "1.0.0",
+  "description": "A Chrome extension that rewrites selected text using OpenAI's GPT API",
+  "main": "src/content.ts",
+  "scripts": {
+    "build": "node build.js",
+    "dev": "tsc --watch",
+    "clean": "if exist dist rmdir /s /q dist && mkdir dist",
+    "package": "npm run clean && npm run build && powershell Compress-Archive -Path dist\\* -DestinationPath rewordly.zip -Force",
+    "lint": "eslint src/**/*.ts",
+    "type-check": "tsc --noEmit"
+  },
+  "keywords": [
+    "chrome-extension",
+    "openai",
+    "gpt",
+    "text-rewriting",
+    "typescript"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/chrome": "^0.0.254",
+    "@types/node": "^24.1.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "dotenv": "^17.2.1",
+    "eslint": "^8.0.0",
+    "typescript": "^5.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-repo/rewordly.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-repo/rewordly/issues"
+  },
+  "homepage": "https://github.com/your-repo/rewordly#readme"
+}

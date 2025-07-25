@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rewordly Demo</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            line-height: 1.6;
+            color: #333;
+        }
+        
+        h1 {
+            color: #667eea;
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        
+        .demo-section {
+            margin-bottom: 40px;
+            padding: 20px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            background: #f9fafb;
+        }
+        
+        .demo-section h2 {
+            color: #374151;
+            margin-top: 0;
+        }
+        
+        .test-text {
+            background: white;
+            padding: 20px;
+            border-radius: 6px;
+            border-left: 4px solid #667eea;
+            margin: 20px 0;
+        }
+        
+        .instructions {
+            background: #eff6ff;
+            border: 1px solid #3b82f6;
+            border-radius: 6px;
+            padding: 16px;
+            margin: 20px 0;
+        }
+        
+        .instructions h3 {
+            margin-top: 0;
+            color: #1e40af;
+        }
+        
+        .instructions ol {
+            margin: 0;
+            padding-left: 20px;
+        }
+        
+        .instructions li {
+            margin-bottom: 8px;
+        }
+        
+        .note {
+            background: #fef3c7;
+            border: 1px solid #f59e0b;
+            border-radius: 6px;
+            padding: 16px;
+            margin: 20px 0;
+        }
+        
+        .note strong {
+            color: #92400e;
+        }
+    </style>
+</head>
+<body>
+    <h1>Rewordly Extension Demo</h1>
+    
+    <div class="instructions">
+        <h3>How to Test the Extension</h3>
+        <ol>
+            <li>Make sure the Rewordly extension is installed and enabled</li>
+            <li>Configure your OpenAI API key in the extension settings</li>
+            <li>Select any text below to see the floating "Rewrite" button</li>
+            <li>Click the button to rewrite the selected text</li>
+        </ol>
+    </div>
+    
+    <div class="note">
+        <strong>Note:</strong> You need a valid OpenAI API key to use this extension. 
+        Get one from <a href="https://platform.openai.com/api-keys" target="_blank">OpenAI Platform</a>.
+    </div>
+    
+    <div class="demo-section">
+        <h2>Sample Text for Testing</h2>
+        <div class="test-text">
+            <p>This is a sample paragraph with some grammatical issues and unclear phrasing that could benefit from rewriting. The sentence structure is not optimal and there are several areas where the text could be improved for better clarity and readability.</p>
+            
+            <p>Here's another example of text that needs improvement. The writing style is inconsistent and the flow between sentences could be smoother. This demonstrates how the Rewordly extension can help improve your writing.</p>
+        </div>
+    </div>
+    
+    <div class="demo-section">
+        <h2>More Test Content</h2>
+        <div class="test-text">
+            <p>The quick brown fox jumps over the lazy dog. This pangram contains every letter of the alphabet at least once. It's commonly used to test fonts and keyboards.</p>
+            
+            <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>
+        </div>
+    </div>
+    
+    <div class="demo-section">
+        <h2>Technical Writing Example</h2>
+        <div class="test-text">
+            <p>The function takes a parameter and returns a value. It does this by processing the input data and applying the necessary transformations. The result is then formatted according to the specified requirements.</p>
+            
+            <p>When implementing this feature, developers should consider the performance implications and ensure proper error handling is in place. The code should be well-documented and follow established coding conventions.</p>
+        </div>
+    </div>
+    
+    <div class="demo-section">
+        <h2>Business Communication</h2>
+        <div class="test-text">
+            <p>We are writing to inform you about the upcoming changes to our service. These modifications will improve the user experience and provide better functionality. We appreciate your continued support and feedback.</p>
+            
+            <p>The meeting will be held next week to discuss the project timeline and deliverables. All team members are required to attend and prepare their status updates in advance.</p>
+        </div>
+    </div>
+    
+    <div class="note">
+        <strong>Tips:</strong>
+        <ul>
+            <li>Try selecting different amounts of text (short phrases, sentences, paragraphs)</li>
+            <li>Test with various writing styles and complexity levels</li>
+            <li>Compare the original and rewritten versions to see the improvements</li>
+            <li>Use the "Copy" and "Replace" buttons to work with the rewritten text</li>
+        </ul>
+    </div>
+</body>
+</html> 
