@@ -1,6 +1,6 @@
 /**
  * Rewordly Popup Script
- * Handles settings management and API key testing
+ * Handles settings management and UI interactions
  */
 
 interface RewordlySettings {
@@ -12,7 +12,7 @@ class RewordlyPopup {
     enabled: true
   };
 
-  private enabledToggle: HTMLInputElement | null = null;
+  private enabledToggle: HTMLButtonElement | null = null;
 
   constructor() {
     this.init();
@@ -20,7 +20,7 @@ class RewordlyPopup {
 
   private async init(): Promise<void> {
     // Initialize UI elements
-    this.enabledToggle = document.getElementById('enabledToggle') as HTMLInputElement;
+    this.enabledToggle = document.getElementById('enabledToggle') as HTMLButtonElement;
     
     // Load settings
     await this.loadSettings();
@@ -45,34 +45,35 @@ class RewordlyPopup {
     const saveBtn = document.getElementById('saveBtn') as HTMLButtonElement;
     saveBtn.addEventListener('click', this.saveSettings.bind(this));
 
-    // Test button
-    const testBtn = document.getElementById('testBtn') as HTMLButtonElement;
-    testBtn.addEventListener('click', this.testApi.bind(this));
-
     // Toggle switch
-    const enabledToggle = document.getElementById('enabledToggle') as HTMLDivElement;
-    enabledToggle.addEventListener('click', this.toggleEnabled.bind(this));
+    if (this.enabledToggle) {
+      this.enabledToggle.addEventListener('click', this.toggleEnabled.bind(this));
+    }
 
     // Reset button
-    const resetBtn = document.getElementById('resetBtn') as HTMLAnchorElement;
+    const resetBtn = document.getElementById('resetSettings') as HTMLButtonElement;
     resetBtn.addEventListener('click', this.resetSettings.bind(this));
   }
 
   private updateUI(): void {
     if (this.enabledToggle) {
-      this.enabledToggle.checked = this.settings.enabled;
+      if (this.settings.enabled) {
+        this.enabledToggle.classList.add('active');
+      } else {
+        this.enabledToggle.classList.remove('active');
+      }
     }
     
     // Update API status
     const apiStatus = document.getElementById('api-key-status');
     if (apiStatus) {
       apiStatus.innerHTML = `
-        <div style="background: #f0fdf4; border: 1px solid #10b981; border-radius: 8px; padding: 12px; margin-bottom: 20px;">
-          <div style="display: flex; align-items: center; margin-bottom: 8px;">
-            <span style="color: #059669; font-size: 16px; margin-right: 8px;">✅</span>
-            <span style="font-weight: 600; color: #059669;">API Ready</span>
+        <div class="status-card">
+          <div class="status-header">
+            <div class="status-icon"></div>
+            <div class="status-title">API Ready</div>
           </div>
-          <p style="margin: 0; color: #059669; font-size: 12px;">
+          <p class="status-description">
             Rewordly API is ready to use. No API key required.
           </p>
         </div>
@@ -99,39 +100,15 @@ class RewordlyPopup {
     }
   }
 
-  private async testApi(): Promise<void> {
-    const testBtn = document.getElementById('testBtn') as HTMLButtonElement;
-    const originalText = testBtn.textContent;
-    testBtn.textContent = 'Testing...';
-    testBtn.disabled = true;
-
-    try {
-      const response = await chrome.runtime.sendMessage({
-        type: 'TEST_API'
-      });
-
-      if (response.isValid) {
-        this.showStatus('API is working! You can now use Rewordly.', 'success');
-      } else {
-        this.showStatus('API test failed. Please try again.', 'error');
-      }
-    } catch (error) {
-      console.error('API test failed:', error);
-      this.showStatus('Failed to test API. Please check your connection.', 'error');
-    } finally {
-      testBtn.textContent = originalText;
-      testBtn.disabled = false;
-    }
-  }
-
   private toggleEnabled(): void {
     this.settings.enabled = !this.settings.enabled;
-    const enabledToggle = document.getElementById('enabledToggle') as HTMLDivElement;
     
-    if (this.settings.enabled) {
-      enabledToggle.classList.add('active');
-    } else {
-      enabledToggle.classList.remove('active');
+    if (this.enabledToggle) {
+      if (this.settings.enabled) {
+        this.enabledToggle.classList.add('active');
+      } else {
+        this.enabledToggle.classList.remove('active');
+      }
     }
   }
 
