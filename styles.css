@@ -321,36 +321,3 @@
     animation: none;
   }
 } 
-
-/* Replaced text styling */
-.rewordly-replaced-text {
-  background: linear-gradient(120deg, #a8edea 0%, #fed6e3 100%);
-  padding: 2px 6px;
-  border-radius: 6px;
-  border-left: 3px solid #667eea;
-  font-weight: 500;
-  transition: all 0.3s ease;
-  position: relative;
-  display: inline-block;
-  margin: 0 2px;
-  box-shadow: 0 2px 4px rgba(102, 126, 234, 0.1);
-}
-
-.rewordly-replaced-text:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(102, 126, 234, 0.2);
-}
-
-.rewordly-replaced-text::before {
-  content: '✨';
-  position: absolute;
-  top: -8px;
-  right: -8px;
-  font-size: 12px;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-}
-
-.rewordly-replaced-text:hover::before {
-  opacity: 1;
-} 

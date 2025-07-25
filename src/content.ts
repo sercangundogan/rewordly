@@ -20,6 +20,7 @@ class RewordlyContentScript {
   private modal: HTMLDivElement | null = null;
   private selectedText: string = '';
   private isProcessing: boolean = false;
+  private isModalOpen: boolean = false; // Add flag to track modal state
   private observer: MutationObserver | null = null;
 
   // Store bound event handlers to allow proper removal
@@ -147,15 +148,18 @@ class RewordlyContentScript {
   }
 
   private checkAndShowButton(): void {
+    // Don't show button if modal is open
+    if (this.isModalOpen) {
+      return;
+    }
+
     const selection = window.getSelection();
-    
     if (!selection || selection.toString().trim() === '') {
       this.hideFloatingButton();
       return;
     }
 
     const selectedText = selection.toString().trim();
-    
     if (selectedText.length < 3) {
       this.hideFloatingButton();
       return;
@@ -377,6 +381,7 @@ class RewordlyContentScript {
     rewrittenText.style.display = 'none';
 
     this.modal.style.display = 'flex';
+    this.isModalOpen = true; // Set flag when modal opens
     
     // Hide the floating button when modal is open
     this.hideFloatingButton();
@@ -390,6 +395,7 @@ class RewordlyContentScript {
   private hideModal(): void {
     if (this.modal) {
       this.modal.classList.remove('show');
+      this.isModalOpen = false; // Clear flag when modal closes
       setTimeout(() => {
         this.modal!.style.display = 'none';
       }, 300);
@@ -461,33 +467,65 @@ class RewordlyContentScript {
       if (selection && selection.rangeCount > 0) {
         const range = selection.getRangeAt(0);
         
-        // Create a span with special styling for the replaced text
-        const replacedSpan = document.createElement('span');
-        replacedSpan.textContent = newText;
-        replacedSpan.className = 'rewordly-replaced-text';
-        replacedSpan.style.cssText = `
-          background: linear-gradient(120deg, #a8edea 0%, #fed6e3 100%);
-          padding: 2px 4px;
-          border-radius: 4px;
-          border-left: 3px solid #667eea;
-          font-weight: 500;
-          transition: all 0.3s ease;
+        // Create a container for the text and badge
+        const container = document.createElement('span');
+        container.style.cssText = `
+          position: relative;
+          display: inline-block;
+          margin: 0 2px;
         `;
         
-        // Replace the selected text with the new styled text
+        // Create the text node
+        const textNode = document.createTextNode(newText);
+        container.appendChild(textNode);
+        
+        // Create the badge
+        const badge = document.createElement('span');
+        badge.className = 'rewordly-replace-badge';
+        badge.textContent = 'Replaced';
+        badge.style.cssText = `
+          position: absolute;
+          top: -8px;
+          right: -8px;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          font-size: 10px;
+          font-weight: 600;
+          padding: 2px 6px;
+          border-radius: 10px;
+          box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+          opacity: 0;
+          transform: scale(0.8);
+          transition: all 0.3s ease;
+          z-index: 10000;
+          white-space: nowrap;
+        `;
+        
+        container.appendChild(badge);
+        
+        // Replace the selected text with the new text and badge
         range.deleteContents();
-        range.insertNode(replacedSpan);
+        range.insertNode(container);
         
         // Clear the selection
         selection.removeAllRanges();
         
-        // Add a subtle animation
+        // Show the badge with animation
         setTimeout(() => {
-          replacedSpan.style.transform = 'scale(1.02)';
-          setTimeout(() => {
-            replacedSpan.style.transform = 'scale(1)';
-          }, 200);
+          badge.style.opacity = '1';
+          badge.style.transform = 'scale(1)';
         }, 100);
+        
+        // Hide the badge after 2 seconds
+        setTimeout(() => {
+          badge.style.opacity = '0';
+          badge.style.transform = 'scale(0.8)';
+          setTimeout(() => {
+            if (badge.parentNode) {
+              badge.remove();
+            }
+          }, 300);
+        }, 2000);
       }
     }
     
