@@ -9,15 +9,18 @@
     "tabs"
   ],
   "host_permissions": [
-    "https://rewordly-web.vercel.app/*",
-    "<all_urls>"
+    "https://rewordly-web.vercel.app/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
+      "matches": ["http://*/*", "https://*/*"],
+      "exclude_matches": [
+        "https://chrome.google.com/*",
+        "https://webstore.google.com/*"
+      ],
       "js": ["content.js"],
       "css": ["styles.css"]
     }
@@ -34,7 +37,7 @@
   "web_accessible_resources": [
     {
       "resources": ["popup.html"],
-      "matches": ["<all_urls>"]
+      "matches": ["http://*/*", "https://*/*"]
     }
   ]
 } 

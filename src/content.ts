@@ -254,7 +254,7 @@ class RewordlyContentScript {
         </div>
         <div class="rewordly-modal-footer">
           <button class="rewordly-copy-btn">Copy</button>
-          <button class="rewordly-replace-btn">Replace</button>
+          <!-- <button class="rewordly-replace-btn">Replace</button> -->
         </div>
       </div>
     `;
@@ -262,11 +262,9 @@ class RewordlyContentScript {
     // Add event listeners
     const closeBtn = this.modal.querySelector('.rewordly-close-btn') as HTMLButtonElement;
     const copyBtn = this.modal.querySelector('.rewordly-copy-btn') as HTMLButtonElement;
-    const replaceBtn = this.modal.querySelector('.rewordly-replace-btn') as HTMLButtonElement;
     
     closeBtn.addEventListener('click', this.hideModal.bind(this));
     copyBtn.addEventListener('click', this.copyRewrittenText.bind(this));
-    replaceBtn.addEventListener('click', this.replaceOriginalText.bind(this));
     
     document.body.appendChild(this.modal);
   }
@@ -448,90 +446,90 @@ class RewordlyContentScript {
     }
   }
 
-  private replaceOriginalText(): void {
-    if (!this.modal) return;
+  // private replaceOriginalText(): void {
+  //   if (!this.modal) return;
 
-    const rewrittenText = this.modal.querySelector('.rewordly-rewritten-text') as HTMLParagraphElement;
-    const newText = rewrittenText.textContent;
+  //   const rewrittenText = this.modal.querySelector('.rewordly-rewritten-text') as HTMLParagraphElement;
+  //   const newText = rewrittenText.textContent;
 
-    if (newText && newText !== '' && !newText.startsWith('Error:')) {
-      // Find the original selection and replace it
-      const selection = window.getSelection();
-      if (selection && selection.rangeCount > 0) {
-        const range = selection.getRangeAt(0);
+  //   if (newText && newText !== '' && !newText.startsWith('Error:')) {
+  //     // Find the original selection and replace it
+  //     const selection = window.getSelection();
+  //     if (selection && selection.rangeCount > 0) {
+  //       const range = selection.getRangeAt(0);
         
-        // Create a container for the text and badge
-        const container = document.createElement('span');
-        container.style.cssText = `
-          position: relative;
-          display: inline-block;
-          margin: 0 2px;
-        `;
+  //       // Create a container for the text and badge
+  //       const container = document.createElement('span');
+  //       container.style.cssText = `
+  //         position: relative;
+  //         display: inline-block;
+  //         margin: 0 2px;
+  //       `;
         
-        // Create the text node - ensure no quotes
-        const cleanText = newText.trim().replace(/^["']|["']$/g, ''); // Remove quotes from start/end
-        const textNode = document.createTextNode(cleanText);
-        container.appendChild(textNode);
+  //       // Create the text node - ensure no quotes
+  //       const cleanText = newText.trim().replace(/^["']|["']$/g, ''); // Remove quotes from start/end
+  //       const textNode = document.createTextNode(cleanText);
+  //       container.appendChild(textNode);
         
-        // Create a separate badge element
-        const badge = document.createElement('span');
-        badge.className = 'rewordly-replace-badge';
-        badge.textContent = 'Replaced';
-        badge.style.cssText = `
-          position: fixed;
-          top: ${range.getBoundingClientRect().top - 20}px;
-          left: ${range.getBoundingClientRect().right + 5}px;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          color: white;
-          font-size: 10px;
-          font-weight: 600;
-          padding: 2px 6px;
-          border-radius: 10px;
-          box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
-          opacity: 0;
-          transform: scale(0.8);
-          transition: all 0.3s ease;
-          z-index: 10000;
-          white-space: nowrap;
-          pointer-events: none;
-          user-select: none;
-          -webkit-user-select: none;
-          -moz-user-select: none;
-          -ms-user-select: none;
-        `;
+  //       // Create a separate badge element
+  //       const badge = document.createElement('span');
+  //       badge.className = 'rewordly-replace-badge';
+  //       badge.textContent = 'Replaced';
+  //       badge.style.cssText = `
+  //         position: fixed;
+  //         top: ${range.getBoundingClientRect().top - 20}px;
+  //         left: ${range.getBoundingClientRect().right + 5}px;
+  //         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  //         color: white;
+  //         font-size: 10px;
+  //         font-weight: 600;
+  //         padding: 2px 6px;
+  //         border-radius: 10px;
+  //         box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+  //         opacity: 0;
+  //         transform: scale(0.8);
+  //         transition: all 0.3s ease;
+  //         z-index: 10000;
+  //         white-space: nowrap;
+  //         pointer-events: none;
+  //         user-select: none;
+  //         -webkit-user-select: none;
+  //         -moz-user-select: none;
+  //         -ms-user-select: none;
+  //       `;
         
-        // Add badge to body
-        document.body.appendChild(badge);
+  //       // Add badge to body
+  //       document.body.appendChild(badge);
         
-        // Replace the selected text with the new text and badge
-        range.deleteContents();
-        range.insertNode(container);
+  //       // Replace the selected text with the new text and badge
+  //       range.deleteContents();
+  //       range.insertNode(container);
         
-        // Clear the selection
-        selection.removeAllRanges();
+  //       // Clear the selection
+  //       selection.removeAllRanges();
         
-        // Show the badge with animation
-        setTimeout(() => {
-          badge.style.opacity = '1';
-          badge.style.transform = 'scale(1)';
-        }, 100);
+  //       // Show the badge with animation
+  //       setTimeout(() => {
+  //         badge.style.opacity = '1';
+  //         badge.style.transform = 'scale(1)';
+  //       }, 100);
         
-        // Hide the badge after 2 seconds
-        setTimeout(() => {
-          badge.style.opacity = '0';
-          badge.style.transform = 'scale(0.8)';
-          setTimeout(() => {
-            if (badge.parentNode) {
-              badge.remove();
-            }
-          }, 300);
-        }, 2000);
-      }
-    }
+  //       // Hide the badge after 2 seconds
+  //       setTimeout(() => {
+  //         badge.style.opacity = '0';
+  //         badge.style.transform = 'scale(0.8)';
+  //         setTimeout(() => {
+  //           if (badge.parentNode) {
+  //             badge.remove();
+  //           }
+  //         }, 300);
+  //       }, 2000);
+  //     }
+  //   }
     
-    // Close the modal after replacement
-    this.hideModal();
-  }
+  //   // Close the modal after replacement
+  //   this.hideModal();
+  // }
 }
 
 // Initialize the content script
