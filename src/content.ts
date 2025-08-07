@@ -199,9 +199,12 @@ class RewordlyContentScript {
       this.hideFloatingButton();
     }
     
-    // Hide modal if clicking outside
-    if (this.modal && !this.modal.contains(target) && !this.floatingButton?.contains(target)) {
-      this.hideModal();
+    // Hide modal if clicking outside or on the backdrop
+    if (this.modal && this.isModalOpen) {
+      // Check if click is on the modal backdrop (the modal element itself, not its content)
+      if (target === this.modal || (!this.modal.contains(target) && !this.floatingButton?.contains(target))) {
+        this.hideModal();
+      }
     }
   }
 
@@ -265,6 +268,14 @@ class RewordlyContentScript {
     
     closeBtn.addEventListener('click', this.hideModal.bind(this));
     copyBtn.addEventListener('click', this.copyRewrittenText.bind(this));
+    
+    // Add click handler to modal backdrop to close when clicking outside content
+    this.modal.addEventListener('click', (event) => {
+      // Only close if clicking on the backdrop itself, not on the content
+      if (event.target === this.modal) {
+        this.hideModal();
+      }
+    });
     
     document.body.appendChild(this.modal);
   }
