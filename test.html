@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rewordly Grammar Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .test-section {
+            margin: 30px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        .test-section h2 {
+            color: #333;
+            margin-top: 0;
+        }
+        .grammar-test {
+            background-color: #f0f8ff;
+        }
+        .rewrite-test {
+            background-color: #f0fff0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Rewordly Extension Test Page</h1>
+    <p>This page is designed to test the new grammar functionality in the Rewordly extension.</p>
+    
+    <div class="test-section grammar-test">
+        <h2>Grammar Test Section</h2>
+        <p>Select the text below to test the grammar correction feature:</p>
+        <p>I goes to the store yesterday. The weather was good and I buyed some groceries. Me and my friend we went to the park after that.</p>
+        <p>This sentence have bad grammar. It should be corrected to proper English.</p>
+        <p>They was going to the movies but they forgot their tickets at home.</p>
+    </div>
+    
+    <div class="test-section rewrite-test">
+        <h2>Rewrite Test Section</h2>
+        <p>Select the text below to test the rewrite feature:</p>
+        <p>The weather is nice today. I think I will go for a walk in the park. It's a beautiful day with clear skies and a gentle breeze.</p>
+        <p>This is a simple sentence that could be rewritten in different ways. The meaning should be preserved while improving the style.</p>
+        <p>I am writing a test document to verify that the extension works correctly. This helps ensure quality and functionality.</p>
+    </div>
+    
+    <div class="test-section">
+        <h2>Mixed Content Test</h2>
+        <p>This section contains both grammar errors and content that could be rewritten:</p>
+        <p>Yesterday I goes to the store and buyed some groceries. The weather was very nice and I decided to take a walk in the park. It was a beautiful day with clear skies and a gentle breeze that made the walk very enjoyable.</p>
+        <p>Instructions: Try selecting different parts of this text to test both the "Rewrite" and "Grammar" buttons. The grammar button should fix errors like "goes" (should be "went") and "buyed" (should be "bought"), while the rewrite button should improve the overall writing style.</p>
+    </div>
+    
+    <div class="test-section">
+        <h2>Short Text Test</h2>
+        <p>Test with very short selections:</p>
+        <p>I goes.</p>
+        <p>They was.</p>
+        <p>Me and him.</p>
+    </div>
+    
+    <div class="test-section">
+        <h2>Long Text Test</h2>
+        <p>Test with longer text selections:</p>
+        <p>The quick brown fox jumps over the lazy dog. This pangram contains every letter of the alphabet at least once. It is commonly used to test fonts and keyboards. The sentence is often used in typing practice and font testing because it contains all the letters of the English alphabet. This makes it useful for testing how different fonts display various characters. Additionally, it's a good test for keyboard layouts and typing speed. The phrase has been used since the late 19th century and remains popular today for various testing purposes.</p>
+    </div>
+    
+    <script>
+        // Add some helpful instructions
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Rewordly Test Page Loaded');
+            console.log('Instructions:');
+            console.log('1. Select any text on this page');
+            console.log('2. You should see two buttons: "Rewrite" and "Grammar"');
+            console.log('3. Click "Rewrite" to improve writing style');
+            console.log('4. Click "Grammar" to fix grammar errors');
+            console.log('5. The modal should show appropriate titles based on the operation');
+        });
+    </script>
+</body>
+</html>

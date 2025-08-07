@@ -7,6 +7,10 @@ export interface RewordlyResponse {
   rewritten: string;
 }
 
+export interface GrammarResponse {
+  corrected: string;
+}
+
 export interface RewriteOptions {
   preserveMeaning?: boolean;
 }
@@ -39,6 +43,28 @@ export class RewordlyAPIUtil {
     } catch (error) {
       console.error('Rewordly API error:', error);
       throw new Error(`Failed to rewrite text: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Fix grammar in text using Rewordly API
+   * @param text - The text to fix grammar for
+   * @returns Promise<string> - The grammar-corrected text
+   */
+  async grammarText(text: string): Promise<string> {
+    try {
+      const response = await this.makeRequest('/grammar', {
+        method: 'POST',
+        body: JSON.stringify({
+          text: text
+        })
+      });
+
+      const data = response as GrammarResponse;
+      return data.corrected || 'Failed to fix grammar.';
+    } catch (error) {
+      console.error('Rewordly Grammar API error:', error);
+      throw new Error(`Failed to fix grammar: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 

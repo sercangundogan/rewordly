@@ -12,11 +12,12 @@ class RewordlyContentScript {
     enabled: true
   };
   
-  private floatingButton: HTMLButtonElement | null = null;
+  private floatingButton: HTMLDivElement | null = null;
   private modal: HTMLDivElement | null = null;
   private selectedText: string = '';
   private isProcessing: boolean = false;
   private isModalOpen: boolean = false; // Add flag to track modal state
+  private currentOperation: 'rewrite' | 'grammar' = 'rewrite'; // Track current operation
   private observer: MutationObserver | null = null;
 
   // Store bound event handlers to allow proper removal
@@ -216,19 +217,34 @@ class RewordlyContentScript {
   }
 
   private createFloatingButton(): void {
-    this.floatingButton = document.createElement('button');
-    this.floatingButton.className = 'rewordly-floating-button';
+    this.floatingButton = document.createElement('div');
+    this.floatingButton.className = 'rewordly-floating-button-container';
     this.floatingButton.innerHTML = `
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-        <polyline points="14,2 14,8 20,8"></polyline>
-        <line x1="16" y1="13" x2="8" y2="13"></line>
-        <line x1="16" y1="17" x2="8" y2="17"></line>
-        <polyline points="10,9 9,9 8,9"></polyline>
-      </svg>
-      Rewrite
+      <button class="rewordly-rewrite-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14,2 14,8 20,8"></polyline>
+          <line x1="16" y1="13" x2="8" y2="13"></line>
+          <line x1="16" y1="17" x2="8" y2="17"></line>
+          <polyline points="10,9 9,9 8,9"></polyline>
+        </svg>
+        Rewrite
+      </button>
+      <button class="rewordly-grammar-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M9 12l2 2 4-4"></path>
+          <path d="M21 12c-1 0-2.4-.6-3-1.5-.6-.9-1.5-2.1-2-3.5-.5-1.4-.7-2.9-.7-4.5 0-1.6.2-3.1.7-4.5.5-1.4 1.4-2.6 2-3.5.6-.9 2-1.5 3-1.5s2.4.6 3 1.5c.6.9 1.5 2.1 2 3.5.5 1.4.7 2.9.7 4.5 0 1.6-.2 3.1-.7 4.5-.5 1.4-1.4 2.6-2 3.5-.6.9-2 1.5-3 1.5z"></path>
+        </svg>
+        Grammar
+      </button>
     `;
-    this.floatingButton.addEventListener('click', this.handleRewriteClick.bind(this));
+    
+    const rewriteBtn = this.floatingButton.querySelector('.rewordly-rewrite-btn') as HTMLButtonElement;
+    const grammarBtn = this.floatingButton.querySelector('.rewordly-grammar-btn') as HTMLButtonElement;
+    
+    rewriteBtn.addEventListener('click', this.handleRewriteClick.bind(this));
+    grammarBtn.addEventListener('click', this.handleGrammarClick.bind(this));
+    
     document.body.appendChild(this.floatingButton);
   }
 
@@ -238,7 +254,7 @@ class RewordlyContentScript {
     this.modal.innerHTML = `
       <div class="rewordly-modal-content">
         <div class="rewordly-modal-header">
-          <h3>Rewordly</h3>
+          <h3 class="rewordly-modal-title">Rewordly</h3>
           <button class="rewordly-close-btn">&times;</button>
         </div>
         <div class="rewordly-modal-body">
@@ -247,10 +263,10 @@ class RewordlyContentScript {
             <p class="rewordly-original-text"></p>
           </div>
           <div class="rewordly-rewritten">
-            <h4>Rewritten Text:</h4>
+            <h4 class="rewordly-result-title">Rewritten Text:</h4>
             <div class="rewordly-loading" style="display: none;">
               <div class="rewordly-spinner"></div>
-              <p>Rewriting...</p>
+              <p class="rewordly-loading-text">Processing...</p>
             </div>
             <p class="rewordly-rewritten-text"></p>
           </div>
@@ -293,34 +309,34 @@ class RewordlyContentScript {
       
       // Get viewport dimensions
       const viewportWidth = window.innerWidth;
-      const buttonWidth = 120;
-      const buttonHeight = 40;
+      const containerWidth = 260; // Approximate width for two buttons + gap
+      const containerHeight = 40;
       
       // Calculate position to the right of the selected text
       let buttonX = rects.right + 10;
       let buttonY = rects.top - 10;
       
-      // If button would go off the right edge, position it to the left of the selection
-      if (buttonX + buttonWidth > viewportWidth) {
-        buttonX = rects.left - buttonWidth - 10;
+      // If container would go off the right edge, position it to the left of the selection
+      if (buttonX + containerWidth > viewportWidth) {
+        buttonX = rects.left - containerWidth - 10;
       }
       
-      // If button would go off the left edge, position it at the left edge
+      // If container would go off the left edge, position it at the left edge
       if (buttonX < 0) {
         buttonX = 10;
       }
       
-      // If button would go off the top edge, position it below the selection
+      // If container would go off the top edge, position it below the selection
       if (buttonY < 0) {
         buttonY = rects.bottom + 10;
       }
       
-      // If button would go off the bottom edge, position it above the selection
-      if (buttonY + buttonHeight > window.innerHeight) {
-        buttonY = rects.top - buttonHeight - 10;
+      // If container would go off the bottom edge, position it above the selection
+      if (buttonY + containerHeight > window.innerHeight) {
+        buttonY = rects.top - containerHeight - 10;
       }
       
-      // Set the button position
+      // Set the container position
       this.floatingButton.style.left = `${buttonX}px`;
       this.floatingButton.style.top = `${buttonY}px`;
       this.floatingButton.classList.add('show');
@@ -343,6 +359,7 @@ class RewordlyContentScript {
     }
 
     console.log('Rewordly: Starting rewrite process');
+    this.currentOperation = 'rewrite';
     this.hideFloatingButton();
     this.showModal();
     this.isProcessing = true;
@@ -355,6 +372,34 @@ class RewordlyContentScript {
     } catch (error) {
       console.error('Rewordly: Error rewriting text:', error);
       this.showError('Failed to rewrite text. Please try again.');
+    } finally {
+      this.isProcessing = false;
+    }
+  }
+
+  private async handleGrammarClick(): Promise<void> {
+    console.log('Rewordly: Grammar button clicked');
+    console.log('Rewordly: Selected text:', this.selectedText);
+    
+    if (this.isProcessing) {
+      console.log('Rewordly: Already processing');
+      return;
+    }
+
+    console.log('Rewordly: Starting grammar correction process');
+    this.currentOperation = 'grammar';
+    this.hideFloatingButton();
+    this.showModal();
+    this.isProcessing = true;
+
+    try {
+      console.log('Rewordly: Calling Rewordly Grammar API');
+      const correctedText = await this.grammarText(this.selectedText);
+      console.log('Rewordly: Grammar API response received:', correctedText);
+      this.displayRewrittenText(correctedText);
+    } catch (error) {
+      console.error('Rewordly: Error correcting grammar:', error);
+      this.showError('Failed to correct grammar. Please try again.');
     } finally {
       this.isProcessing = false;
     }
@@ -379,18 +424,51 @@ class RewordlyContentScript {
     return data.rewritten || 'Failed to rewrite text.';
   }
 
+  private async grammarText(text: string): Promise<string> {
+    const response = await fetch('https://rewordly-web.vercel.app/api/grammar', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        text: text
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`API request failed: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.corrected || 'Failed to fix grammar.';
+  }
+
   private showModal(): void {
     if (!this.modal) return;
 
     const originalText = this.modal.querySelector('.rewordly-original-text') as HTMLParagraphElement;
     const rewrittenText = this.modal.querySelector('.rewordly-rewritten-text') as HTMLParagraphElement;
     const loading = this.modal.querySelector('.rewordly-loading') as HTMLDivElement;
+    const modalTitle = this.modal.querySelector('.rewordly-modal-title') as HTMLHeadingElement;
+    const resultTitle = this.modal.querySelector('.rewordly-result-title') as HTMLHeadingElement;
+    const loadingText = this.modal.querySelector('.rewordly-loading-text') as HTMLParagraphElement;
 
     originalText.textContent = this.selectedText;
     originalText.classList.add('show');
     rewrittenText.textContent = '';
     loading.classList.add('show');
     rewrittenText.classList.remove('show');
+    
+    // Set titles based on operation
+    if (this.currentOperation === 'grammar') {
+      modalTitle.textContent = 'Grammar Check';
+      resultTitle.textContent = 'Corrected Text:';
+      loadingText.textContent = 'Fixing grammar...';
+    } else {
+      modalTitle.textContent = 'Rewordly';
+      resultTitle.textContent = 'Rewritten Text:';
+      loadingText.textContent = 'Rewriting...';
+    }
 
     this.modal.classList.add('show');
     this.isModalOpen = true; // Set flag when modal opens
@@ -411,10 +489,24 @@ class RewordlyContentScript {
 
     const rewrittenText = this.modal.querySelector('.rewordly-rewritten-text') as HTMLParagraphElement;
     const loading = this.modal.querySelector('.rewordly-loading') as HTMLDivElement;
+    const modalTitle = this.modal.querySelector('.rewordly-modal-title') as HTMLHeadingElement;
+    const resultTitle = this.modal.querySelector('.rewordly-result-title') as HTMLHeadingElement;
+    const loadingText = this.modal.querySelector('.rewordly-loading-text') as HTMLParagraphElement;
 
     loading.classList.remove('show');
     rewrittenText.textContent = text;
     rewrittenText.classList.add('show');
+    
+    // Set titles based on operation
+    if (this.currentOperation === 'grammar') {
+      modalTitle.textContent = 'Grammar Check';
+      resultTitle.textContent = 'Corrected Text:';
+      loadingText.textContent = 'Fixing grammar...';
+    } else {
+      modalTitle.textContent = 'Rewordly';
+      resultTitle.textContent = 'Rewritten Text:';
+      loadingText.textContent = 'Rewriting...';
+    }
   }
 
   private showError(message: string): void {
@@ -422,11 +514,25 @@ class RewordlyContentScript {
 
     const rewrittenText = this.modal.querySelector('.rewordly-rewritten-text') as HTMLParagraphElement;
     const loading = this.modal.querySelector('.rewordly-loading') as HTMLDivElement;
+    const modalTitle = this.modal.querySelector('.rewordly-modal-title') as HTMLHeadingElement;
+    const resultTitle = this.modal.querySelector('.rewordly-result-title') as HTMLHeadingElement;
+    const loadingText = this.modal.querySelector('.rewordly-loading-text') as HTMLParagraphElement;
 
     loading.classList.remove('show');
     rewrittenText.textContent = `Error: ${message}`;
     rewrittenText.classList.add('show');
     rewrittenText.classList.add('error');
+    
+    // Set titles based on operation
+    if (this.currentOperation === 'grammar') {
+      modalTitle.textContent = 'Grammar Check';
+      resultTitle.textContent = 'Corrected Text:';
+      loadingText.textContent = 'Fixing grammar...';
+    } else {
+      modalTitle.textContent = 'Rewordly';
+      resultTitle.textContent = 'Rewritten Text:';
+      loadingText.textContent = 'Rewriting...';
+    }
   }
 
   private copyRewrittenText(): void {
@@ -544,4 +650,4 @@ class RewordlyContentScript {
 }
 
 // Initialize the content script
-new RewordlyContentScript(); 
+new RewordlyContentScript();
