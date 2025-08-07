@@ -139,10 +139,10 @@
 
 .rewordly-rewrite-btn svg,
 .rewordly-grammar-btn svg {
-  width: 16px !important;
-  height: 16px !important;
+  width: 18px !important;
+  height: 18px !important;
   stroke: currentColor !important;
-  stroke-width: 2 !important;
+  stroke-width: 2.5 !important;
   fill: none !important;
   display: inline-block !important;
   vertical-align: middle !important;
@@ -225,10 +225,10 @@
 }
 
 .rewordly-floating-button svg {
-  width: 16px !important;
-  height: 16px !important;
+  width: 18px !important;
+  height: 18px !important;
   stroke: currentColor !important;
-  stroke-width: 2 !important;
+  stroke-width: 2.5 !important;
   fill: none !important;
   display: inline-block !important;
   vertical-align: middle !important;
