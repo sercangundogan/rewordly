@@ -2,7 +2,7 @@
 
 /**
  * Build script for Rewordly Chrome Extension
- * Compiles TypeScript and copies necessary files
+ * Uses Webpack for proper bundling, minification, and obfuscation
  */
 
 const fs = require('fs');
@@ -10,7 +10,6 @@ const path = require('path');
 const { execSync } = require('child_process');
 require('dotenv').config();
 
-const SRC_DIR = 'src';
 const DIST_DIR = 'dist';
 
 // Colors for console output
@@ -27,113 +26,19 @@ function log(message, color = 'reset') {
   console.log(`${colors[color]}${message}${colors.reset}`);
 }
 
-function copyFile(src, dest) {
-  try {
-    fs.copyFileSync(src, dest);
-    log(`✓ Copied ${src} to ${dest}`, 'green');
-  } catch (error) {
-    log(`✗ Failed to copy ${src}: ${error.message}`, 'red');
-  }
-}
-
-function createDirectory(dir) {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-    log(`✓ Created directory: ${dir}`, 'green');
-  }
-}
-
-function cleanDirectory(dir) {
-  if (fs.existsSync(dir)) {
-    fs.rmSync(dir, { recursive: true, force: true });
-    log(`✓ Cleaned directory: ${dir}`, 'yellow');
-  }
-  createDirectory(dir);
-}
-
-function injectEnvironmentVariables(filePath) {
-  try {
-    let content = fs.readFileSync(filePath, 'utf8');
-    
-    // Remove hardcoded API key for security - users must provide their own
-    const apiKey = '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'; // Empty string - users must set their own key
-    const model = 'gpt-3.5-turbo';
-    const enabled = 'true';
-    
-    // Replace process.env references with literal values
-    content = content.replace(/process\.env\['OPENAI_API_KEY'\]/g, `'${apiKey}'`);
-    content = content.replace(/process\.env\['DEFAULT_MODEL'\]/g, `'${model}'`);
-    content = content.replace(/process\.env\['ENABLED_BY_DEFAULT'\]/g, `'${enabled}'`);
-    
-    fs.writeFileSync(filePath, content);
-    log(`✓ Injected environment variables into ${filePath}`, 'green');
-  } catch (error) {
-    log(`✗ Failed to inject environment variables into ${filePath}: ${error.message}`, 'red');
-  }
-}
-
 function build() {
-  log('🚀 Starting Rewordly build process...', 'blue');
-  
-  // Check if .env file exists
-  if (fs.existsSync('.env')) {
-    log('📄 Found .env file, will inject environment variables', 'blue');
-  } else {
-    log('⚠️  No .env file found, using default values', 'yellow');
-  }
-  
-  // Clean and create dist directory
-  cleanDirectory(DIST_DIR);
+  log('🚀 Starting Rewordly build process with Webpack...', 'blue');
   
   try {
-    // Compile TypeScript
-    log('📝 Compiling TypeScript...', 'blue');
-    execSync('npx tsc', { stdio: 'inherit' });
-    log('✓ TypeScript compilation completed', 'green');
-    
-    // Inject environment variables into compiled files
-    if (fs.existsSync('.env')) {
-      log('🔧 Injecting environment variables...', 'blue');
-      const jsFiles = ['background.js', 'content.js', 'popup.js'];
-      jsFiles.forEach(file => {
-        const filePath = path.join(DIST_DIR, file);
-        if (fs.existsSync(filePath)) {
-          injectEnvironmentVariables(filePath);
-        }
-      });
-    }
-    
-    // Copy necessary files
-    log('📋 Copying files...', 'blue');
-    
-    // Copy HTML files from src
-    const htmlFiles = fs.readdirSync(SRC_DIR).filter(file => file.endsWith('.html'));
-    htmlFiles.forEach(file => {
-      copyFile(path.join(SRC_DIR, file), path.join(DIST_DIR, file));
-    });
-    
-    // Copy CSS file
-    if (fs.existsSync('styles.css')) {
-      copyFile('styles.css', path.join(DIST_DIR, 'styles.css'));
-    }
-    
-    // Copy manifest
-    if (fs.existsSync('manifest.json')) {
-      copyFile('manifest.json', path.join(DIST_DIR, 'manifest.json'));
-    }
-    
-    // Copy icons directory if it exists
-    if (fs.existsSync('icons')) {
-      createDirectory(path.join(DIST_DIR, 'icons'));
-      const iconFiles = fs.readdirSync('icons');
-      iconFiles.forEach(file => {
-        copyFile(path.join('icons', file), path.join(DIST_DIR, 'icons', file));
-      });
-    }
+    // Run webpack build
+    log('📝 Building with Webpack...', 'blue');
+    execSync('npm run build', { stdio: 'inherit' });
+    log('✓ Webpack build completed', 'green');
     
     log('🎉 Build completed successfully!', 'green');
     log(`📁 Output directory: ${DIST_DIR}`, 'blue');
     log('💡 Load the extension from the dist folder in Chrome', 'yellow');
+    log('🔒 Code is now properly bundled, minified, and obfuscated', 'green');
     
   } catch (error) {
     log(`❌ Build failed: ${error.message}`, 'red');

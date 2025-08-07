@@ -118,4 +118,4 @@ export async function rewriteText(
 ): Promise<string> {
   const rewordly = createRewordlyAPIUtil();
   return rewordly.rewriteText(text, options);
-} 
+}

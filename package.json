@@ -4,8 +4,9 @@
   "description": "A Chrome extension that rewrites selected text using Rewordly API",
   "main": "src/content.ts",
   "scripts": {
-    "build": "node build.js",
-    "dev": "tsc --watch",
+    "build": "webpack --mode=production",
+    "build:dev": "webpack --mode=development",
+    "dev": "webpack --mode=development --watch",
     "clean": "if exist dist rmdir /s /q dist && mkdir dist",
     "package": "npm run clean && npm run build && powershell Compress-Archive -Path dist\\* -DestinationPath rewordly.zip -Force",
     "lint": "eslint src/**/*.ts",
@@ -24,9 +25,14 @@
     "@types/node": "^24.1.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
+    "copy-webpack-plugin": "^12.0.2",
     "dotenv": "^17.2.1",
     "eslint": "^8.0.0",
-    "typescript": "^5.0.0"
+    "terser-webpack-plugin": "^5.3.10",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.0.0",
+    "webpack": "^5.89.0",
+    "webpack-cli": "^5.1.4"
   },
   "repository": {
     "type": "git",

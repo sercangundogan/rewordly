@@ -3,141 +3,163 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Rewordly Demo</title>
+    <title>Rewordly Extension Demo</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 40px 20px;
             line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
             color: #333;
         }
-        
-        h1 {
-            color: #667eea;
-            text-align: center;
-            margin-bottom: 40px;
-        }
-        
-        .demo-section {
-            margin-bottom: 40px;
-            padding: 20px;
-            border: 1px solid #e5e7eb;
-            border-radius: 8px;
-            background: #f9fafb;
-        }
-        
-        .demo-section h2 {
-            color: #374151;
-            margin-top: 0;
-        }
-        
-        .test-text {
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
             background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 2.5em;
+            font-weight: 700;
+        }
+        .header p {
+            margin: 10px 0 0 0;
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        .content {
+            padding: 40px;
+        }
+        .feature {
+            margin-bottom: 30px;
             padding: 20px;
-            border-radius: 6px;
+            border-radius: 8px;
+            background: #f8f9fa;
             border-left: 4px solid #667eea;
-            margin: 20px 0;
         }
-        
+        .feature h3 {
+            margin: 0 0 10px 0;
+            color: #667eea;
+        }
+        .demo-text {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border: 2px dashed #ddd;
+        }
+        .demo-text p {
+            margin: 0;
+            font-size: 1.1em;
+            line-height: 1.8;
+        }
         .instructions {
-            background: #eff6ff;
-            border: 1px solid #3b82f6;
-            border-radius: 6px;
-            padding: 16px;
+            background: #e3f2fd;
+            padding: 20px;
+            border-radius: 8px;
             margin: 20px 0;
         }
-        
         .instructions h3 {
-            margin-top: 0;
-            color: #1e40af;
+            margin: 0 0 15px 0;
+            color: #1976d2;
         }
-        
         .instructions ol {
             margin: 0;
             padding-left: 20px;
         }
-        
         .instructions li {
             margin-bottom: 8px;
         }
-        
-        .note {
-            background: #fef3c7;
-            border: 1px solid #f59e0b;
-            border-radius: 6px;
-            padding: 16px;
+        .highlight {
+            background: #fff3cd;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #ffc107;
             margin: 20px 0;
         }
-        
-        .note strong {
-            color: #92400e;
+        .highlight strong {
+            color: #856404;
+        }
+        .cta {
+            text-align: center;
+            margin-top: 40px;
+        }
+        .cta-button {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 30px;
+            text-decoration: none;
+            border-radius: 25px;
+            font-weight: 600;
+            font-size: 1.1em;
+            transition: transform 0.2s;
+        }
+        .cta-button:hover {
+            transform: translateY(-2px);
         }
     </style>
 </head>
 <body>
-    <h1>Rewordly Extension Demo</h1>
-    
-    <div class="instructions">
-        <h3>How to Test the Extension</h3>
-        <ol>
-            <li>Make sure the Rewordly extension is installed and enabled</li>
-            <li>Configure your OpenAI API key in the extension settings</li>
-            <li>Select any text below to see the floating "Rewrite" button</li>
-            <li>Click the button to rewrite the selected text</li>
-        </ol>
-    </div>
-    
-    <div class="note">
-        <strong>Note:</strong> You need a valid OpenAI API key to use this extension. 
-        Get one from <a href="https://platform.openai.com/api-keys" target="_blank">OpenAI Platform</a>.
-    </div>
-    
-    <div class="demo-section">
-        <h2>Sample Text for Testing</h2>
-        <div class="test-text">
-            <p>This is a sample paragraph with some grammatical issues and unclear phrasing that could benefit from rewriting. The sentence structure is not optimal and there are several areas where the text could be improved for better clarity and readability.</p>
-            
-            <p>Here's another example of text that needs improvement. The writing style is inconsistent and the flow between sentences could be smoother. This demonstrates how the Rewordly extension can help improve your writing.</p>
+    <div class="container">
+        <div class="header">
+            <h1>Rewordly Extension</h1>
+            <p>Transform your writing with AI-powered text rewriting</p>
         </div>
-    </div>
-    
-    <div class="demo-section">
-        <h2>More Test Content</h2>
-        <div class="test-text">
-            <p>The quick brown fox jumps over the lazy dog. This pangram contains every letter of the alphabet at least once. It's commonly used to test fonts and keyboards.</p>
+        
+        <div class="content">
+            <div class="feature">
+                <h3>🎯 Smart Text Selection</h3>
+                <p>Select any text on any webpage and instantly get AI-powered rewriting suggestions. The extension works seamlessly across all websites.</p>
+            </div>
             
-            <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>
-        </div>
-    </div>
-    
-    <div class="demo-section">
-        <h2>Technical Writing Example</h2>
-        <div class="test-text">
-            <p>The function takes a parameter and returns a value. It does this by processing the input data and applying the necessary transformations. The result is then formatted according to the specified requirements.</p>
+            <div class="feature">
+                <h3>✨ Intelligent Rewriting</h3>
+                <p>Our advanced AI model improves grammar, clarity, and fluency while preserving the original meaning of your text.</p>
+            </div>
             
-            <p>When implementing this feature, developers should consider the performance implications and ensure proper error handling is in place. The code should be well-documented and follow established coding conventions.</p>
-        </div>
-    </div>
-    
-    <div class="demo-section">
-        <h2>Business Communication</h2>
-        <div class="test-text">
-            <p>We are writing to inform you about the upcoming changes to our service. These modifications will improve the user experience and provide better functionality. We appreciate your continued support and feedback.</p>
+            <div class="feature">
+                <h3>🚀 Instant Results</h3>
+                <p>Get rewritten text in seconds with our optimized backend API. No complex setup required.</p>
+            </div>
             
-            <p>The meeting will be held next week to discuss the project timeline and deliverables. All team members are required to attend and prepare their status updates in advance.</p>
+            <div class="demo-text">
+                <h3>Try it yourself:</h3>
+                <p>Select this text to see the Rewordly extension in action. The floating "Rewrite" button will appear when you select text, and clicking it will show you the AI-improved version.</p>
+            </div>
+            
+            <div class="instructions">
+                <h3>How to Use:</h3>
+                <ol>
+                    <li>Install the Rewordly extension in Chrome</li>
+                    <li>Navigate to any webpage with text content</li>
+                    <li>Select the text you want to rewrite</li>
+                    <li>Click the "Rewrite" button that appears</li>
+                    <li>Review the improved text in the modal</li>
+                    <li>Copy the rewritten text to your clipboard</li>
+                </ol>
+            </div>
+            
+            <div class="highlight">
+                <strong>No API Key Required!</strong><br>
+                The extension uses our secure backend API, so you don't need to worry about API keys or costs.
+            </div>
+            
+            <div class="cta">
+                <a href="#" class="cta-button">Install Rewordly Extension</a>
+            </div>
         </div>
-    </div>
-    
-    <div class="note">
-        <strong>Tips:</strong>
-        <ul>
-            <li>Try selecting different amounts of text (short phrases, sentences, paragraphs)</li>
-            <li>Test with various writing styles and complexity levels</li>
-            <li>Compare the original and rewritten versions to see the improvements</li>
-            <li>Use the "Copy" and "Replace" buttons to work with the rewritten text</li>
-        </ul>
     </div>
 </body>
 </html> 
