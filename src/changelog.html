@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Rewordly - What's New</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 40px 20px;
+      color: #1f2937;
+    }
+
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+      overflow: hidden;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 40px 32px;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 32px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      letter-spacing: -0.025em;
+    }
+
+    .header p {
+      font-size: 16px;
+      opacity: 0.9;
+    }
+
+    .version-badge {
+      display: inline-block;
+      background: rgba(255, 255, 255, 0.2);
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      margin-top: 12px;
+    }
+
+    .content {
+      padding: 32px;
+    }
+
+    .section {
+      margin-bottom: 32px;
+    }
+
+    .section:last-child {
+      margin-bottom: 0;
+    }
+
+    .section-title {
+      font-size: 20px;
+      font-weight: 700;
+      color: #1f2937;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .section-title::before {
+      content: '';
+      width: 4px;
+      height: 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-radius: 2px;
+    }
+
+    .changelog-list {
+      list-style: none;
+    }
+
+    .changelog-item {
+      padding: 12px 0;
+      padding-left: 24px;
+      position: relative;
+      line-height: 1.6;
+      color: #4b5563;
+      display: flex;
+      align-items: center;
+      
+    }
+
+    .changelog-item::before {
+      content: '✓';
+      position: absolute;
+      left: 0;
+      color: #10b981;
+      font-weight: bold;
+      font-size: 16px;
+    }
+
+    .changelog-item.new {
+      color: #1f2937;
+      font-weight: 500;
+    }
+
+    .changelog-item.new::before {
+      content: '✨';
+    }
+
+    .changelog-item.fix {
+      color: #1f2937;
+    }
+
+    .changelog-item.fix::before {
+      content: '🔧';
+    }
+
+    .footer {
+      background: #f8fafc;
+      padding: 24px 32px;
+      border-top: 1px solid #e5e7eb;
+      text-align: center;
+    }
+
+    .footer p {
+      color: #6b7280;
+      font-size: 14px;
+      margin-bottom: 16px;
+    }
+
+    .button {
+      display: inline-block;
+      padding: 12px 24px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-decoration: none;
+      margin-top: 8px;
+    }
+
+    .button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+    }
+
+    .button:active {
+      transform: translateY(0);
+    }
+
+    .close-button {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      background: rgba(255, 255, 255, 0.2);
+      border: none;
+      color: white;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+    }
+
+    .close-button:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+
+    .header {
+      position: relative;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <button class="close-button" id="closeBtn" title="Close">×</button>
+      <h1>What's New in Rewordly</h1>
+      <p>We've made some exciting updates!</p>
+      <span class="version-badge" id="versionBadge">Version 1.0.1</span>
+    </div>
+    
+    <div class="content">
+      <div class="section">
+        <h2 class="section-title">New Features</h2>
+        <ul class="changelog-list">
+          <li class="changelog-item new">Combined Rewrite & Grammar button with smart positioning</li>
+          <li class="changelog-item new">Improved button positioning for all input types (input, textarea, contenteditable)</li>
+          <li class="changelog-item new">Visual indicator for grammar mode (green quarter moon)</li>
+          <li class="changelog-item new">Enhanced tooltip with helpful instructions</li>
+        </ul>
+      </div>
+
+      <div class="section">
+        <h2 class="section-title">Improvements</h2>
+        <ul class="changelog-list">
+          <li class="changelog-item fix">Fixed button positioning issues in various websites</li>
+          <li class="changelog-item fix">Better text selection detection across different HTML elements</li>
+          <li class="changelog-item fix">Improved accuracy for input and textarea caret positioning</li>
+          <li class="changelog-item fix">Enhanced compatibility with dynamic content</li>
+        </ul>
+      </div>
+    </div>
+    
+    <div class="footer">
+      <p>Have feedback or suggestions? We'd love to hear from you!</p>
+      <a href="mailto:sercangundogan35@gmail.com?subject=Rewordly Feedback" class="button">Send Feedback</a>
+    </div>
+  </div>
+
+  <script src="changelog.js"></script>
+</body>
+</html>
+

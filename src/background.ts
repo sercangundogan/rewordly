@@ -3,16 +3,42 @@
  * Handles extension lifecycle and background tasks
  */
 
-// Handle extension installation
-chrome.runtime.onInstalled.addListener((details) => {
+// Handle extension installation and updates
+chrome.runtime.onInstalled.addListener(async (details) => {
+  const manifest = chrome.runtime.getManifest();
+  const currentVersion = manifest.version;
+
   if (details.reason === 'install') {
     // Set default configuration
-    chrome.storage.sync.set({
+    await chrome.storage.sync.set({
       rewordlyEnabled: true
     });
     
-    // Open welcome page or show notification
+    // Store current version as last viewed and mark welcome as shown
+    await chrome.storage.local.set({
+      lastViewedVersion: currentVersion,
+      welcomeShown: true
+    });
+    
+    // Open welcome page for new installs
+    chrome.tabs.create({
+      url: chrome.runtime.getURL('welcome.html')
+    });
+    
     console.log('Rewordly extension installed successfully!');
+  } else if (details.reason === 'update') {
+    // Check if user has seen this version's changelog
+    const result = await chrome.storage.local.get(['lastViewedVersion']);
+    const lastViewedVersion = result['lastViewedVersion'] as string | undefined;
+
+    // If this is a new version, show changelog
+    if (lastViewedVersion !== currentVersion) {
+      chrome.tabs.create({
+        url: chrome.runtime.getURL('changelog.html')
+      });
+      
+      console.log(`Rewordly updated from ${details.previousVersion} to ${currentVersion}`);
+    }
   }
 });
 

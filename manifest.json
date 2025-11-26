@@ -36,7 +36,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["popup.html"],
+      "resources": ["popup.html", "changelog.html", "welcome.html"],
       "matches": ["http://*/*", "https://*/*"]
     }
   ]

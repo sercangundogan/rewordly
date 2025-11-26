@@ -9,7 +9,9 @@ module.exports = (env, argv) => {
     entry: {
       background: './src/background.ts',
       content: './src/content.ts',
-      popup: './src/popup.ts'
+      popup: './src/popup.ts',
+      changelog: './src/changelog.ts',
+      welcome: './src/welcome.ts'
     },
     output: {
       path: path.resolve(__dirname, 'dist'),
@@ -63,6 +65,8 @@ module.exports = (env, argv) => {
         patterns: [
           { from: 'manifest.json', to: 'manifest.json' },
           { from: 'src/popup.html', to: 'popup.html' },
+          { from: 'src/welcome.html', to: 'welcome.html' },
+          { from: 'src/changelog.html', to: 'changelog.html' },
           { from: 'styles.css', to: 'styles.css' },
           { from: 'icons', to: 'icons', noErrorOnMissing: true }
         ]

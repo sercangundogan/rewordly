@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Welcome to Rewordly</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 40px 20px;
+      color: #1f2937;
+    }
+
+    .container {
+      max-width: 700px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+      overflow: hidden;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 50px 32px;
+      text-align: center;
+      position: relative;
+    }
+
+    .header h1 {
+      font-size: 36px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      letter-spacing: -0.025em;
+    }
+
+    .header p {
+      font-size: 18px;
+      opacity: 0.95;
+      line-height: 1.5;
+    }
+
+    .icon-container {
+      width: 80px;
+      height: 80px;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 20px;
+      margin: 0 auto 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 40px;
+    }
+
+    .content {
+      padding: 40px 32px;
+    }
+
+    .section {
+      margin-bottom: 32px;
+    }
+
+    .section:last-child {
+      margin-bottom: 0;
+    }
+
+    .section-title {
+      font-size: 22px;
+      font-weight: 700;
+      color: #1f2937;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .section-title::before {
+      content: '';
+      width: 4px;
+      height: 24px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-radius: 2px;
+    }
+
+    .feature-list {
+      list-style: none;
+    }
+
+    .feature-item {
+      padding: 16px 0;
+      padding-left: 32px;
+      position: relative;
+      line-height: 1.6;
+      color: #4b5563;
+      display: flex;
+      align-items: center;
+    }
+
+    .feature-item::before {
+      content: '✨';
+      position: absolute;
+      left: 0;
+      font-size: 20px;
+    }
+
+    .feature-item strong {
+      color: #1f2937;
+      font-weight: 600;
+    }
+
+    .how-to-use {
+      background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+      border: 1px solid #10b981;
+      border-radius: 12px;
+      padding: 24px;
+      margin-top: 24px;
+    }
+
+    .how-to-use h3 {
+      color: #059669;
+      font-size: 18px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .how-to-use h3::before {
+      content: '💡';
+      font-size: 20px;
+    }
+
+    .steps {
+      list-style: none;
+      counter-reset: step-counter;
+    }
+
+    .step {
+      counter-increment: step-counter;
+      padding: 12px 0;
+      padding-left: 40px;
+      position: relative;
+      color: #059669;
+      line-height: 1.6;
+      display: flex;
+      align-items: center;
+    }
+
+    .step::before {
+      content: counter(step-counter);
+      position: absolute;
+      left: 0;
+      width: 28px;
+      height: 28px;
+      background: #10b981;
+      color: white;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .footer {
+      background: #f8fafc;
+      padding: 32px;
+      border-top: 1px solid #e5e7eb;
+      text-align: center;
+    }
+
+    .footer p {
+      color: #6b7280;
+      font-size: 14px;
+      margin-bottom: 20px;
+      line-height: 1.6;
+    }
+
+    .footer a:not(.button) {
+      color: #667eea;
+      text-decoration: none;
+      font-weight: 600;
+      transition: color 0.2s;
+    }
+
+    .footer a:not(.button):hover {
+      color: #764ba2;
+      text-decoration: underline;
+    }
+
+    .button {
+      display: inline-block;
+      padding: 14px 28px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-decoration: none;
+      margin-top: 8px;
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+    }
+
+    .button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
+    }
+
+    .button:active {
+      transform: translateY(0);
+    }
+
+    .close-button {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      background: rgba(255, 255, 255, 0.2);
+      border: none;
+      color: white;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+    }
+
+    .close-button:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+
+    .header {
+      position: relative;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <button class="close-button" id="closeBtn" title="Close">×</button>
+      <div class="icon-container">✍️</div>
+      <h1>Welcome to Rewordly!</h1>
+      <p>Your AI-powered writing assistant is ready to help you improve your text.</p>
+    </div>
+    
+    <div class="content">
+      <div class="section">
+        <h2 class="section-title">What is Rewordly?</h2>
+        <p style="color: #4b5563; line-height: 1.7; margin-bottom: 16px;">
+          Rewordly helps you rewrite and improve your text with AI. Simply select any text on any website, 
+          and get instant suggestions to make your writing clearer, more professional, and error-free.
+        </p>
+      </div>
+
+      <div class="section">
+        <h2 class="section-title">Key Features</h2>
+        <ul class="feature-list">
+          <li class="feature-item">
+            <strong>Smart Rewriting:</strong> Improve clarity, tone, and style of your text
+          </li>
+          <li class="feature-item">
+            <strong>Grammar Check:</strong> Fix grammatical errors and improve sentence structure
+          </li>
+          <li class="feature-item">
+            <strong>Universal Compatibility:</strong> Works on any website - emails, documents, social media, and more
+          </li>
+          <li class="feature-item">
+            <strong>One-Click Access:</strong> Select text and click the floating button to get started
+          </li>
+        </ul>
+      </div>
+
+      <div class="how-to-use">
+        <h3>How to Use</h3>
+        <ol class="steps">
+          <li class="step">Select any text on any webpage</li>
+          <li class="step">Click the "Rewrite" button that appears</li>
+          <li class="step">Click the green area or right-click for grammar-only mode</li>
+          <li class="step">Review the improved text and copy it to use anywhere</li>
+        </ol>
+      </div>
+    </div>
+    
+    <div class="footer">
+      <p>
+        Need help or have suggestions? We'd love to hear from you!<br>
+        <a href="mailto:sercangundogan35@gmail.com?subject=Rewordly Feedback">Send us your feedback</a>
+      </p>
+      <a href="#" class="button" id="getStartedBtn">Get Started</a>
+    </div>
+  </div>
+
+  <script src="welcome.js"></script>
+</body>
+</html>
+
