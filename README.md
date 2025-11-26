@@ -1,6 +1,6 @@
 # Rewordly Chrome Extension
 
-A Chrome extension that rewrites selected text using the Rewordly API to improve grammar, clarity, and fluency.
+A Chrome extension that rewrites selected text instantly with advanced AI to enhance clarity, tone, and readability.
 
 ## Features
 

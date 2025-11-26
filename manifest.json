@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Rewordly",
-  "version": "1.0.1",
-  "description": "Rewrite selected text using Rewordly API to improve grammar, clarity, and fluency.",
+  "version": "1.0.2",
+  "description": "Rewrite selected text instantly with advanced AI to enhance clarity, tone, and readability.",
   "permissions": [
     "activeTab",
     "storage",

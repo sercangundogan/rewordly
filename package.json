@@ -1,7 +1,7 @@
 {
   "name": "rewordly",
-  "version": "1.0.0",
-  "description": "A Chrome extension that rewrites selected text using Rewordly API",
+  "version": "1.0.2",
+  "description": "Rewrite selected text instantly with advanced AI to enhance clarity, tone, and readability.",
   "main": "src/content.ts",
   "scripts": {
     "build": "webpack --mode=production",
