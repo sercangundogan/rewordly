@@ -220,19 +220,76 @@ class RewordlyContentScript {
     this.floatingButton = document.createElement('div');
     this.floatingButton.className = 'rewordly-floating-button-container';
     this.floatingButton.innerHTML = `
-      <button class="rewordly-rewrite-btn">
-        Rewrite
-      </button>
-      <button class="rewordly-grammar-btn">
-        Grammar
+      <button class="rewordly-combined-btn">
+        <span class="rewordly-btn-text">Rewrite</span>
+        <span class="rewordly-btn-grammar-indicator">
+          <svg class="rewordly-grammar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M20 6L9 17l-5-5"/>
+          </svg>
+        </span>
       </button>
     `;
     
-    const rewriteBtn = this.floatingButton.querySelector('.rewordly-rewrite-btn') as HTMLButtonElement;
-    const grammarBtn = this.floatingButton.querySelector('.rewordly-grammar-btn') as HTMLButtonElement;
+    // Create tooltip element outside the button
+    const tooltip = document.createElement('span');
+    tooltip.className = 'rewordly-tooltip';
+    tooltip.textContent = 'Click to rewrite. Right-click or click the green area for grammar only.';
+    document.body.appendChild(tooltip);
     
-    rewriteBtn.addEventListener('click', this.handleRewriteClick.bind(this));
-    grammarBtn.addEventListener('click', this.handleGrammarClick.bind(this));
+    const combinedBtn = this.floatingButton.querySelector('.rewordly-combined-btn') as HTMLButtonElement;
+    
+    // Handle click position to determine rewrite vs grammar
+    combinedBtn.addEventListener('click', (event) => {
+      const rect = combinedBtn.getBoundingClientRect();
+      const clickX = event.clientX - rect.left;
+      const buttonWidth = rect.width;
+      const rightQuarterStart = buttonWidth * 0.75;
+      
+      // If click is in the right 25% (green area), trigger grammar
+      if (clickX >= rightQuarterStart) {
+        this.handleGrammarClick();
+      } else {
+        // Otherwise, trigger rewrite
+        this.handleRewriteClick();
+      }
+    });
+    
+    // Handle right-click for grammar
+    combinedBtn.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      this.handleGrammarClick();
+    });
+    
+    // Tooltip functionality
+    const showTooltip = () => {
+      const rect = combinedBtn.getBoundingClientRect();
+      const tooltipLeft = rect.left + (rect.width / 2);
+      const tooltipTop = rect.top - 5;
+      tooltip.style.left = `${tooltipLeft}px`;
+      tooltip.style.top = `${tooltipTop}px`;
+      tooltip.classList.add('show');
+    };
+    
+    const hideTooltip = () => {
+      tooltip.classList.remove('show');
+    };
+    
+    combinedBtn.addEventListener('mouseenter', showTooltip);
+    combinedBtn.addEventListener('mouseleave', hideTooltip);
+    
+    // Update tooltip position on scroll/resize
+    const updateTooltipPosition = () => {
+      if (tooltip.classList.contains('show')) {
+        const rect = combinedBtn.getBoundingClientRect();
+        const tooltipLeft = rect.left + (rect.width / 2);
+        const tooltipTop = rect.top - 5;
+        tooltip.style.left = `${tooltipLeft}px`;
+        tooltip.style.top = `${tooltipTop}px`;
+      }
+    };
+    
+    window.addEventListener('scroll', updateTooltipPosition, true);
+    window.addEventListener('resize', updateTooltipPosition);
     
     document.body.appendChild(this.floatingButton);
   }
@@ -298,7 +355,7 @@ class RewordlyContentScript {
       
       // Get viewport dimensions
       const viewportWidth = window.innerWidth;
-      const containerWidth = 260; // Approximate width for two buttons + gap
+      const containerWidth = 120; // Approximate width for single combined button
       const containerHeight = 40;
       
       // Calculate position to the right of the selected text
