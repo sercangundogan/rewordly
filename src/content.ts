@@ -347,52 +347,358 @@ class RewordlyContentScript {
       return;
     }
 
-    const selection = window.getSelection();
-    
-    if (selection && selection.rangeCount > 0) {
-      const range = selection.getRangeAt(0);
-      const rects = range.getBoundingClientRect();
-      
+    // Special handling for input/textarea elements - window.getSelection/range
+    // is unreliable for these, so we use their native selection APIs instead.
+    const activeElement = document.activeElement as (HTMLInputElement | HTMLTextAreaElement | null);
+    if (
+      activeElement &&
+      (activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement) &&
+      activeElement.selectionStart !== null &&
+      activeElement.selectionEnd !== null &&
+      activeElement.selectionEnd > activeElement.selectionStart
+    ) {
+      const caretRect = this.getInputTextareaSelectionRect(activeElement);
+
+      if (!caretRect) {
+        return;
+      }
+
       // Get viewport dimensions
       const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
       const containerWidth = 120; // Approximate width for single combined button
       const containerHeight = 40;
-      
-      // Calculate position to the right of the selected text
-      let buttonX = rects.right + 10;
-      let buttonY = rects.top - 10;
-      
-      // If container would go off the right edge, position it to the left of the selection
+
+      // Position button to the right of the caret
+      let buttonX = caretRect.right + 10;
+      let buttonY = caretRect.top - 10;
+
+      // Keep within viewport bounds (same logic as below)
       if (buttonX + containerWidth > viewportWidth) {
-        buttonX = rects.left - containerWidth - 10;
+        buttonX = caretRect.left - containerWidth - 10;
       }
-      
-      // If container would go off the left edge, position it at the left edge
+
       if (buttonX < 0) {
         buttonX = 10;
       }
-      
-      // If container would go off the top edge, position it below the selection
+
       if (buttonY < 0) {
-        buttonY = rects.bottom + 10;
+        buttonY = caretRect.bottom + 10;
       }
-      
-      // If container would go off the bottom edge, position it above the selection
-      if (buttonY + containerHeight > window.innerHeight) {
-        buttonY = rects.top - containerHeight - 10;
+
+      if (buttonY + containerHeight > viewportHeight) {
+        buttonY = caretRect.top - containerHeight - 10;
       }
-      
-      // Set the container position
+
+      buttonX = Math.max(10, Math.min(buttonX, viewportWidth - containerWidth - 10));
+      buttonY = Math.max(10, Math.min(buttonY, viewportHeight - containerHeight - 10));
+
       this.floatingButton.style.left = `${buttonX}px`;
       this.floatingButton.style.top = `${buttonY}px`;
       this.floatingButton.classList.add('show');
+      return;
     }
+
+    const selection = window.getSelection();
+    
+    if (!selection || selection.rangeCount === 0) {
+      return;
+    }
+    
+    const range = selection.getRangeAt(0);
+    let rect: DOMRect | null = null;
+    
+    // Method 1: Try getClientRects() - most reliable for multi-line selections
+    // Use the last rect which represents the end of the selection
+    try {
+      const clientRects = range.getClientRects();
+      if (clientRects && clientRects.length > 0) {
+        // Use the last rect (end of selection)
+        const lastRect = clientRects[clientRects.length - 1];
+        if (lastRect && lastRect.width > 0 && lastRect.height > 0) {
+          rect = lastRect;
+        }
+      }
+    } catch (e) {
+      console.log('Rewordly: getClientRects failed');
+    }
+    
+    // Method 2: Fallback to getBoundingClientRect() on the range
+    if (!rect || rect.width === 0 || rect.height === 0) {
+      try {
+        const rangeRect = range.getBoundingClientRect();
+        if (rangeRect && rangeRect.width > 0 && rangeRect.height > 0) {
+          rect = rangeRect;
+        }
+      } catch (e) {
+        console.log('Rewordly: getBoundingClientRect failed on range');
+      }
+    }
+    
+    // Method 3: For input/textarea elements, calculate caret position
+    if (!rect || rect.width === 0 || rect.height === 0) {
+      const focusNode = selection.focusNode;
+      if (focusNode) {
+        let element: HTMLElement | null = null;
+        
+        if (focusNode.nodeType === Node.TEXT_NODE) {
+          element = focusNode.parentElement;
+        } else if (focusNode.nodeType === Node.ELEMENT_NODE) {
+          element = focusNode as HTMLElement;
+        }
+        
+        if (element && (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) {
+          try {
+            const elementRect = element.getBoundingClientRect();
+            const selectionEnd = element.selectionEnd || 0;
+            
+            if (elementRect && elementRect.width > 0 && elementRect.height > 0 && selectionEnd > 0) {
+              const styles = window.getComputedStyle(element);
+              const isInput = element instanceof HTMLInputElement;
+              
+              // Create a mirror div to replicate the element's text rendering
+              const div = document.createElement('div');
+              const style = div.style;
+              
+              // Copy all relevant styles
+              const properties = [
+                'direction', 'boxSizing', 'width', 'height', 'overflowX', 'overflowY',
+                'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth', 'borderStyle',
+                'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+                'fontStyle', 'fontVariant', 'fontWeight', 'fontStretch', 'fontSize', 'fontSizeAdjust', 'lineHeight', 'fontFamily',
+                'textAlign', 'textTransform', 'textIndent', 'textDecoration', 'letterSpacing', 'wordSpacing',
+                'tabSize', 'MozTabSize'
+              ];
+              
+              properties.forEach(prop => {
+                // @ts-ignore
+                style[prop] = styles[prop];
+              });
+              
+              // Specific overrides to ensure correct measurement
+              style.whiteSpace = isInput ? 'pre' : 'pre-wrap';
+              if (!isInput) {
+                style.wordWrap = 'break-word'; 
+              }
+              
+              // Position off-screen but maintain layout context
+              style.position = 'absolute';
+              style.visibility = 'hidden';
+              style.top = '0px';
+              style.left = '0px';
+              
+              // Add the text content up to the cursor
+              const textContent = element.value.substring(0, selectionEnd);
+              div.textContent = textContent;
+              
+              // Add a marker span to get the caret position
+              const span = document.createElement('span');
+              span.textContent = '|';
+              div.appendChild(span);
+              
+              document.body.appendChild(div);
+              
+              // Calculate position
+              // const spanRect = span.getBoundingClientRect();
+              // const divRect = div.getBoundingClientRect();
+              
+              // Caret position relative to the div (which mimics the element)
+              // This includes padding/border effects from the mirror div
+              const relativeX = span.offsetLeft;
+              const relativeY = span.offsetTop;
+              
+              // Adjust for element's scroll
+              const scrollLeft = element.scrollLeft;
+              const scrollTop = element.scrollTop;
+              
+              // Calculate final viewport coordinates
+              // We need to add the element's viewport position
+              // And subtract the scroll of the element itself
+              
+              // Note: span.offsetLeft is relative to the div's content edge + padding?
+              // Actually, if we copy styling, the div has the same border/padding.
+              // The span is appended.
+              
+              // Let's calculate absolute position
+              const caretX = elementRect.left + relativeX - scrollLeft;
+              
+              // For Y, we align with the line height or span height
+              const caretY = elementRect.top + relativeY - scrollTop;
+              const lineHeight = span.offsetHeight;
+              
+              // Final rect
+              rect = {
+                left: elementRect.left,
+                top: caretY,
+                right: caretX,
+                bottom: caretY + lineHeight,
+                width: 0,
+                height: lineHeight,
+                x: elementRect.left,
+                y: caretY,
+                toJSON: () => ({})
+              } as DOMRect;
+              
+              document.body.removeChild(div);
+            } else {
+              rect = elementRect;
+            }
+          } catch (e) {
+            console.log('Rewordly: Input/textarea position calculation failed', e);
+          }
+        }
+      }
+    }
+    
+    // Method 4: Last resort - try to get position from common ancestor
+    if (!rect || rect.width === 0 || rect.height === 0) {
+      try {
+        const commonAncestor = range.commonAncestorContainer;
+        let element: HTMLElement | null = null;
+        
+        if (commonAncestor.nodeType === Node.TEXT_NODE) {
+          element = commonAncestor.parentElement;
+        } else if (commonAncestor.nodeType === Node.ELEMENT_NODE) {
+          element = commonAncestor as HTMLElement;
+        }
+        
+        if (element) {
+          const elementRect = element.getBoundingClientRect();
+          if (elementRect && elementRect.width > 0 && elementRect.height > 0) {
+            rect = elementRect;
+          }
+        }
+      } catch (e) {
+        console.log('Rewordly: Failed to get position from common ancestor');
+      }
+    }
+    
+    // If we still don't have a valid rect, don't show the button
+    if (!rect || rect.width === 0 || rect.height === 0) {
+      console.log('Rewordly: Could not determine selection position');
+      return;
+    }
+    
+    // Get viewport dimensions
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const containerWidth = 120; // Approximate width for single combined button
+    const containerHeight = 40;
+    
+    // Calculate position to the right of the selected text (end of selection)
+    let buttonX = rect.right + 10;
+    let buttonY = rect.top - 10;
+    
+    // If container would go off the right edge, position it to the left of the selection
+    if (buttonX + containerWidth > viewportWidth) {
+      buttonX = rect.left - containerWidth - 10;
+    }
+    
+    // If container would go off the left edge, position it at the left edge
+    if (buttonX < 0) {
+      buttonX = 10;
+    }
+    
+    // If container would go off the top edge, position it below the selection
+    if (buttonY < 0) {
+      buttonY = rect.bottom + 10;
+    }
+    
+    // If container would go off the bottom edge, position it above the selection
+    if (buttonY + containerHeight > viewportHeight) {
+      buttonY = rect.top - containerHeight - 10;
+    }
+    
+    // Ensure button is always visible (final safety check)
+    buttonX = Math.max(10, Math.min(buttonX, viewportWidth - containerWidth - 10));
+    buttonY = Math.max(10, Math.min(buttonY, viewportHeight - containerHeight - 10));
+    
+    // Set the container position
+    this.floatingButton.style.left = `${buttonX}px`;
+    this.floatingButton.style.top = `${buttonY}px`;
+    this.floatingButton.classList.add('show');
   }
 
   private hideFloatingButton(): void {
     if (this.floatingButton) {
       this.floatingButton.classList.remove('show');
     }
+  }
+
+  private getInputTextareaSelectionRect(
+    el: HTMLInputElement | HTMLTextAreaElement
+  ): DOMRect | null {
+    const end = el.selectionEnd;
+    if (end === null) return null;
+
+    const value = el.value.substring(0, end);
+    const elRect = el.getBoundingClientRect();
+    const style = window.getComputedStyle(el);
+
+    // Mirror element
+    const div = document.createElement('div');
+    const divStyle = div.style;
+
+    // Typography + spacing
+    divStyle.position = 'absolute';
+    divStyle.visibility = 'hidden';
+    divStyle.whiteSpace = el instanceof HTMLInputElement ? 'pre' : 'pre-wrap';
+    divStyle.fontFamily = style.fontFamily;
+    divStyle.fontSize = style.fontSize;
+    divStyle.fontWeight = style.fontWeight;
+    divStyle.fontStyle = style.fontStyle;
+    divStyle.letterSpacing = style.letterSpacing;
+    divStyle.lineHeight = style.lineHeight;
+    divStyle.textTransform = style.textTransform;
+
+    // Box model
+    divStyle.padding = style.padding;
+    divStyle.border = style.border;
+    divStyle.boxSizing = style.boxSizing;
+    divStyle.width = style.width; // Important for textarea wrapping
+
+    // Copy content
+    div.textContent = value;
+
+    // Marker to measure caret
+    const span = document.createElement('span');
+    span.textContent = '▌';
+    div.appendChild(span);
+
+    document.body.appendChild(div);
+
+    // Get positions - use offsetLeft/offsetTop for more accurate measurement
+    const spanRect = span.getBoundingClientRect();
+
+    // Caret position relative to the div (which mirrors the element)
+    // offsetLeft/offsetTop give position relative to offsetParent
+    const relX = span.offsetLeft;
+    const relY = span.offsetTop;
+
+    // Account for input/textarea scroll
+    const scrollLeft = el.scrollLeft || 0;
+    const scrollTop = el.scrollTop || 0;
+
+    // Get padding and border to adjust position correctly
+    const paddingLeft = parseFloat(style.paddingLeft) || 0;
+    const borderLeft = parseFloat(style.borderLeftWidth) || 0;
+    const paddingTop = parseFloat(style.paddingTop) || 0;
+    const borderTop = parseFloat(style.borderTopWidth) || 0;
+
+    // Calculate final caret position
+    // Element position + padding + border + relative caret position - scroll
+    const caretX = elRect.left + paddingLeft + borderLeft + relX - scrollLeft;
+    const caretY = elRect.top + paddingTop + borderTop + relY - scrollTop;
+    const caretHeight = spanRect.height || parseFloat(style.lineHeight) || elRect.height;
+
+    document.body.removeChild(div);
+
+    return new DOMRect(
+      caretX,
+      caretY,
+      0,              // width doesn't matter, we offset button ourselves
+      caretHeight
+    );
   }
 
   private async handleRewriteClick(): Promise<void> {
