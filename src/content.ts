@@ -1615,9 +1615,23 @@ class RewordlyContentScript {
         box-sizing: content-box !important;
         z-index: 1 !important;
         transition: top 0.2s ease-in-out, left 0.2s ease-in-out !important;
+        transform-origin: left center !important;
       }
       .rewordly-highlight:hover {
         background: rgba(239, 68, 68, 0.1) !important;
+      }
+      .rewordly-highlight.rewordly-highlight-enter {
+        animation: rewordly-highlight-grow 0.3s ease-out forwards !important;
+      }
+      @keyframes rewordly-highlight-grow {
+        from {
+          width: 0 !important;
+          opacity: 0 !important;
+        }
+        to {
+          width: var(--rewordly-target-width) !important;
+          opacity: 1 !important;
+        }
       }
     `;
     
@@ -1665,14 +1679,29 @@ class RewordlyContentScript {
     // Set position and size
     highlight.style.top = `${highlightRect.top}px`;
     highlight.style.left = `${highlightRect.left}px`;
-    highlight.style.width = `${highlightRect.width}px`;
     highlight.style.height = `${highlightRect.height}px`;
+    
+    // Store target width for animation
+    highlight.style.setProperty('--rewordly-target-width', `${highlightRect.width}px`);
+    
+    // Initially set width to 0 for animation
+    highlight.style.width = '0px';
+    
+    // Add animation class
+    highlight.classList.add('rewordly-highlight-enter');
 
     // Add hover listeners
     this.attachHighlightHoverListener(highlight, error, element);
 
     // Append to highlights content
     this.highlightsContent.appendChild(highlight);
+    
+    // Remove animation class after animation completes
+    setTimeout(() => {
+      highlight.classList.remove('rewordly-highlight-enter');
+      // Set final width after animation
+      highlight.style.width = `${highlightRect.width}px`;
+    }, 300);
   }
 
   /**
