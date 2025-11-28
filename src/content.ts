@@ -46,10 +46,8 @@ class RewordlyContentScript {
   private highlightsContent: HTMLElement | null = null;
 
   // Store bound event handlers to allow proper removal
-  private boundHandleTextSelection = this.handleTextSelection.bind(this);
   private boundHandleOutsideClick = this.handleOutsideClick.bind(this);
   private boundHandleKeyDown = this.handleKeyDown.bind(this);
-  private boundHandleScroll = this.handleScroll.bind(this);
   private boundHandleInput = this.handleInput.bind(this);
   private boundHandleFocus = this.handleFocus.bind(this);
   private boundHandleBlur = this.handleBlur.bind(this);
@@ -111,15 +109,8 @@ class RewordlyContentScript {
 
   private setupEventListeners(): void {
     // Remove existing listeners to prevent duplicates
-    document.removeEventListener('mouseup', this.boundHandleTextSelection);
-    document.removeEventListener('keyup', this.boundHandleTextSelection);
     document.removeEventListener('click', this.boundHandleOutsideClick);
     document.removeEventListener('keydown', this.boundHandleKeyDown);
-    window.removeEventListener('scroll', this.boundHandleScroll);
-    
-    // Listen for text selection completion (mouseup) and keyboard selection
-    document.addEventListener('mouseup', this.boundHandleTextSelection, true);
-    document.addEventListener('keyup', this.boundHandleTextSelection, true);
     
     // Listen for clicks outside to hide button/modal
     document.addEventListener('click', this.boundHandleOutsideClick, true);
@@ -127,8 +118,7 @@ class RewordlyContentScript {
     // Listen for escape key to close modal
     document.addEventListener('keydown', this.boundHandleKeyDown, true);
     
-    // Listen for scroll events to reposition button if needed
-    window.addEventListener('scroll', this.boundHandleScroll, true);
+    // Note: Text selection listeners removed - button only shows on editable element focus
   }
 
   /**
@@ -466,6 +456,20 @@ class RewordlyContentScript {
 
     console.log('Rewordly: Processing input event');
 
+    // Show AI button if element has focus and has text
+    if (document.activeElement === element) {
+      let hasText = false;
+      if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+        hasText = element.value.trim().length > 0;
+      } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
+        hasText = (element.innerText || element.textContent || '').trim().length > 0;
+      }
+      
+      if (hasText) {
+        this.showAIFloatingButton(element);
+      }
+    }
+
     // Clear previous timeout
     if (this.grammarCheckTimeout !== null) {
       clearTimeout(this.grammarCheckTimeout);
@@ -496,6 +500,19 @@ class RewordlyContentScript {
       return;
     }
     
+    // Check if element has text
+    let hasText = false;
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+      hasText = element.value.trim().length > 0;
+    } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
+      hasText = (element.innerText || element.textContent || '').trim().length > 0;
+    }
+    
+    // Show AI button if element has text
+    if (hasText) {
+      this.showAIFloatingButton(element);
+    }
+    
     // If element has grammar errors, show the overlay again
     if (this.grammarErrors.has(element)) {
       this.showGrammarOverlay(element);
@@ -516,6 +533,26 @@ class RewordlyContentScript {
     
     // Hide spinner
     this.hideGrammarSpinner();
+    
+    // Hide AI button when focus is lost (with delay to allow button click)
+    // Check if the blur is caused by clicking the button
+    const relatedTarget = (event as FocusEvent).relatedTarget as HTMLElement | null;
+    const isClickingButton = relatedTarget && (
+      relatedTarget === this.floatingButton ||
+      this.floatingButton?.contains(relatedTarget)
+    );
+    
+    if (!isClickingButton) {
+      // Small delay to allow for focus transfer (e.g., clicking on button)
+      setTimeout(() => {
+        // Check if element still doesn't have focus and button wasn't clicked
+        if (document.activeElement !== element && 
+            document.activeElement !== this.floatingButton &&
+            !this.floatingButton?.contains(document.activeElement)) {
+          this.hideFloatingButton();
+        }
+      }, 150);
+    }
     
     // Hide grammar errors/overlay when focus is lost (but don't delete)
     if (element && this.isEditableElement(element)) {
@@ -3070,57 +3107,8 @@ class RewordlyContentScript {
     });
   }
 
-  private handleScroll(): void {
-    // Hide the button when scrolling
-    this.hideFloatingButton();
-  }
-
-  private handleTextSelection(event: Event): void {
-    if (!this.config.enabled) {
-      return;
-    }
-
-    // For mouseup events, check if there's actually a selection
-    if (event.type === 'mouseup') {
-      // Small delay to ensure selection is complete after mouse release
-      setTimeout(() => {
-        this.checkAndShowButton();
-      }, 50);
-    } else {
-      // For keyboard events, check immediately
-      this.checkAndShowButton();
-    }
-  }
-
-  private checkAndShowButton(): void {
-    // Don't show button if modal is open
-    if (this.isModalOpen) {
-      console.log('Rewordly: Modal is open, not showing button');
-      return;
-    }
-
-    // Check if extension is enabled
-    if (!this.config.enabled) {
-      console.log('Rewordly: Extension is disabled, not showing button');
-      return;
-    }
-
-    const selection = window.getSelection();
-    if (!selection || selection.toString().trim() === '') {
-      this.hideFloatingButton();
-      return;
-    }
-
-    const selectedText = selection.toString().trim();
-    
-    if (selectedText.length < 3) {
-      this.hideFloatingButton();
-      return;
-    }
-
-    this.selectedText = selectedText;
-    this.showFloatingButton();
-  }
+  // Text selection handlers removed - button only shows on editable element focus
+  // No longer needed since we only show button for editable elements
 
   private handleOutsideClick(event: Event): void {
     const target = event.target as HTMLElement;
@@ -3150,49 +3138,37 @@ class RewordlyContentScript {
     this.floatingButton = document.createElement('div');
     this.floatingButton.className = 'rewordly-floating-button-container';
     this.floatingButton.innerHTML = `
-      <button class="rewordly-combined-btn">
-        <span class="rewordly-btn-text">Rewrite</span>
-        <span class="rewordly-btn-grammar-indicator">
-          <svg class="rewordly-grammar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <path d="M20 6L9 17l-5-5"/>
-          </svg>
-        </span>
+      <button class="rewordly-ai-btn">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 56 56" width="16" height="16">
+          <path d="M 26.6875 12.6602 C 26.9687 12.6602 27.1094 12.4961 27.1797 12.2383 C 27.9062 8.3242 27.8594 8.2305 31.9375 7.4570 C 32.2187 7.4102 32.3828 7.2461 32.3828 6.9648 C 32.3828 6.6836 32.2187 6.5195 31.9375 6.4726 C 27.8828 5.6524 28.0000 5.5586 27.1797 1.6914 C 27.1094 1.4336 26.9687 1.2695 26.6875 1.2695 C 26.4062 1.2695 26.2656 1.4336 26.1953 1.6914 C 25.3750 5.5586 25.5156 5.6524 21.4375 6.4726 C 21.1797 6.5195 20.9922 6.6836 20.9922 6.9648 C 20.9922 7.2461 21.1797 7.4102 21.4375 7.4570 C 25.5156 8.2774 25.4687 8.3242 26.1953 12.2383 C 26.2656 12.4961 26.4062 12.6602 26.6875 12.6602 Z M 15.3438 28.7852 C 15.7891 28.7852 16.0938 28.5039 16.1406 28.0821 C 16.9844 21.8242 17.1953 21.8242 23.6641 20.5821 C 24.0860 20.5117 24.3906 20.2305 24.3906 19.7852 C 24.3906 19.3633 24.0860 19.0586 23.6641 18.9883 C 17.1953 18.0977 16.9609 17.8867 16.1406 11.5117 C 16.0938 11.0899 15.7891 10.7852 15.3438 10.7852 C 14.9219 10.7852 14.6172 11.0899 14.5703 11.5352 C 13.7969 17.8164 13.4687 17.7930 7.0469 18.9883 C 6.6250 19.0821 6.3203 19.3633 6.3203 19.7852 C 6.3203 20.2539 6.6250 20.5117 7.1406 20.5821 C 13.5156 21.6133 13.7969 21.7774 14.5703 28.0352 C 14.6172 28.5039 14.9219 28.7852 15.3438 28.7852 Z M 31.2344 54.7305 C 31.8438 54.7305 32.2891 54.2852 32.4062 53.6524 C 34.0703 40.8086 35.8750 38.8633 48.5781 37.4570 C 49.2344 37.3867 49.6797 36.8945 49.6797 36.2852 C 49.6797 35.6758 49.2344 35.2070 48.5781 35.1133 C 35.8750 33.7070 34.0703 31.7617 32.4062 18.9180 C 32.2891 18.2852 31.8438 17.8633 31.2344 17.8633 C 30.6250 17.8633 30.1797 18.2852 30.0860 18.9180 C 28.4219 31.7617 26.5938 33.7070 13.9140 35.1133 C 13.2344 35.2070 12.7891 35.6758 12.7891 36.2852 C 12.7891 36.8945 13.2344 37.3867 13.9140 37.4570 C 26.5703 39.1211 28.3281 40.8321 30.0860 53.6524 C 30.1797 54.2852 30.6250 54.7305 31.2344 54.7305 Z"/>
+        </svg>
       </button>
     `;
     
-    // Create tooltip element outside the button
+    // Create tooltip element
     const tooltip = document.createElement('span');
-    tooltip.className = 'rewordly-tooltip';
-    tooltip.textContent = 'Click to rewrite. Right-click or click the green area for grammar only.';
+    tooltip.className = 'rewordly-ai-tooltip';
+    tooltip.textContent = 'AI Rewrite';
     document.body.appendChild(tooltip);
     
-    const combinedBtn = this.floatingButton.querySelector('.rewordly-combined-btn') as HTMLButtonElement;
+    const aiBtn = this.floatingButton.querySelector('.rewordly-ai-btn') as HTMLButtonElement;
     
-    // Handle click position to determine rewrite vs grammar
-    combinedBtn.addEventListener('click', (event) => {
-      const rect = combinedBtn.getBoundingClientRect();
-      const clickX = event.clientX - rect.left;
-      const buttonWidth = rect.width;
-      const rightQuarterStart = buttonWidth * 0.75;
-      
-      // If click is in the right 25% (green area), trigger grammar
-      if (clickX >= rightQuarterStart) {
-        this.handleGrammarClick();
-      } else {
-        // Otherwise, trigger rewrite
-        this.handleRewriteClick();
-      }
+    // Handle click - always trigger rewrite
+    // Use mousedown to prevent blur from hiding button before click
+    aiBtn.addEventListener('mousedown', (e) => {
+      e.preventDefault(); // Prevent blur
+      e.stopPropagation();
     });
     
-    // Handle right-click for grammar
-    combinedBtn.addEventListener('contextmenu', (event) => {
-      event.preventDefault();
-      this.handleGrammarClick();
+    aiBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.handleRewriteClick();
     });
     
     // Tooltip functionality
     const showTooltip = () => {
-      const rect = combinedBtn.getBoundingClientRect();
+      const rect = aiBtn.getBoundingClientRect();
       const tooltipLeft = rect.left + (rect.width / 2);
       const tooltipTop = rect.top - 5;
       tooltip.style.left = `${tooltipLeft}px`;
@@ -3204,13 +3180,13 @@ class RewordlyContentScript {
       tooltip.classList.remove('show');
     };
     
-    combinedBtn.addEventListener('mouseenter', showTooltip);
-    combinedBtn.addEventListener('mouseleave', hideTooltip);
+    aiBtn.addEventListener('mouseenter', showTooltip);
+    aiBtn.addEventListener('mouseleave', hideTooltip);
     
     // Update tooltip position on scroll/resize
     const updateTooltipPosition = () => {
       if (tooltip.classList.contains('show')) {
-        const rect = combinedBtn.getBoundingClientRect();
+        const rect = aiBtn.getBoundingClientRect();
         const tooltipLeft = rect.left + (rect.width / 2);
         const tooltipTop = rect.top - 5;
         tooltip.style.left = `${tooltipLeft}px`;
@@ -3272,6 +3248,54 @@ class RewordlyContentScript {
     document.body.appendChild(this.modal);
   }
 
+  /**
+   * Show AI floating button at bottom-right of editable element
+   */
+  private showAIFloatingButton(element: HTMLElement): void {
+    if (!this.floatingButton) {
+      return;
+    }
+
+    const elementRect = element.getBoundingClientRect();
+    const buttonSize = 32; // Button size (reduced from 40)
+    const offset = 8; // Offset from edge
+    
+    // Position at bottom-right of element
+    let buttonX = elementRect.right - buttonSize - offset;
+    let buttonY = elementRect.bottom - buttonSize - offset;
+    
+    // Keep within viewport bounds
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    
+    if (buttonX < 0) {
+      buttonX = elementRect.left + offset;
+    }
+    if (buttonX + buttonSize > viewportWidth) {
+      buttonX = viewportWidth - buttonSize - offset;
+    }
+    
+    if (buttonY < 0) {
+      buttonY = elementRect.top + offset;
+    }
+    if (buttonY + buttonSize > viewportHeight) {
+      buttonY = viewportHeight - buttonSize - offset;
+    }
+    
+    // Ensure button is visible
+    this.floatingButton.style.display = 'flex';
+    this.floatingButton.style.visibility = 'visible';
+    this.floatingButton.style.opacity = '1';
+    this.floatingButton.style.left = `${buttonX}px`;
+    this.floatingButton.style.top = `${buttonY}px`;
+    this.floatingButton.classList.add('show');
+    
+    // Store reference to current element for rewrite functionality
+    (this.floatingButton as any).__currentElement = element;
+  }
+
+  // @ts-ignore - Legacy function, no longer used (only showAIFloatingButton is used)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private showFloatingButton(): void {
     if (!this.floatingButton) {
       return;
@@ -3636,13 +3660,33 @@ class RewordlyContentScript {
       return;
     }
 
+    // Get text from current editable element
+    let textToRewrite = '';
+    const currentElement = (this.floatingButton as any)?.__currentElement as HTMLElement | undefined;
+    
+    if (currentElement) {
+      if (currentElement instanceof HTMLInputElement || currentElement instanceof HTMLTextAreaElement) {
+        textToRewrite = currentElement.value;
+      } else if (currentElement.getAttribute('contenteditable') === 'true' || currentElement.isContentEditable) {
+        textToRewrite = currentElement.innerText || currentElement.textContent || '';
+      }
+    } else {
+      // Fallback to selectedText if no element
+      textToRewrite = this.selectedText;
+    }
+
+    if (!textToRewrite || textToRewrite.trim().length < 3) {
+      return;
+    }
+
     this.currentOperation = 'rewrite';
-    this.hideFloatingButton();
+    this.selectedText = textToRewrite;
+    // Don't hide button immediately - let blur handle it if needed
     this.showModal();
     this.isProcessing = true;
 
     try {
-      const rewrittenText = await this.rewriteText(this.selectedText);
+      const rewrittenText = await this.rewriteText(textToRewrite);
       this.displayRewrittenText(rewrittenText);
     } catch (error) {
       console.error('Rewordly: Error rewriting text:', error);
@@ -3652,25 +3696,13 @@ class RewordlyContentScript {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // @ts-ignore - Kept for compatibility, no longer used
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private async handleGrammarClick(): Promise<void> {
-    if (this.isProcessing) {
-      return;
-    }
-
-    this.currentOperation = 'grammar';
-    this.hideFloatingButton();
-    this.showModal();
-    this.isProcessing = true;
-
-    try {
-      const correctedText = await this.grammarText(this.selectedText);
-      this.displayRewrittenText(correctedText);
-    } catch (error) {
-      console.error('Rewordly: Error correcting grammar:', error);
-      this.showError('Failed to correct grammar. Please try again.');
-    } finally {
-      this.isProcessing = false;
-    }
+    // Grammar click is no longer used - kept for compatibility
+    // Grammar checking is now done automatically in real-time
+    return;
   }
 
   private async rewriteText(text: string): Promise<string> {
@@ -3692,14 +3724,16 @@ class RewordlyContentScript {
     return data.rewritten || 'Failed to rewrite text.';
   }
 
-  private async grammarText(text: string): Promise<string> {
+  // @ts-ignore - Kept for compatibility, no longer used
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  private async grammarText(_text: string): Promise<string> {
     const response = await fetch('https://rewordly-web.vercel.app/api/grammar', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        text: text
+        text: _text
       })
     });
 
