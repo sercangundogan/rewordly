@@ -144,6 +144,7 @@ class RewordlyContentScript {
     // Watch for new editable elements being added to the DOM
     const observer = new MutationObserver((mutations) => {
       mutations.forEach((mutation) => {
+        // Handle added nodes
         mutation.addedNodes.forEach((node) => {
           if (node.nodeType === Node.ELEMENT_NODE) {
             const element = node as HTMLElement;
@@ -152,7 +153,35 @@ class RewordlyContentScript {
             this.findEditableInElement(element);
           }
         });
+        
+        // Handle removed nodes - clean up overlays for removed elements
+        mutation.removedNodes.forEach((node) => {
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            const element = node as HTMLElement;
+            // Check if this element or its children had grammar errors
+            if (this.grammarErrors.has(element)) {
+              this.clearGrammarErrors(element);
+            }
+            // Also check children
+            const childOverlays = element.querySelectorAll('.rewordly-grammar-overlay');
+            childOverlays.forEach((overlay) => {
+              const elementId = overlay.getAttribute('data-element-id');
+              if (elementId) {
+                // Find the element and clear its errors
+                const errorElement = Array.from(this.grammarErrors.keys()).find(
+                  (el) => this.getElementId(el) === elementId
+                );
+                if (errorElement) {
+                  this.clearGrammarErrors(errorElement);
+                }
+              }
+            });
+          }
+        });
       });
+      
+      // Periodically clean up overlays for removed elements
+      this.clearAllGrammarErrors();
     });
     
     if (document.body) {
@@ -455,7 +484,9 @@ class RewordlyContentScript {
   /**
    * Handle blur events on editable elements
    */
-  private handleBlur(_event: Event): void {
+  private handleBlur(event: Event): void {
+    const element = event.target as HTMLElement;
+    
     // Clear timeout if user leaves the field
     if (this.grammarCheckTimeout !== null) {
       clearTimeout(this.grammarCheckTimeout);
@@ -464,6 +495,17 @@ class RewordlyContentScript {
     
     // Hide spinner
     this.hideGrammarSpinner();
+    
+    // Clear grammar errors/overlay when focus is lost
+    if (element && this.isEditableElement(element)) {
+      // Small delay to allow for focus transfer (e.g., clicking on overlay)
+      setTimeout(() => {
+        // Check if element still doesn't have focus
+        if (document.activeElement !== element) {
+          this.clearGrammarErrors(element);
+        }
+      }, 100);
+    }
   }
 
   /**
@@ -840,6 +882,44 @@ class RewordlyContentScript {
     
     // Clear stored errors
     this.grammarErrors.delete(element);
+  }
+
+  /**
+   * Hide all grammar error overlays
+   */
+  private hideAllGrammarOverlays(): void {
+    const allOverlays = document.querySelectorAll('.rewordly-grammar-overlay');
+    allOverlays.forEach((overlay) => {
+      (overlay as HTMLElement).style.display = 'none';
+      (overlay as HTMLElement).setAttribute('data-hidden-by-modal', 'true');
+    });
+  }
+
+  /**
+   * Restore grammar overlays that were hidden by modal
+   */
+  private restoreGrammarOverlays(): void {
+    const hiddenOverlays = document.querySelectorAll('.rewordly-grammar-overlay[data-hidden-by-modal="true"]');
+    hiddenOverlays.forEach((overlay) => {
+      const htmlOverlay = overlay as HTMLElement;
+      htmlOverlay.style.display = '';
+      htmlOverlay.removeAttribute('data-hidden-by-modal');
+    });
+  }
+
+  /**
+   * Clear all grammar errors (cleanup function)
+   */
+  private clearAllGrammarErrors(): void {
+    // Get all elements with errors
+    const elementsWithErrors = Array.from(this.grammarErrors.keys());
+    
+    elementsWithErrors.forEach((element) => {
+      // Check if element still exists in DOM
+      if (!document.contains(element) && !element.isConnected) {
+        this.clearGrammarErrors(element);
+      }
+    });
   }
 
   /**
@@ -1636,12 +1716,18 @@ class RewordlyContentScript {
     
     // Hide the floating button when modal is open
     this.hideFloatingButton();
+    
+    // Hide all grammar error overlays when modal opens
+    this.hideAllGrammarOverlays();
   }
 
   private hideModal(): void {
     if (this.modal) {
       this.modal.classList.remove('show');
       this.isModalOpen = false; // Clear flag when modal closes
+      
+      // Restore grammar overlays if element still has focus and errors
+      this.restoreGrammarOverlays();
     }
   }
 
