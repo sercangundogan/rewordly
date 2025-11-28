@@ -1010,6 +1010,7 @@ class RewordlyContentScript {
    */
   private showGrammarSpinner(element: HTMLElement): void {
     if (!this.grammarSpinner) {
+      console.log('Rewordly: Grammar spinner not found');
       return;
     }
     
@@ -1018,12 +1019,15 @@ class RewordlyContentScript {
     // Get cursor position based on element type
     if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
       caretRect = this.getInputTextareaSelectionRect(element);
+      console.log('Rewordly: Got caret rect for input/textarea:', caretRect);
     } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
       caretRect = this.getContentEditableCaretRect(element);
+      console.log('Rewordly: Got caret rect for contenteditable:', caretRect);
     }
     
     // Fallback to element position if caret position not available
-    if (!caretRect) {
+    if (!caretRect || caretRect.width === 0 && caretRect.height === 0) {
+      console.log('Rewordly: Using fallback element position');
       const rect = element.getBoundingClientRect();
       caretRect = new DOMRect(
         rect.left,
@@ -1034,13 +1038,17 @@ class RewordlyContentScript {
     }
     
     // Position spinner at bottom-right of cursor
+    // Note: getBoundingClientRect() returns viewport coordinates, no need to add scroll offset for fixed positioning
     const spinnerWidth = 150; // Approximate spinner width
     const spinnerHeight = 40; // Approximate spinner height
     const offsetX = 10; // Offset from cursor
     const offsetY = 5; // Offset from cursor
     
-    let left = caretRect.right + window.scrollX + offsetX;
-    let top = caretRect.bottom + window.scrollY + offsetY;
+    // Use viewport coordinates directly (getBoundingClientRect already gives viewport coords)
+    let left = caretRect.right + offsetX;
+    let top = caretRect.bottom + offsetY;
+    
+    console.log('Rewordly: Initial spinner position (viewport):', left, top);
     
     // Check if spinner would go off screen, adjust if needed
     const viewportWidth = window.innerWidth;
@@ -1048,23 +1056,46 @@ class RewordlyContentScript {
     
     // If spinner would go off right edge, position to left of cursor
     if (left + spinnerWidth > viewportWidth) {
-      left = caretRect.left + window.scrollX - spinnerWidth - offsetX;
+      left = caretRect.left - spinnerWidth - offsetX;
+      console.log('Rewordly: Adjusted left (off right edge):', left);
     }
     
     // If spinner would go off bottom edge, position above cursor
-    if (top + spinnerHeight > viewportHeight + window.scrollY) {
-      top = caretRect.top + window.scrollY - spinnerHeight - offsetY;
+    if (top + spinnerHeight > viewportHeight) {
+      top = caretRect.top - spinnerHeight - offsetY;
+      console.log('Rewordly: Adjusted top (off bottom edge):', top);
     }
     
-    // Ensure spinner is always visible
+    // Ensure spinner is always visible within viewport
     left = Math.max(10, Math.min(left, viewportWidth - spinnerWidth - 10));
-    top = Math.max(10, Math.min(top, viewportHeight + window.scrollY - spinnerHeight - 10));
+    top = Math.max(10, Math.min(top, viewportHeight - spinnerHeight - 10));
     
+    console.log('Rewordly: Final spinner position (viewport):', left, top);
+    
+    // Set position using fixed positioning (no scroll offset needed)
+    this.grammarSpinner.style.setProperty('position', 'fixed', 'important');
     this.grammarSpinner.style.setProperty('top', `${top}px`, 'important');
     this.grammarSpinner.style.setProperty('left', `${left}px`, 'important');
     this.grammarSpinner.style.setProperty('display', 'flex', 'important');
     this.grammarSpinner.style.setProperty('visibility', 'visible', 'important');
     this.grammarSpinner.style.setProperty('opacity', '1', 'important');
+    this.grammarSpinner.style.setProperty('pointer-events', 'none', 'important');
+    this.grammarSpinner.style.setProperty('z-index', '2147483646', 'important');
+    
+    // Force a reflow to ensure styles are applied
+    void this.grammarSpinner.offsetHeight;
+    
+    // Verify spinner is actually visible
+    const computedStyle = window.getComputedStyle(this.grammarSpinner);
+    const spinnerRect = this.grammarSpinner.getBoundingClientRect();
+    console.log('Rewordly: Spinner computed display:', computedStyle.display);
+    console.log('Rewordly: Spinner computed visibility:', computedStyle.visibility);
+    console.log('Rewordly: Spinner computed opacity:', computedStyle.opacity);
+    console.log('Rewordly: Spinner computed position:', computedStyle.position);
+    console.log('Rewordly: Spinner computed z-index:', computedStyle.zIndex);
+    console.log('Rewordly: Spinner in DOM:', document.body.contains(this.grammarSpinner));
+    console.log('Rewordly: Spinner bounding rect:', spinnerRect);
+    console.log('Rewordly: Spinner offsetParent:', this.grammarSpinner.offsetParent);
   }
 
   /**
@@ -1074,21 +1105,46 @@ class RewordlyContentScript {
     try {
       const selection = window.getSelection();
       if (!selection || selection.rangeCount === 0) {
+        console.log('Rewordly: No selection found for contenteditable');
         return null;
       }
       
       const range = selection.getRangeAt(0);
-      const rect = range.getBoundingClientRect();
+      
+      // Check if range is within our element
+      if (!element.contains(range.commonAncestorContainer)) {
+        console.log('Rewordly: Selection is not within element');
+        return null;
+      }
       
       // If range is collapsed (cursor position), use it directly
       if (range.collapsed) {
-        // Create a temporary span to get exact caret position
+        // Try multiple methods to get caret position
+        
+        // Method 1: Use getClientRects() for collapsed range
+        const clientRects = range.getClientRects();
+        if (clientRects && clientRects.length > 0) {
+          const rect = clientRects[0];
+          if (rect && (rect.width > 0 || rect.height > 0)) {
+            return new DOMRect(
+              rect.left,
+              rect.top,
+              0,
+              rect.height || 20
+            );
+          }
+        }
+        
+        // Method 2: Create a temporary span to get exact caret position
         const span = document.createElement('span');
-        span.style.cssText = 'position: absolute; visibility: hidden; white-space: pre;';
+        span.style.cssText = 'position: absolute; visibility: hidden; white-space: pre; pointer-events: none;';
         span.textContent = '\u200b'; // Zero-width space
         
         try {
-          range.insertNode(span);
+          // Clone range to avoid modifying the original
+          const clonedRange = range.cloneRange();
+          clonedRange.insertNode(span);
+          
           const spanRect = span.getBoundingClientRect();
           
           // Calculate caret position relative to viewport
@@ -1099,37 +1155,108 @@ class RewordlyContentScript {
           // Remove the temporary span
           span.remove();
           
-          return new DOMRect(
-            caretX,
-            caretY,
-            0,
-            caretHeight
-          );
+          // If we got valid coordinates
+          if (caretX > 0 && caretY > 0) {
+            return new DOMRect(
+              caretX,
+              caretY,
+              0,
+              caretHeight
+            );
+          }
         } catch (e) {
-          // If insertNode fails, use range rect
-          return new DOMRect(
-            rect.left,
-            rect.top,
-            0,
-            rect.height || 20
-          );
+          console.log('Rewordly: insertNode failed, trying alternative method:', e);
         }
+        
+        // Method 3: Use getBoundingClientRect on range
+        try {
+          const rangeRect = range.getBoundingClientRect();
+          if (rangeRect && (rangeRect.width > 0 || rangeRect.height > 0)) {
+            return new DOMRect(
+              rangeRect.left,
+              rangeRect.top,
+              0,
+              rangeRect.height || 20
+            );
+          }
+        } catch (e) {
+          console.log('Rewordly: getBoundingClientRect failed:', e);
+        }
+        
+        // Method 4: Fallback - use focus node position
+        const focusNode = selection.focusNode;
+        if (focusNode) {
+          let node: Node = focusNode;
+          if (node.nodeType === Node.TEXT_NODE && node.parentElement) {
+            node = node.parentElement;
+          }
+          
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            const nodeRect = (node as Element).getBoundingClientRect();
+            return new DOMRect(
+              nodeRect.left,
+              nodeRect.top,
+              0,
+              nodeRect.height || 20
+            );
+          }
+        }
+        
+        // Final fallback - use element position
+        const elementRect = element.getBoundingClientRect();
+        return new DOMRect(
+          elementRect.left,
+          elementRect.top,
+          0,
+          elementRect.height || 20
+        );
       } else {
         // If there's a selection, use the end of selection
         const endRange = range.cloneRange();
         endRange.collapse(false); // Collapse to end
         
+        const endRects = endRange.getClientRects();
+        if (endRects && endRects.length > 0) {
+          const endRect = endRects[endRects.length - 1];
+          if (endRect) {
+            return new DOMRect(
+              endRect.right,
+              endRect.top,
+              0,
+              endRect.height || 20
+            );
+          }
+        }
+        
         const endRect = endRange.getBoundingClientRect();
+        if (endRect) {
+          return new DOMRect(
+            endRect.right,
+            endRect.top,
+            0,
+            endRect.height || 20
+          );
+        }
+        
+        // Final fallback for selection - use element position
+        const elementRect = element.getBoundingClientRect();
         return new DOMRect(
-          endRect.right,
-          endRect.top,
+          elementRect.right,
+          elementRect.top,
           0,
-          endRect.height || 20
+          elementRect.height || 20
         );
       }
     } catch (e) {
       console.error('Rewordly: Error getting contenteditable caret position:', e);
-      return null;
+      // Fallback to element position
+      const elementRect = element.getBoundingClientRect();
+      return new DOMRect(
+        elementRect.left,
+        elementRect.top,
+        0,
+        elementRect.height || 20
+      );
     }
   }
 
