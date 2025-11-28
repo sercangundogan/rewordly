@@ -569,16 +569,18 @@ class RewordlyContentScript {
    * Mock grammar check API - returns grammar errors with positions
    */
   private mockGrammarCheck(text: string): GrammarCheckResponse {
-    // Example sentence with grammar errors: "I goes to the store yesterday"
+    // Mock grammar check with multiple error types
     // This is a mock - in real implementation, this would call the API
     
     const errors: GrammarError[] = [];
     const lowerText = text.toLowerCase();
     
-    // Check for common grammar errors
-    // "goes" should be "went" (past tense)
-    const goesIndex = lowerText.indexOf(' goes ');
-    if (goesIndex !== -1) {
+    // Find ALL occurrences of "goes" (not just the first one)
+    let searchIndex = 0;
+    while (true) {
+      const goesIndex = lowerText.indexOf(' goes ', searchIndex);
+      if (goesIndex === -1) break;
+      
       const start = text.indexOf(' goes ', goesIndex);
       if (start !== -1) {
         errors.push({
@@ -589,68 +591,148 @@ class RewordlyContentScript {
           type: 'grammar'
         });
       }
+      searchIndex = goesIndex + 1;
     }
     
-    // "buyed" should be "bought"
-    const buyedIndex = lowerText.indexOf('buyed');
-    if (buyedIndex !== -1) {
-      const start = text.toLowerCase().indexOf('buyed', buyedIndex);
-      if (start !== -1) {
-        errors.push({
-          start: start,
-          end: start + 5,
-          word: 'buyed',
-          suggestions: ['bought', 'buy'],
-          type: 'grammar'
-        });
-      }
+    // Find ALL occurrences of "buyed"
+    searchIndex = 0;
+    while (true) {
+      const buyedIndex = lowerText.indexOf('buyed', searchIndex);
+      if (buyedIndex === -1) break;
+      
+      errors.push({
+        start: buyedIndex,
+        end: buyedIndex + 5,
+        word: 'buyed',
+        suggestions: ['bought', 'buy'],
+        type: 'grammar'
+      });
+      searchIndex = buyedIndex + 1;
     }
     
-    // "have" with singular subject (e.g., "sentence have")
-    const haveIndex = lowerText.indexOf(' have ');
-    if (haveIndex !== -1 && haveIndex > 0) {
-      const beforeHave = text.substring(Math.max(0, haveIndex - 20), haveIndex).trim();
-      // Simple check: if word before "have" doesn't end with 's' or is singular
-      const wordsBefore = beforeHave.split(/\s+/);
-      const lastWord = wordsBefore[wordsBefore.length - 1];
-      if (lastWord && !lastWord.toLowerCase().endsWith('s') && lastWord.toLowerCase() !== 'they' && lastWord.toLowerCase() !== 'we' && lastWord.toLowerCase() !== 'you') {
-        const start = text.indexOf(' have ', haveIndex);
-        if (start !== -1) {
-          errors.push({
-            start: start + 1,
-            end: start + 5,
-            word: 'have',
-            suggestions: ['has', 'have'],
-            type: 'grammar'
-          });
+    // Find ALL occurrences of "have" with singular subject
+    searchIndex = 0;
+    while (true) {
+      const haveIndex = lowerText.indexOf(' have ', searchIndex);
+      if (haveIndex === -1) break;
+      
+      if (haveIndex > 0) {
+        const beforeHave = text.substring(Math.max(0, haveIndex - 20), haveIndex).trim();
+        const wordsBefore = beforeHave.split(/\s+/);
+        const lastWord = wordsBefore[wordsBefore.length - 1];
+        if (lastWord && !lastWord.toLowerCase().endsWith('s') && 
+            lastWord.toLowerCase() !== 'they' && 
+            lastWord.toLowerCase() !== 'we' && 
+            lastWord.toLowerCase() !== 'you' &&
+            lastWord.toLowerCase() !== 'i') {
+          const start = text.indexOf(' have ', haveIndex);
+          if (start !== -1) {
+            errors.push({
+              start: start + 1,
+              end: start + 5,
+              word: 'have',
+              suggestions: ['has', 'have'],
+              type: 'grammar'
+            });
+          }
         }
       }
+      searchIndex = haveIndex + 1;
     }
     
-    // "was" with plural subject (e.g., "they was")
-    const wasIndex = lowerText.indexOf(' was ');
-    if (wasIndex !== -1 && wasIndex > 0) {
-      const beforeWas = text.substring(Math.max(0, wasIndex - 10), wasIndex).trim();
-      const wordsBefore = beforeWas.split(/\s+/);
-      const lastWord = wordsBefore[wordsBefore.length - 1];
-      if (lastWord && (lastWord.toLowerCase() === 'they' || lastWord.toLowerCase() === 'we' || lastWord.toLowerCase() === 'you')) {
-        const start = text.indexOf(' was ', wasIndex);
-        if (start !== -1) {
-          errors.push({
-            start: start + 1,
-            end: start + 4,
-            word: 'was',
-            suggestions: ['were', 'was'],
-            type: 'grammar'
-          });
+    // Find ALL occurrences of "was" with plural subject
+    searchIndex = 0;
+    while (true) {
+      const wasIndex = lowerText.indexOf(' was ', searchIndex);
+      if (wasIndex === -1) break;
+      
+      if (wasIndex > 0) {
+        const beforeWas = text.substring(Math.max(0, wasIndex - 10), wasIndex).trim();
+        const wordsBefore = beforeWas.split(/\s+/);
+        const lastWord = wordsBefore[wordsBefore.length - 1];
+        if (lastWord && (lastWord.toLowerCase() === 'they' || 
+                         lastWord.toLowerCase() === 'we' || 
+                         lastWord.toLowerCase() === 'you')) {
+          const start = text.indexOf(' was ', wasIndex);
+          if (start !== -1) {
+            errors.push({
+              start: start + 1,
+              end: start + 4,
+              word: 'was',
+              suggestions: ['were', 'was'],
+              type: 'grammar'
+            });
+          }
         }
       }
+      searchIndex = wasIndex + 1;
     }
+    
+    // Find ALL occurrences of "do" with singular subject (e.g., "he do")
+    searchIndex = 0;
+    while (true) {
+      const doIndex = lowerText.indexOf(' do ', searchIndex);
+      if (doIndex === -1) break;
+      
+      if (doIndex > 0) {
+        const beforeDo = text.substring(Math.max(0, doIndex - 10), doIndex).trim();
+        const wordsBefore = beforeDo.split(/\s+/);
+        const lastWord = wordsBefore[wordsBefore.length - 1];
+        if (lastWord && (lastWord.toLowerCase() === 'he' || 
+                         lastWord.toLowerCase() === 'she' || 
+                         lastWord.toLowerCase() === 'it')) {
+          const start = text.indexOf(' do ', doIndex);
+          if (start !== -1) {
+            errors.push({
+              start: start + 1,
+              end: start + 3,
+              word: 'do',
+              suggestions: ['does', 'do'],
+              type: 'grammar'
+            });
+          }
+        }
+      }
+      searchIndex = doIndex + 1;
+    }
+    
+    // Find ALL occurrences of "are" with singular subject (e.g., "he are")
+    searchIndex = 0;
+    while (true) {
+      const areIndex = lowerText.indexOf(' are ', searchIndex);
+      if (areIndex === -1) break;
+      
+      if (areIndex > 0) {
+        const beforeAre = text.substring(Math.max(0, areIndex - 10), areIndex).trim();
+        const wordsBefore = beforeAre.split(/\s+/);
+        const lastWord = wordsBefore[wordsBefore.length - 1];
+        if (lastWord && (lastWord.toLowerCase() === 'he' || 
+                         lastWord.toLowerCase() === 'she' || 
+                         lastWord.toLowerCase() === 'it')) {
+          const start = text.indexOf(' are ', areIndex);
+          if (start !== -1) {
+            errors.push({
+              start: start + 1,
+              end: start + 4,
+              word: 'are',
+              suggestions: ['is', 'are'],
+              type: 'grammar'
+            });
+          }
+        }
+      }
+      searchIndex = areIndex + 1;
+    }
+
+    // Remove duplicate errors (same position)
+    const uniqueErrors = errors.filter((error, index, self) =>
+      index === self.findIndex(e => e.start === error.start && e.end === error.end)
+    );
 
     // Generate corrected text
     let corrected = text;
     // Sort errors by position (reverse order to maintain indices)
-    const sortedErrors = [...errors].sort((a, b) => b.start - a.start);
+    const sortedErrors = [...uniqueErrors].sort((a, b) => b.start - a.start);
     for (const error of sortedErrors) {
       if (error.suggestions.length > 0) {
         const before = corrected.substring(0, error.start);
@@ -660,7 +742,7 @@ class RewordlyContentScript {
     }
 
     return {
-      errors,
+      errors: uniqueErrors,
       corrected
     };
   }
