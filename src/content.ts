@@ -1,10 +1,24 @@
 /**
  * Rewordly Content Script
  * Handles text selection, floating button UI, and displaying rewritten text
+ * Now includes real-time grammar checking for editable elements
  */
 
 interface RewordlyConfig {
   enabled: boolean;
+}
+
+interface GrammarError {
+  start: number;
+  end: number;
+  word: string;
+  suggestions: string[];
+  type: 'grammar' | 'spelling';
+}
+
+interface GrammarCheckResponse {
+  errors: GrammarError[];
+  corrected: string;
 }
 
 class RewordlyContentScript {
@@ -19,23 +33,38 @@ class RewordlyContentScript {
   private isModalOpen: boolean = false; // Add flag to track modal state
   private currentOperation: 'rewrite' | 'grammar' = 'rewrite'; // Track current operation
   private observer: MutationObserver | null = null;
+  
+  // Real-time grammar checking
+  private grammarCheckTimeout: number | null = null;
+  private grammarErrors: Map<HTMLElement, GrammarError[]> = new Map();
+  private grammarSpinner: HTMLDivElement | null = null;
+  private editableElements: Set<HTMLElement> = new Set();
 
   // Store bound event handlers to allow proper removal
   private boundHandleTextSelection = this.handleTextSelection.bind(this);
   private boundHandleOutsideClick = this.handleOutsideClick.bind(this);
   private boundHandleKeyDown = this.handleKeyDown.bind(this);
   private boundHandleScroll = this.handleScroll.bind(this);
+  private boundHandleInput = this.handleInput.bind(this);
+  private boundHandleFocus = this.handleFocus.bind(this);
+  private boundHandleBlur = this.handleBlur.bind(this);
 
   constructor() {
     this.init();
   }
 
   private async init(): Promise<void> {
+    console.log('Rewordly: Initializing content script');
+    
     // Load configuration from storage
     await this.loadConfig();
     
     // Set up event listeners
     this.setupEventListeners();
+    
+    // Set up real-time grammar checking for editable elements
+    console.log('Rewordly: Setting up real-time grammar check');
+    this.setupRealtimeGrammarCheck();
     
     // Create floating button (initially hidden)
     this.createFloatingButton();
@@ -43,11 +72,16 @@ class RewordlyContentScript {
     // Create modal (initially hidden)
     this.createModal();
     
+    // Create grammar spinner
+    this.createGrammarSpinner();
+    
     // Set up observer for dynamically loaded content
     this.setupContentObserver();
     
     // Listen for settings updates from popup
     this.setupMessageListener();
+    
+    console.log('Rewordly: Content script initialized');
   }
 
   private async loadConfig(): Promise<void> {
@@ -84,6 +118,771 @@ class RewordlyContentScript {
     
     // Listen for scroll events to reposition button if needed
     window.addEventListener('scroll', this.boundHandleScroll, true);
+  }
+
+  /**
+   * Set up real-time grammar checking for editable elements
+   */
+  private setupRealtimeGrammarCheck(): void {
+    console.log('Rewordly: setupRealtimeGrammarCheck called');
+    
+    // Use event delegation at document level to catch all input events
+    // This works even for dynamically added elements and Shadow DOM
+    this.setupEventDelegation();
+    
+    // Wait for DOM to be ready
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => {
+        console.log('Rewordly: DOMContentLoaded fired, finding editable elements');
+        this.findAndAttachToEditableElements();
+      });
+    } else {
+      console.log('Rewordly: DOM already ready, finding editable elements');
+      this.findAndAttachToEditableElements();
+    }
+    
+    // Watch for new editable elements being added to the DOM
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        mutation.addedNodes.forEach((node) => {
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            const element = node as HTMLElement;
+            this.attachToEditableElement(element);
+            // Also check children (including Shadow DOM)
+            this.findEditableInElement(element);
+          }
+        });
+      });
+    });
+    
+    if (document.body) {
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['contenteditable']
+      });
+      console.log('Rewordly: MutationObserver started');
+    } else {
+      console.log('Rewordly: document.body not ready, waiting...');
+      const bodyObserver = new MutationObserver(() => {
+        if (document.body) {
+          observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['contenteditable']
+          });
+          console.log('Rewordly: MutationObserver started (after body ready)');
+          bodyObserver.disconnect();
+        }
+      });
+      bodyObserver.observe(document.documentElement, {
+        childList: true
+      });
+    }
+    
+    // Periodically scan for new editable elements (for very dynamic pages)
+    setInterval(() => {
+      this.findAndAttachToEditableElements();
+    }, 2000);
+  }
+
+  /**
+   * Set up event delegation at document level
+   * This catches all input events even from dynamically added elements
+   */
+  private setupEventDelegation(): void {
+    console.log('Rewordly: Setting up event delegation');
+    
+    // Listen to all input events at document level (capture phase)
+    document.addEventListener('input', (event) => {
+      this.handleDelegatedInput(event);
+    }, true);
+    
+    document.addEventListener('beforeinput', (event) => {
+      this.handleDelegatedInput(event);
+    }, true);
+    
+    // Also listen to keyup for contenteditable elements
+    document.addEventListener('keyup', (event) => {
+      const target = event.target as HTMLElement;
+      if (this.isEditableElement(target)) {
+        this.handleDelegatedInput(event);
+      }
+    }, true);
+    
+    console.log('Rewordly: Event delegation set up');
+  }
+
+  /**
+   * Handle delegated input events
+   */
+  private handleDelegatedInput(event: Event): void {
+    const element = event.target as HTMLElement;
+    
+    if (!element || !this.isEditableElement(element)) {
+      return;
+    }
+    
+    // Ensure element is tracked
+    if (!this.editableElements.has(element)) {
+      console.log('Rewordly: Found new editable element via delegation:', element.tagName);
+      this.editableElements.add(element);
+    }
+    
+    // Process the input event
+    this.handleInput(event);
+  }
+
+  /**
+   * Find editable elements within an element (including Shadow DOM)
+   */
+  private findEditableInElement(element: HTMLElement): void {
+    // Regular querySelector
+    const editableChildren = element.querySelectorAll(`
+      input[type="text"], 
+      input[type="email"], 
+      input[type="search"], 
+      input:not([type]), 
+      input[type="url"],
+      textarea, 
+      [contenteditable="true"],
+      [contenteditable=""],
+      [contenteditable]
+    `);
+    
+    editableChildren.forEach((child) => {
+      this.attachToEditableElement(child as HTMLElement);
+    });
+    
+    // Check Shadow DOM
+    if (element.shadowRoot) {
+      const shadowEditable = element.shadowRoot.querySelectorAll(`
+        input[type="text"], 
+        input[type="email"], 
+        input[type="search"], 
+        input:not([type]), 
+        input[type="url"],
+        textarea, 
+        [contenteditable="true"],
+        [contenteditable=""],
+        [contenteditable]
+      `);
+      
+      shadowEditable.forEach((child) => {
+        this.attachToEditableElement(child as HTMLElement);
+      });
+    }
+    
+    // Recursively check for elements with shadow roots
+    const allElements = element.querySelectorAll('*');
+    allElements.forEach((el) => {
+      if ((el as HTMLElement).shadowRoot) {
+        this.findEditableInElement(el as HTMLElement);
+      }
+    });
+  }
+
+  /**
+   * Find all editable elements and attach listeners
+   */
+  private findAndAttachToEditableElements(): void {
+    // More comprehensive selector to catch all editable elements
+    const inputs = document.querySelectorAll(`
+      input[type="text"], 
+      input[type="email"], 
+      input[type="search"], 
+      input:not([type]), 
+      input[type="url"],
+      textarea, 
+      [contenteditable="true"],
+      [contenteditable=""],
+      [contenteditable]
+    `);
+    
+    // Also check all elements for contenteditable (some sites set it dynamically)
+    const allElements = document.querySelectorAll('*');
+    const contentEditableElements: HTMLElement[] = [];
+    allElements.forEach((el) => {
+      const htmlEl = el as HTMLElement;
+      if (htmlEl.isContentEditable || htmlEl.getAttribute('contenteditable') === 'true' || htmlEl.getAttribute('contenteditable') === '') {
+        contentEditableElements.push(htmlEl);
+      }
+    });
+    
+    // Combine and deduplicate
+    const allEditable = new Set([...inputs, ...contentEditableElements]);
+    
+    console.log(`Rewordly: Found ${allEditable.size} editable elements (${inputs.length} via selector, ${contentEditableElements.length} via contentEditable check)`);
+    
+    allEditable.forEach((element) => {
+      const el = element as HTMLElement;
+      this.attachToEditableElement(el);
+    });
+    
+    // Check Shadow DOM
+    this.findEditableInShadowDOM(document.body);
+    
+    console.log(`Rewordly: Total tracked elements: ${this.editableElements.size}`);
+  }
+
+  /**
+   * Find editable elements in Shadow DOM
+   */
+  private findEditableInShadowDOM(root: Node): void {
+    if (!root) return;
+    
+    // Walk the tree
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+    let node: Node | null;
+    
+    while ((node = walker.nextNode())) {
+      const element = node as HTMLElement;
+      
+      // Check if element itself is editable
+      if (this.isEditableElement(element)) {
+        this.attachToEditableElement(element);
+      }
+      
+      // Check Shadow DOM
+      if (element.shadowRoot) {
+        this.findEditableInShadowDOM(element.shadowRoot);
+      }
+    }
+  }
+
+  /**
+   * Check if element is editable
+   */
+  private isEditableElement(element: HTMLElement): boolean {
+    if (element instanceof HTMLInputElement) {
+      const type = element.type.toLowerCase();
+      return type === 'text' || type === 'email' || type === 'search' || type === '' || type === 'url';
+    }
+    if (element instanceof HTMLTextAreaElement) {
+      return true;
+    }
+    // Check for contenteditable (can be "true", "", or just present)
+    const contentEditable = element.getAttribute('contenteditable');
+    if (contentEditable === 'true' || contentEditable === '' || (contentEditable !== null && contentEditable !== 'false')) {
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Attach event listeners to an editable element
+   */
+  private attachToEditableElement(element: HTMLElement): void {
+    if (!this.isEditableElement(element)) {
+      return;
+    }
+    
+    if (this.editableElements.has(element)) {
+      return;
+    }
+
+    this.editableElements.add(element);
+    const elementType = element instanceof HTMLInputElement ? (element as HTMLInputElement).type : 
+                        element instanceof HTMLTextAreaElement ? 'textarea' : 'contenteditable';
+    console.log('Rewordly: Attaching listeners to:', element.tagName, elementType, element);
+    
+    // Add multiple event listeners to catch all input types
+    // Use capture phase to catch events before they're stopped
+    element.addEventListener('input', this.boundHandleInput, true);
+    element.addEventListener('beforeinput', this.boundHandleInput, true);
+    element.addEventListener('keyup', this.boundHandleInput, true);
+    element.addEventListener('focus', this.boundHandleFocus, true);
+    element.addEventListener('blur', this.boundHandleBlur, true);
+    
+    // For contenteditable, also listen to textInput
+    if (element.getAttribute('contenteditable') === 'true') {
+      element.addEventListener('textInput', this.boundHandleInput, true);
+    }
+    
+    console.log('Rewordly: Listeners attached successfully to', element);
+  }
+
+  /**
+   * Handle input events on editable elements
+   */
+  private handleInput(event: Event): void {
+    console.log('Rewordly: Input event triggered!', event);
+    
+    if (!this.config.enabled) {
+      console.log('Rewordly: Extension disabled, skipping');
+      return;
+    }
+
+    const element = event.target as HTMLElement;
+    console.log('Rewordly: Input on element:', element.tagName, element);
+    console.log('Rewordly: Element in editableElements set?', this.editableElements.has(element));
+    
+    if (!this.isEditableElement(element)) {
+      console.log('Rewordly: Element not editable, skipping');
+      return;
+    }
+
+    console.log('Rewordly: Processing input event');
+
+    // Clear previous timeout
+    if (this.grammarCheckTimeout !== null) {
+      clearTimeout(this.grammarCheckTimeout);
+    }
+
+    // Clear existing errors
+    this.clearGrammarErrors(element);
+
+    // Hide spinner if it was showing
+    this.hideGrammarSpinner();
+
+    // Set new timeout for grammar check (1 second after typing stops)
+    console.log('Rewordly: Setting timeout for grammar check');
+    this.grammarCheckTimeout = window.setTimeout(() => {
+      console.log('Rewordly: Timeout fired, performing grammar check');
+      this.performGrammarCheck(element);
+    }, 1000);
+  }
+
+  /**
+   * Handle focus events on editable elements
+   */
+  private handleFocus(_event: Event): void {
+    // Focus handler - can be used for future features
+  }
+
+  /**
+   * Handle blur events on editable elements
+   */
+  private handleBlur(_event: Event): void {
+    // Clear timeout if user leaves the field
+    if (this.grammarCheckTimeout !== null) {
+      clearTimeout(this.grammarCheckTimeout);
+      this.grammarCheckTimeout = null;
+    }
+    
+    // Hide spinner
+    this.hideGrammarSpinner();
+  }
+
+  /**
+   * Perform grammar check on an element
+   */
+  private async performGrammarCheck(element: HTMLElement): Promise<void> {
+    let text = '';
+    
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+      text = element.value;
+    } else if (element.getAttribute('contenteditable') === 'true') {
+      text = element.textContent || element.innerText || '';
+    }
+
+    // Skip if text is too short
+    if (text.trim().length < 3) {
+      return;
+    }
+
+    // Show spinner
+    this.showGrammarSpinner(element);
+
+    try {
+      // Mock API call - simulate delay
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      const response = this.mockGrammarCheck(text);
+      console.log('Rewordly: Grammar check - Found', response.errors.length, 'error(s)');
+      
+      // Hide spinner
+      this.hideGrammarSpinner();
+      
+      // Display errors
+      if (response.errors.length > 0) {
+        this.displayGrammarErrors(element, response.errors);
+      }
+    } catch (error) {
+      console.error('Rewordly: Grammar check error:', error);
+      this.hideGrammarSpinner();
+    }
+  }
+
+  /**
+   * Mock grammar check API - returns grammar errors with positions
+   */
+  private mockGrammarCheck(text: string): GrammarCheckResponse {
+    // Example sentence with grammar errors: "I goes to the store yesterday"
+    // This is a mock - in real implementation, this would call the API
+    
+    const errors: GrammarError[] = [];
+    const lowerText = text.toLowerCase();
+    
+    // Check for common grammar errors
+    // "goes" should be "went" (past tense)
+    const goesIndex = lowerText.indexOf(' goes ');
+    if (goesIndex !== -1) {
+      const start = text.indexOf(' goes ', goesIndex);
+      if (start !== -1) {
+        errors.push({
+          start: start + 1,
+          end: start + 5,
+          word: 'goes',
+          suggestions: ['went', 'go'],
+          type: 'grammar'
+        });
+      }
+    }
+    
+    // "buyed" should be "bought"
+    const buyedIndex = lowerText.indexOf('buyed');
+    if (buyedIndex !== -1) {
+      const start = text.toLowerCase().indexOf('buyed', buyedIndex);
+      if (start !== -1) {
+        errors.push({
+          start: start,
+          end: start + 5,
+          word: 'buyed',
+          suggestions: ['bought', 'buy'],
+          type: 'grammar'
+        });
+      }
+    }
+    
+    // "have" with singular subject (e.g., "sentence have")
+    const haveIndex = lowerText.indexOf(' have ');
+    if (haveIndex !== -1 && haveIndex > 0) {
+      const beforeHave = text.substring(Math.max(0, haveIndex - 20), haveIndex).trim();
+      // Simple check: if word before "have" doesn't end with 's' or is singular
+      const wordsBefore = beforeHave.split(/\s+/);
+      const lastWord = wordsBefore[wordsBefore.length - 1];
+      if (lastWord && !lastWord.toLowerCase().endsWith('s') && lastWord.toLowerCase() !== 'they' && lastWord.toLowerCase() !== 'we' && lastWord.toLowerCase() !== 'you') {
+        const start = text.indexOf(' have ', haveIndex);
+        if (start !== -1) {
+          errors.push({
+            start: start + 1,
+            end: start + 5,
+            word: 'have',
+            suggestions: ['has', 'have'],
+            type: 'grammar'
+          });
+        }
+      }
+    }
+    
+    // "was" with plural subject (e.g., "they was")
+    const wasIndex = lowerText.indexOf(' was ');
+    if (wasIndex !== -1 && wasIndex > 0) {
+      const beforeWas = text.substring(Math.max(0, wasIndex - 10), wasIndex).trim();
+      const wordsBefore = beforeWas.split(/\s+/);
+      const lastWord = wordsBefore[wordsBefore.length - 1];
+      if (lastWord && (lastWord.toLowerCase() === 'they' || lastWord.toLowerCase() === 'we' || lastWord.toLowerCase() === 'you')) {
+        const start = text.indexOf(' was ', wasIndex);
+        if (start !== -1) {
+          errors.push({
+            start: start + 1,
+            end: start + 4,
+            word: 'was',
+            suggestions: ['were', 'was'],
+            type: 'grammar'
+          });
+        }
+      }
+    }
+
+    // Generate corrected text
+    let corrected = text;
+    // Sort errors by position (reverse order to maintain indices)
+    const sortedErrors = [...errors].sort((a, b) => b.start - a.start);
+    for (const error of sortedErrors) {
+      if (error.suggestions.length > 0) {
+        const before = corrected.substring(0, error.start);
+        const after = corrected.substring(error.end);
+        corrected = before + error.suggestions[0] + after;
+      }
+    }
+
+    return {
+      errors,
+      corrected
+    };
+  }
+
+  /**
+   * Display grammar errors on an element
+   */
+  private displayGrammarErrors(element: HTMLElement, errors: GrammarError[]): void {
+    // Store errors
+    this.grammarErrors.set(element, errors);
+
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+      // For input/textarea, we need to create an overlay
+      this.createErrorOverlay(element, errors);
+    } else if (element.getAttribute('contenteditable') === 'true') {
+      // For contenteditable, we can directly modify the content
+      this.highlightErrorsInContentEditable(element, errors);
+    }
+  }
+
+  /**
+   * Create error overlay for input/textarea elements
+   */
+  private createErrorOverlay(element: HTMLInputElement | HTMLTextAreaElement, errors: GrammarError[]): void {
+    // Remove existing overlay
+    const existingOverlay = document.querySelector(`.rewordly-grammar-overlay[data-element-id="${this.getElementId(element)}"]`);
+    if (existingOverlay) {
+      existingOverlay.remove();
+    }
+
+    // Create overlay
+    const overlay = document.createElement('div');
+    overlay.className = 'rewordly-grammar-overlay';
+    overlay.setAttribute('data-element-id', this.getElementId(element));
+    
+    // Copy all relevant styles from the element
+    const styles = window.getComputedStyle(element);
+    overlay.style.cssText = `
+      position: fixed;
+      pointer-events: none;
+      z-index: 2147483645;
+      font-family: ${styles.fontFamily};
+      font-size: ${styles.fontSize};
+      font-weight: ${styles.fontWeight};
+      font-style: ${styles.fontStyle};
+      line-height: ${styles.lineHeight};
+      letter-spacing: ${styles.letterSpacing};
+      word-spacing: ${styles.wordSpacing};
+      text-transform: ${styles.textTransform};
+      color: transparent;
+      white-space: ${element instanceof HTMLInputElement ? 'pre' : 'pre-wrap'};
+      word-wrap: break-word;
+      overflow: hidden;
+      box-sizing: ${styles.boxSizing};
+      padding: ${styles.padding};
+      border: ${styles.border};
+      border-color: transparent;
+      background: transparent;
+    `;
+
+    // Position overlay exactly over the element
+    const rect = element.getBoundingClientRect();
+    overlay.style.top = `${rect.top + window.scrollY}px`;
+    overlay.style.left = `${rect.left + window.scrollX}px`;
+    overlay.style.width = `${rect.width}px`;
+    overlay.style.height = `${rect.height}px`;
+    overlay.style.minHeight = `${rect.height}px`;
+
+    // Create text with error highlights
+    const text = element.value;
+    const errorSpans: string[] = [];
+    
+    // Sort errors by position
+    const sortedErrors = [...errors].sort((a, b) => a.start - b.start);
+    
+    let lastIndex = 0;
+    for (const error of sortedErrors) {
+      // Add text before error
+      errorSpans.push(this.escapeHtml(text.substring(lastIndex, error.start)));
+      
+      // Add error word with underline
+      const errorWord = text.substring(error.start, error.end);
+      errorSpans.push(`<span class="rewordly-grammar-error" style="border-bottom: 2px solid #ef4444; cursor: pointer; background: rgba(239, 68, 68, 0.1);" data-error="${this.escapeHtml(JSON.stringify(error))}">${this.escapeHtml(errorWord)}</span>`);
+      
+      lastIndex = error.end;
+    }
+    
+    // Add remaining text
+    errorSpans.push(this.escapeHtml(text.substring(lastIndex)));
+    
+    overlay.innerHTML = errorSpans.join('');
+    
+    document.body.appendChild(overlay);
+    
+    // Update overlay position on scroll/resize
+    const updatePosition = () => {
+      const newRect = element.getBoundingClientRect();
+      overlay.style.top = `${newRect.top + window.scrollY}px`;
+      overlay.style.left = `${newRect.left + window.scrollX}px`;
+      overlay.style.width = `${newRect.width}px`;
+      overlay.style.height = `${newRect.height}px`;
+    };
+    
+    window.addEventListener('scroll', updatePosition, true);
+    window.addEventListener('resize', updatePosition);
+    
+    // Store cleanup function
+    (overlay as any).__cleanup = () => {
+      window.removeEventListener('scroll', updatePosition, true);
+      window.removeEventListener('resize', updatePosition);
+    };
+  }
+
+  /**
+   * Get unique ID for an element
+   */
+  private getElementId(element: HTMLElement): string {
+    if (!(element as any).__rewordlyId) {
+      (element as any).__rewordlyId = `rewordly-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    }
+    return (element as any).__rewordlyId;
+  }
+
+  /**
+   * Highlight errors in contenteditable element
+   */
+  private highlightErrorsInContentEditable(element: HTMLElement, errors: GrammarError[]): void {
+    // For contenteditable, we can wrap errors in spans
+    // Sort errors by position (reverse order to maintain indices)
+    const sortedErrors = [...errors].sort((a, b) => b.start - a.start);
+    
+    // Create a range to work with
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    
+    for (const error of sortedErrors) {
+      try {
+        // Find the text node containing this error
+        const walker = document.createTreeWalker(
+          element,
+          NodeFilter.SHOW_TEXT,
+          null
+        );
+        
+        let textNode: Node | null = null;
+        let offset = 0;
+        
+        while ((textNode = walker.nextNode())) {
+          const nodeLength = textNode.textContent?.length || 0;
+          if (offset + nodeLength > error.start) {
+            // Found the node
+            const localStart = error.start - offset;
+            const localEnd = Math.min(error.end - offset, nodeLength);
+            
+            range.setStart(textNode, localStart);
+            range.setEnd(textNode, localEnd);
+            
+            const span = document.createElement('span');
+            span.className = 'rewordly-grammar-error';
+            span.style.cssText = 'border-bottom: 2px solid #ef4444; cursor: pointer;';
+            span.setAttribute('data-error', JSON.stringify(error));
+            
+            try {
+              range.surroundContents(span);
+            } catch (e) {
+              // If surroundContents fails, use extractContents
+              const contents = range.extractContents();
+              span.appendChild(contents);
+              range.insertNode(span);
+            }
+            
+            break;
+          }
+          offset += nodeLength;
+        }
+      } catch (e) {
+        console.error('Rewordly: Error highlighting in contenteditable:', e);
+      }
+    }
+  }
+
+  /**
+   * Clear grammar errors from an element
+   */
+  private clearGrammarErrors(element: HTMLElement): void {
+    // Remove overlay if exists
+    const overlay = document.querySelector(`.rewordly-grammar-overlay[data-element-id="${this.getElementId(element)}"]`);
+    if (overlay) {
+      // Clean up event listeners
+      if ((overlay as any).__cleanup) {
+        (overlay as any).__cleanup();
+      }
+      overlay.remove();
+    }
+    
+    // Remove error spans from contenteditable
+    if (element.getAttribute('contenteditable') === 'true') {
+      const errorSpans = element.querySelectorAll('.rewordly-grammar-error');
+      errorSpans.forEach((span) => {
+        const parent = span.parentNode;
+        if (parent) {
+          const textNode = document.createTextNode(span.textContent || '');
+          parent.replaceChild(textNode, span);
+          parent.normalize();
+        }
+      });
+    }
+    
+    // Clear stored errors
+    this.grammarErrors.delete(element);
+  }
+
+  /**
+   * Create grammar spinner
+   */
+  private createGrammarSpinner(): void {
+    this.grammarSpinner = document.createElement('div');
+    this.grammarSpinner.className = 'rewordly-grammar-spinner';
+    this.grammarSpinner.innerHTML = `
+      <div class="rewordly-grammar-spinner-icon"></div>
+      <span class="rewordly-grammar-spinner-text">Checking grammar...</span>
+    `;
+    this.grammarSpinner.style.cssText = `
+      position: fixed !important;
+      display: none !important;
+      align-items: center !important;
+      gap: 8px !important;
+      background: white !important;
+      padding: 8px 12px !important;
+      border-radius: 6px !important;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+      z-index: 2147483646 !important;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+      font-size: 12px !important;
+      color: #374151 !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+    `;
+    document.body.appendChild(this.grammarSpinner);
+  }
+
+  /**
+   * Show grammar spinner near the element
+   */
+  private showGrammarSpinner(element: HTMLElement): void {
+    if (!this.grammarSpinner) {
+      return;
+    }
+    
+    const rect = element.getBoundingClientRect();
+    
+    // Calculate position with scroll offset
+    const top = rect.bottom + window.scrollY + 10;
+    const left = rect.left + window.scrollX;
+    
+    this.grammarSpinner.style.setProperty('top', `${top}px`, 'important');
+    this.grammarSpinner.style.setProperty('left', `${left}px`, 'important');
+    this.grammarSpinner.style.setProperty('display', 'flex', 'important');
+    this.grammarSpinner.style.setProperty('visibility', 'visible', 'important');
+    this.grammarSpinner.style.setProperty('opacity', '1', 'important');
+  }
+
+  /**
+   * Hide grammar spinner
+   */
+  private hideGrammarSpinner(): void {
+    if (this.grammarSpinner) {
+      this.grammarSpinner.style.setProperty('display', 'none', 'important');
+      this.grammarSpinner.style.setProperty('visibility', 'hidden', 'important');
+      this.grammarSpinner.style.setProperty('opacity', '0', 'important');
+    }
+  }
+
+  /**
+   * Escape HTML to prevent XSS
+   */
+  private escapeHtml(text: string): string {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   }
 
   private setupContentObserver(): void {
@@ -173,21 +972,17 @@ class RewordlyContentScript {
 
     const selection = window.getSelection();
     if (!selection || selection.toString().trim() === '') {
-      console.log('Rewordly: No text selected');
       this.hideFloatingButton();
       return;
     }
 
     const selectedText = selection.toString().trim();
-    console.log('Rewordly: Selected text length:', selectedText.length);
     
     if (selectedText.length < 3) {
-      console.log('Rewordly: Text too short, not showing button');
       this.hideFloatingButton();
       return;
     }
 
-    console.log('Rewordly: Showing floating button for text:', selectedText.substring(0, 50) + '...');
     this.selectedText = selectedText;
     this.showFloatingButton();
   }
@@ -702,24 +1497,17 @@ class RewordlyContentScript {
   }
 
   private async handleRewriteClick(): Promise<void> {
-    console.log('Rewordly: Rewrite button clicked');
-    console.log('Rewordly: Selected text:', this.selectedText);
-    
     if (this.isProcessing) {
-      console.log('Rewordly: Already processing');
       return;
     }
 
-    console.log('Rewordly: Starting rewrite process');
     this.currentOperation = 'rewrite';
     this.hideFloatingButton();
     this.showModal();
     this.isProcessing = true;
 
     try {
-      console.log('Rewordly: Calling Rewordly API');
       const rewrittenText = await this.rewriteText(this.selectedText);
-      console.log('Rewordly: API response received:', rewrittenText);
       this.displayRewrittenText(rewrittenText);
     } catch (error) {
       console.error('Rewordly: Error rewriting text:', error);
@@ -730,24 +1518,17 @@ class RewordlyContentScript {
   }
 
   private async handleGrammarClick(): Promise<void> {
-    console.log('Rewordly: Grammar button clicked');
-    console.log('Rewordly: Selected text:', this.selectedText);
-    
     if (this.isProcessing) {
-      console.log('Rewordly: Already processing');
       return;
     }
 
-    console.log('Rewordly: Starting grammar correction process');
     this.currentOperation = 'grammar';
     this.hideFloatingButton();
     this.showModal();
     this.isProcessing = true;
 
     try {
-      console.log('Rewordly: Calling Rewordly Grammar API');
       const correctedText = await this.grammarText(this.selectedText);
-      console.log('Rewordly: Grammar API response received:', correctedText);
       this.displayRewrittenText(correctedText);
     } catch (error) {
       console.error('Rewordly: Error correcting grammar:', error);
