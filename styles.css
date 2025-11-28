@@ -933,22 +933,24 @@
   border-bottom: 2px solid #ef4444 !important;
   cursor: pointer !important;
   position: relative !important;
-  background: rgba(239, 68, 68, 0.1) !important;
+  /* Removed background for simpler underline-only approach */
 }
 
 .rewordly-grammar-error:hover {
-  background: rgba(239, 68, 68, 0.2) !important;
+  border-bottom: 3px solid #ef4444 !important;
 }
 
 .rewordly-grammar-overlay {
-  position: absolute !important;
+  position: fixed !important;
   pointer-events: none !important;
   z-index: 2147483645 !important;
   font-family: inherit !important;
   color: transparent !important;
   white-space: pre-wrap !important;
   word-wrap: break-word !important;
-  overflow: hidden !important;
+  overflow: visible !important;
+  mix-blend-mode: normal !important;
+  isolation: isolate !important;
 }
 
 .rewordly-grammar-spinner {

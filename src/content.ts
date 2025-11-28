@@ -522,17 +522,25 @@ class RewordlyContentScript {
    */
   private async performGrammarCheck(element: HTMLElement): Promise<void> {
     let text = '';
+    let textSource: 'value' | 'textContent' | 'innerText' = 'textContent';
     
     if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
       text = element.value;
-    } else if (element.getAttribute('contenteditable') === 'true') {
-      text = element.textContent || element.innerText || '';
+      textSource = 'value';
+    } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
+      // For contenteditable, prefer innerText as it's more accurate for formatted text
+      text = element.innerText || element.textContent || '';
+      textSource = element.innerText ? 'innerText' : 'textContent';
     }
 
     // Skip if text is too short
     if (text.trim().length < 3) {
       return;
     }
+
+    // Store text source for overlay creation
+    (element as any).__rewordlyTextSource = textSource;
+    (element as any).__rewordlyText = text;
 
     // Show spinner
     this.showGrammarSpinner(element);
@@ -690,38 +698,49 @@ class RewordlyContentScript {
     overlay.className = 'rewordly-grammar-overlay';
     overlay.setAttribute('data-element-id', this.getElementId(element));
     
-    // Copy all relevant styles from the element
+    // Copy ALL relevant styles from the element to ensure perfect alignment
     const styles = window.getComputedStyle(element);
-    overlay.style.cssText = `
-      position: fixed;
-      pointer-events: none;
-      z-index: 2147483645;
-      font-family: ${styles.fontFamily};
-      font-size: ${styles.fontSize};
-      font-weight: ${styles.fontWeight};
-      font-style: ${styles.fontStyle};
-      line-height: ${styles.lineHeight};
-      letter-spacing: ${styles.letterSpacing};
-      word-spacing: ${styles.wordSpacing};
-      text-transform: ${styles.textTransform};
-      color: transparent;
-      white-space: ${element instanceof HTMLInputElement ? 'pre' : 'pre-wrap'};
-      word-wrap: break-word;
-      overflow: hidden;
-      box-sizing: ${styles.boxSizing};
-      padding: ${styles.padding};
-      border: ${styles.border};
-      border-color: transparent;
-      background: transparent;
-    `;
+    
+    // Get all CSS properties that affect text rendering
+    const cssProperties = [
+      'direction', 'text-align', 'text-indent', 'text-decoration', 'text-shadow',
+      'font-family', 'font-size', 'font-weight', 'font-style', 'font-variant',
+      'font-stretch', 'font-size-adjust', 'line-height', 'letter-spacing', 
+      'word-spacing', 'text-transform', 'white-space', 'word-wrap', 'word-break',
+      'overflow-wrap', 'hyphens', 'tab-size', 'text-rendering',
+      'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+      'border', 'border-top', 'border-right', 'border-bottom', 'border-left',
+      'box-sizing', 'width', 'min-width', 'max-width'
+    ];
+    
+    let overlayStyles = 'position: fixed !important; pointer-events: none !important; z-index: 2147483645 !important; color: transparent !important; background: transparent !important; border-color: transparent !important;';
+    
+    cssProperties.forEach(prop => {
+      const value = styles.getPropertyValue(prop);
+      if (value) {
+        overlayStyles += `${prop}: ${value} !important; `;
+      }
+    });
+    
+    // Ensure white-space matches element
+    const whiteSpace = element instanceof HTMLInputElement ? 'pre' : (styles.whiteSpace || 'pre-wrap');
+    overlayStyles += `white-space: ${whiteSpace} !important; `;
+    overlayStyles += `word-wrap: ${styles.wordWrap || 'break-word'} !important; `;
+    overlayStyles += `overflow: hidden !important; `;
+    
+    overlay.style.cssText = overlayStyles;
 
     // Position overlay exactly over the element
     const rect = element.getBoundingClientRect();
+    // Use scrollWidth to ensure overlay covers all text
+    const scrollWidth = element.scrollWidth || rect.width;
+    const scrollHeight = element.scrollHeight || rect.height;
+    
     overlay.style.top = `${rect.top + window.scrollY}px`;
     overlay.style.left = `${rect.left + window.scrollX}px`;
-    overlay.style.width = `${rect.width}px`;
-    overlay.style.height = `${rect.height}px`;
-    overlay.style.minHeight = `${rect.height}px`;
+    overlay.style.width = `${Math.max(rect.width, scrollWidth)}px`;
+    overlay.style.height = `${Math.max(rect.height, scrollHeight)}px`;
+    overlay.style.minHeight = `${Math.max(rect.height, scrollHeight)}px`;
 
     // Create text with error highlights
     const text = element.value;
@@ -735,9 +754,9 @@ class RewordlyContentScript {
       // Add text before error
       errorSpans.push(this.escapeHtml(text.substring(lastIndex, error.start)));
       
-      // Add error word with underline
+      // Add error word with underline - use exact substring
       const errorWord = text.substring(error.start, error.end);
-      errorSpans.push(`<span class="rewordly-grammar-error" style="border-bottom: 2px solid #ef4444; cursor: pointer; background: rgba(239, 68, 68, 0.1);" data-error="${this.escapeHtml(JSON.stringify(error))}">${this.escapeHtml(errorWord)}</span>`);
+      errorSpans.push(`<span class="rewordly-grammar-error" style="border-bottom: 2px solid #ef4444 !important; cursor: pointer !important; background: rgba(239, 68, 68, 0.1) !important; display: inline !important;" data-error="${this.escapeHtml(JSON.stringify(error))}">${this.escapeHtml(errorWord)}</span>`);
       
       lastIndex = error.end;
     }
@@ -749,13 +768,20 @@ class RewordlyContentScript {
     
     document.body.appendChild(overlay);
     
+    // Force a reflow to ensure styles are applied
+    void overlay.offsetHeight;
+    
     // Update overlay position on scroll/resize
     const updatePosition = () => {
       const newRect = element.getBoundingClientRect();
+      const newScrollWidth = element.scrollWidth || newRect.width;
+      const newScrollHeight = element.scrollHeight || newRect.height;
+      
       overlay.style.top = `${newRect.top + window.scrollY}px`;
       overlay.style.left = `${newRect.left + window.scrollX}px`;
-      overlay.style.width = `${newRect.width}px`;
-      overlay.style.height = `${newRect.height}px`;
+      overlay.style.width = `${Math.max(newRect.width, newScrollWidth)}px`;
+      overlay.style.height = `${Math.max(newRect.height, newScrollHeight)}px`;
+      overlay.style.minHeight = `${Math.max(newRect.height, newScrollHeight)}px`;
     };
     
     window.addEventListener('scroll', updatePosition, true);
@@ -789,80 +815,174 @@ class RewordlyContentScript {
       existingOverlay.remove();
     }
 
-    // Get text content
-    const text = element.textContent || element.innerText || '';
+    // Get text content - use the same source as grammar check
+    const textSource = (element as any).__rewordlyTextSource || 'innerText';
+    let text = '';
+    
+    if (textSource === 'innerText') {
+      text = element.innerText || element.textContent || '';
+    } else if (textSource === 'textContent') {
+      text = element.textContent || element.innerText || '';
+    } else {
+      // Fallback
+      text = element.innerText || element.textContent || '';
+    }
+    
+    // If we have stored text from grammar check, use it for exact matching
+    if ((element as any).__rewordlyText) {
+      text = (element as any).__rewordlyText;
+    }
+    
     if (!text) return;
+    
+    console.log('Rewordly: Overlay text length:', text.length, 'Text:', text.substring(0, 50));
 
     // Create overlay
     const overlay = document.createElement('div');
     overlay.className = 'rewordly-grammar-overlay';
     overlay.setAttribute('data-element-id', this.getElementId(element));
     
-    // Copy all relevant styles from the element
+    // Copy ALL relevant styles from the element to ensure perfect alignment
     const styles = window.getComputedStyle(element);
-    overlay.style.cssText = `
-      position: fixed;
-      pointer-events: none;
-      z-index: 2147483645;
-      font-family: ${styles.fontFamily};
-      font-size: ${styles.fontSize};
-      font-weight: ${styles.fontWeight};
-      font-style: ${styles.fontStyle};
-      line-height: ${styles.lineHeight};
-      letter-spacing: ${styles.letterSpacing};
-      word-spacing: ${styles.wordSpacing};
-      text-transform: ${styles.textTransform};
-      color: transparent;
-      white-space: pre-wrap;
-      word-wrap: break-word;
-      overflow: hidden;
-      box-sizing: ${styles.boxSizing};
-      padding: ${styles.padding};
-      border: ${styles.border};
-      border-color: transparent;
-      background: transparent;
-    `;
+    
+    // Get all CSS properties that affect text rendering
+    const cssProperties = [
+      'direction', 'text-align', 'text-indent', 'text-decoration', 'text-shadow',
+      'font-family', 'font-size', 'font-weight', 'font-style', 'font-variant',
+      'font-stretch', 'font-size-adjust', 'line-height', 'letter-spacing', 
+      'word-spacing', 'text-transform', 'white-space', 'word-wrap', 'word-break',
+      'overflow-wrap', 'hyphens', 'tab-size', 'text-rendering',
+      'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+      'border', 'border-top', 'border-right', 'border-bottom', 'border-left',
+      'box-sizing', 'width', 'min-width', 'max-width',
+      'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left'
+    ];
+    
+    let overlayStyles = 'position: fixed !important; pointer-events: none !important; z-index: 2147483645 !important; color: transparent !important; background: transparent !important; border-color: transparent !important;';
+    
+    cssProperties.forEach(prop => {
+      const value = styles.getPropertyValue(prop);
+      if (value) {
+        overlayStyles += `${prop}: ${value} !important; `;
+      }
+    });
+    
+    // Ensure white-space matches element
+    overlayStyles += `white-space: ${styles.whiteSpace || 'pre-wrap'} !important; `;
+    overlayStyles += `word-wrap: ${styles.wordWrap || 'break-word'} !important; `;
+    overlayStyles += `overflow: hidden !important; `;
+    
+    overlay.style.cssText = overlayStyles;
 
     // Position overlay exactly over the element
     const rect = element.getBoundingClientRect();
+    // Use scrollWidth to ensure overlay covers all text, especially for contenteditable
+    const scrollWidth = element.scrollWidth || rect.width;
+    const scrollHeight = element.scrollHeight || rect.height;
+    
     overlay.style.top = `${rect.top + window.scrollY}px`;
     overlay.style.left = `${rect.left + window.scrollX}px`;
-    overlay.style.width = `${rect.width}px`;
-    overlay.style.height = `${rect.height}px`;
-    overlay.style.minHeight = `${rect.height}px`;
+    overlay.style.width = `${Math.max(rect.width, scrollWidth)}px`;
+    overlay.style.height = `${Math.max(rect.height, scrollHeight)}px`;
+    overlay.style.minHeight = `${Math.max(rect.height, scrollHeight)}px`;
+    overlay.style.maxHeight = `${Math.max(rect.height, scrollHeight)}px`;
 
-    // Create text with error highlights
+    // Create overlay with only underlines for errors (simpler approach)
+    // Instead of copying all text, we'll create invisible text nodes and only show underlines
     const errorSpans: string[] = [];
     
     // Sort errors by position
     const sortedErrors = [...errors].sort((a, b) => a.start - b.start);
     
+    console.log('Rewordly: Creating overlay with', sortedErrors.length, 'errors');
+    console.log('Rewordly: Text for overlay:', text);
+    console.log('Rewordly: Errors:', sortedErrors);
+    
+    // Create invisible text to match the element's text layout
+    // Then add only underline spans for errors
     let lastIndex = 0;
     for (const error of sortedErrors) {
-      // Add text before error
-      errorSpans.push(this.escapeHtml(text.substring(lastIndex, error.start)));
+      // Validate error positions
+      if (error.start < 0 || error.end > text.length || error.start >= error.end) {
+        console.warn('Rewordly: Invalid error position:', error, 'Text length:', text.length);
+        continue;
+      }
       
-      // Add error word with underline
+      // Add invisible text before error to maintain layout
+      const beforeText = text.substring(lastIndex, error.start);
+      if (beforeText) {
+        errorSpans.push(`<span style="color: transparent !important; display: inline !important;">${this.escapeHtml(beforeText)}</span>`);
+      }
+      
+      // Add error word with only underline (no background, simpler)
       const errorWord = text.substring(error.start, error.end);
-      errorSpans.push(`<span class="rewordly-grammar-error" style="border-bottom: 2px solid #ef4444; cursor: pointer; background: rgba(239, 68, 68, 0.1);" data-error="${this.escapeHtml(JSON.stringify(error))}">${this.escapeHtml(errorWord)}</span>`);
+      console.log('Rewordly: Error word:', errorWord, 'at position', error.start, '-', error.end);
+      errorSpans.push(`<span class="rewordly-grammar-error" style="color: transparent !important; border-bottom: 2px solid #ef4444 !important; cursor: pointer !important; display: inline !important; position: relative !important;" data-error="${this.escapeHtml(JSON.stringify(error))}">${this.escapeHtml(errorWord)}</span>`);
       
       lastIndex = error.end;
     }
     
-    // Add remaining text
-    errorSpans.push(this.escapeHtml(text.substring(lastIndex)));
+    // Add remaining invisible text
+    const afterText = text.substring(lastIndex);
+    if (afterText) {
+      errorSpans.push(`<span style="color: transparent !important; display: inline !important;">${this.escapeHtml(afterText)}</span>`);
+    }
     
     overlay.innerHTML = errorSpans.join('');
     
+    console.log('Rewordly: Overlay HTML length:', overlay.innerHTML.length);
+    
+    // Ensure overlay is visible and properly positioned
+    overlay.style.display = 'block';
+    overlay.style.visibility = 'visible';
+    overlay.style.opacity = '1';
+    overlay.style.pointerEvents = 'none';
+    
+    // Remove any hidden attributes
+    overlay.removeAttribute('data-hidden-by-blur');
+    overlay.removeAttribute('data-hidden-by-modal');
+    
+    // Append to body and ensure it's in the right stacking context
     document.body.appendChild(overlay);
+    
+    // Force a reflow to ensure styles are applied
+    void overlay.offsetHeight;
+    
+    // Debug: Check if overlay is actually visible
+    const overlayRect = overlay.getBoundingClientRect();
+    const computedStyle = window.getComputedStyle(overlay);
+    console.log('Rewordly: Overlay created - Position:', {
+      top: overlayRect.top,
+      left: overlayRect.left,
+      width: overlayRect.width,
+      height: overlayRect.height,
+      zIndex: computedStyle.zIndex,
+      display: computedStyle.display,
+      visibility: computedStyle.visibility,
+      opacity: computedStyle.opacity,
+      position: computedStyle.position
+    });
+    
+    // Additional check: verify overlay is actually in DOM and visible
+    if (!document.body.contains(overlay)) {
+      console.error('Rewordly: Overlay not in DOM!');
+    }
+    if (overlayRect.width === 0 || overlayRect.height === 0) {
+      console.warn('Rewordly: Overlay has zero dimensions!');
+    }
     
     // Update overlay position on scroll/resize
     const updatePosition = () => {
       const newRect = element.getBoundingClientRect();
+      const newScrollWidth = element.scrollWidth || newRect.width;
+      const newScrollHeight = element.scrollHeight || newRect.height;
+      
       overlay.style.top = `${newRect.top + window.scrollY}px`;
       overlay.style.left = `${newRect.left + window.scrollX}px`;
-      overlay.style.width = `${newRect.width}px`;
-      overlay.style.height = `${newRect.height}px`;
+      overlay.style.width = `${Math.max(newRect.width, newScrollWidth)}px`;
+      overlay.style.height = `${Math.max(newRect.height, newScrollHeight)}px`;
+      overlay.style.minHeight = `${Math.max(newRect.height, newScrollHeight)}px`;
+      overlay.style.maxHeight = `${Math.max(newRect.height, newScrollHeight)}px`;
     };
     
     window.addEventListener('scroll', updatePosition, true);
@@ -874,6 +994,7 @@ class RewordlyContentScript {
       window.removeEventListener('resize', updatePosition);
     };
   }
+
 
   /**
    * Hide grammar overlay for an element (but keep errors stored)
@@ -896,13 +1017,19 @@ class RewordlyContentScript {
     
     const overlay = document.querySelector(`.rewordly-grammar-overlay[data-element-id="${this.getElementId(element)}"]`) as HTMLElement;
     if (overlay) {
-      overlay.style.display = '';
+      overlay.style.display = 'block';
+      overlay.style.visibility = 'visible';
+      overlay.style.opacity = '1';
       overlay.removeAttribute('data-hidden-by-blur');
+      overlay.removeAttribute('data-hidden-by-modal');
       this.updateOverlayPosition(element, overlay);
+      
+      console.log('Rewordly: Showing overlay for element', this.getElementId(element));
     } else {
       // Recreate if doesn't exist
       const errors = this.grammarErrors.get(element);
       if (errors) {
+        console.log('Rewordly: Recreating overlay for element', this.getElementId(element));
         this.displayGrammarErrors(element, errors);
       }
     }
@@ -913,10 +1040,15 @@ class RewordlyContentScript {
    */
   private updateOverlayPosition(element: HTMLElement, overlay: HTMLElement): void {
     const rect = element.getBoundingClientRect();
+    const scrollWidth = element.scrollWidth || rect.width;
+    const scrollHeight = element.scrollHeight || rect.height;
+    
     overlay.style.top = `${rect.top + window.scrollY}px`;
     overlay.style.left = `${rect.left + window.scrollX}px`;
-    overlay.style.width = `${rect.width}px`;
-    overlay.style.height = `${rect.height}px`;
+    overlay.style.width = `${Math.max(rect.width, scrollWidth)}px`;
+    overlay.style.height = `${Math.max(rect.height, scrollHeight)}px`;
+    overlay.style.minHeight = `${Math.max(rect.height, scrollHeight)}px`;
+    overlay.style.maxHeight = `${Math.max(rect.height, scrollHeight)}px`;
   }
 
   /**
