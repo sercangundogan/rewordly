@@ -613,12 +613,14 @@ class RewordlyContentScript {
     // Store errors
     this.grammarErrors.set(element, errors);
 
+    // Use overlay for all editable elements to avoid DOM manipulation issues
+    // This prevents text loss in contenteditable elements
     if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-      // For input/textarea, we need to create an overlay
+      // For input/textarea, create overlay
       this.createErrorOverlay(element, errors);
-    } else if (element.getAttribute('contenteditable') === 'true') {
-      // For contenteditable, we can directly modify the content
-      this.highlightErrorsInContentEditable(element, errors);
+    } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
+      // For contenteditable, also use overlay instead of DOM manipulation
+      this.createErrorOverlayForContentEditable(element, errors);
     }
   }
 
@@ -726,68 +728,107 @@ class RewordlyContentScript {
   }
 
   /**
-   * Highlight errors in contenteditable element
+   * Create error overlay for contenteditable elements
+   * This avoids DOM manipulation which can cause text loss
    */
-  private highlightErrorsInContentEditable(element: HTMLElement, errors: GrammarError[]): void {
-    // For contenteditable, we can wrap errors in spans
-    // Sort errors by position (reverse order to maintain indices)
-    const sortedErrors = [...errors].sort((a, b) => b.start - a.start);
-    
-    // Create a range to work with
-    const range = document.createRange();
-    range.selectNodeContents(element);
-    
-    for (const error of sortedErrors) {
-      try {
-        // Find the text node containing this error
-        const walker = document.createTreeWalker(
-          element,
-          NodeFilter.SHOW_TEXT,
-          null
-        );
-        
-        let textNode: Node | null = null;
-        let offset = 0;
-        
-        while ((textNode = walker.nextNode())) {
-          const nodeLength = textNode.textContent?.length || 0;
-          if (offset + nodeLength > error.start) {
-            // Found the node
-            const localStart = error.start - offset;
-            const localEnd = Math.min(error.end - offset, nodeLength);
-            
-            range.setStart(textNode, localStart);
-            range.setEnd(textNode, localEnd);
-            
-            const span = document.createElement('span');
-            span.className = 'rewordly-grammar-error';
-            span.style.cssText = 'border-bottom: 2px solid #ef4444; cursor: pointer;';
-            span.setAttribute('data-error', JSON.stringify(error));
-            
-            try {
-              range.surroundContents(span);
-            } catch (e) {
-              // If surroundContents fails, use extractContents
-              const contents = range.extractContents();
-              span.appendChild(contents);
-              range.insertNode(span);
-            }
-            
-            break;
-          }
-          offset += nodeLength;
-        }
-      } catch (e) {
-        console.error('Rewordly: Error highlighting in contenteditable:', e);
-      }
+  private createErrorOverlayForContentEditable(element: HTMLElement, errors: GrammarError[]): void {
+    // Remove existing overlay
+    const existingOverlay = document.querySelector(`.rewordly-grammar-overlay[data-element-id="${this.getElementId(element)}"]`);
+    if (existingOverlay) {
+      existingOverlay.remove();
     }
+
+    // Get text content
+    const text = element.textContent || element.innerText || '';
+    if (!text) return;
+
+    // Create overlay
+    const overlay = document.createElement('div');
+    overlay.className = 'rewordly-grammar-overlay';
+    overlay.setAttribute('data-element-id', this.getElementId(element));
+    
+    // Copy all relevant styles from the element
+    const styles = window.getComputedStyle(element);
+    overlay.style.cssText = `
+      position: fixed;
+      pointer-events: none;
+      z-index: 2147483645;
+      font-family: ${styles.fontFamily};
+      font-size: ${styles.fontSize};
+      font-weight: ${styles.fontWeight};
+      font-style: ${styles.fontStyle};
+      line-height: ${styles.lineHeight};
+      letter-spacing: ${styles.letterSpacing};
+      word-spacing: ${styles.wordSpacing};
+      text-transform: ${styles.textTransform};
+      color: transparent;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      overflow: hidden;
+      box-sizing: ${styles.boxSizing};
+      padding: ${styles.padding};
+      border: ${styles.border};
+      border-color: transparent;
+      background: transparent;
+    `;
+
+    // Position overlay exactly over the element
+    const rect = element.getBoundingClientRect();
+    overlay.style.top = `${rect.top + window.scrollY}px`;
+    overlay.style.left = `${rect.left + window.scrollX}px`;
+    overlay.style.width = `${rect.width}px`;
+    overlay.style.height = `${rect.height}px`;
+    overlay.style.minHeight = `${rect.height}px`;
+
+    // Create text with error highlights
+    const errorSpans: string[] = [];
+    
+    // Sort errors by position
+    const sortedErrors = [...errors].sort((a, b) => a.start - b.start);
+    
+    let lastIndex = 0;
+    for (const error of sortedErrors) {
+      // Add text before error
+      errorSpans.push(this.escapeHtml(text.substring(lastIndex, error.start)));
+      
+      // Add error word with underline
+      const errorWord = text.substring(error.start, error.end);
+      errorSpans.push(`<span class="rewordly-grammar-error" style="border-bottom: 2px solid #ef4444; cursor: pointer; background: rgba(239, 68, 68, 0.1);" data-error="${this.escapeHtml(JSON.stringify(error))}">${this.escapeHtml(errorWord)}</span>`);
+      
+      lastIndex = error.end;
+    }
+    
+    // Add remaining text
+    errorSpans.push(this.escapeHtml(text.substring(lastIndex)));
+    
+    overlay.innerHTML = errorSpans.join('');
+    
+    document.body.appendChild(overlay);
+    
+    // Update overlay position on scroll/resize
+    const updatePosition = () => {
+      const newRect = element.getBoundingClientRect();
+      overlay.style.top = `${newRect.top + window.scrollY}px`;
+      overlay.style.left = `${newRect.left + window.scrollX}px`;
+      overlay.style.width = `${newRect.width}px`;
+      overlay.style.height = `${newRect.height}px`;
+    };
+    
+    window.addEventListener('scroll', updatePosition, true);
+    window.addEventListener('resize', updatePosition);
+    
+    // Store cleanup function
+    (overlay as any).__cleanup = () => {
+      window.removeEventListener('scroll', updatePosition, true);
+      window.removeEventListener('resize', updatePosition);
+    };
   }
 
   /**
    * Clear grammar errors from an element
    */
   private clearGrammarErrors(element: HTMLElement): void {
-    // Remove overlay if exists
+    // Remove overlay if exists (works for both input/textarea and contenteditable)
     const overlay = document.querySelector(`.rewordly-grammar-overlay[data-element-id="${this.getElementId(element)}"]`);
     if (overlay) {
       // Clean up event listeners
@@ -795,19 +836,6 @@ class RewordlyContentScript {
         (overlay as any).__cleanup();
       }
       overlay.remove();
-    }
-    
-    // Remove error spans from contenteditable
-    if (element.getAttribute('contenteditable') === 'true') {
-      const errorSpans = element.querySelectorAll('.rewordly-grammar-error');
-      errorSpans.forEach((span) => {
-        const parent = span.parentNode;
-        if (parent) {
-          const textNode = document.createTextNode(span.textContent || '');
-          parent.replaceChild(textNode, span);
-          parent.normalize();
-        }
-      });
     }
     
     // Clear stored errors
