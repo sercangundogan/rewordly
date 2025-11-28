@@ -887,48 +887,205 @@ class RewordlyContentScript {
     overlay.style.minHeight = `${Math.max(rect.height, scrollHeight)}px`;
     overlay.style.maxHeight = `${Math.max(rect.height, scrollHeight)}px`;
 
-    // Create overlay with only underlines for errors (simpler approach)
-    // Instead of copying all text, we'll create invisible text nodes and only show underlines
-    const errorSpans: string[] = [];
-    
-    // Sort errors by position
+    // Universal approach: Clone element structure, make all text transparent, add only underlines for errors
     const sortedErrors = [...errors].sort((a, b) => a.start - b.start);
     
     console.log('Rewordly: Creating overlay with', sortedErrors.length, 'errors');
     console.log('Rewordly: Text for overlay:', text);
     console.log('Rewordly: Errors:', sortedErrors);
     
-    // Create invisible text to match the element's text layout
-    // Then add only underline spans for errors
-    let lastIndex = 0;
-    for (const error of sortedErrors) {
-      // Validate error positions
-      if (error.start < 0 || error.end > text.length || error.start >= error.end) {
-        console.warn('Rewordly: Invalid error position:', error, 'Text length:', text.length);
-        continue;
+    // Clone the element to preserve all formatting structure
+    const clone = element.cloneNode(true) as HTMLElement;
+    
+    // Remove any existing grammar error markers from clone
+    const existingErrors = clone.querySelectorAll('.rewordly-grammar-error');
+    existingErrors.forEach(err => {
+      const parent = err.parentNode;
+      if (parent) {
+        parent.replaceChild(document.createTextNode(err.textContent || ''), err);
+        parent.normalize();
       }
-      
-      // Add invisible text before error to maintain layout
-      const beforeText = text.substring(lastIndex, error.start);
-      if (beforeText) {
-        errorSpans.push(`<span style="color: transparent !important; display: inline !important;">${this.escapeHtml(beforeText)}</span>`);
+    });
+    
+    // Build a map of error positions for quick lookup
+    const errorMap = new Map<number, GrammarError>();
+    sortedErrors.forEach(error => {
+      for (let i = error.start; i < error.end; i++) {
+        errorMap.set(i, error);
       }
-      
-      // Add error word with only underline (no background, simpler)
-      const errorWord = text.substring(error.start, error.end);
-      console.log('Rewordly: Error word:', errorWord, 'at position', error.start, '-', error.end);
-      errorSpans.push(`<span class="rewordly-grammar-error" style="color: transparent !important; border-bottom: 2px solid #ef4444 !important; cursor: pointer !important; display: inline !important; position: relative !important;" data-error="${this.escapeHtml(JSON.stringify(error))}">${this.escapeHtml(errorWord)}</span>`);
-      
-      lastIndex = error.end;
+    });
+    
+    // First pass: Make all text transparent
+    const allTextNodes: { node: Text; startIndex: number; endIndex: number }[] = [];
+    const walker = document.createTreeWalker(
+      clone,
+      NodeFilter.SHOW_TEXT,
+      null
+    );
+    
+    let textIndex = 0;
+    let node: Text | null;
+    while ((node = walker.nextNode() as Text | null)) {
+      if (node && node.textContent) {
+        const nodeText = node.textContent;
+        const startIndex = textIndex;
+        const endIndex = textIndex + nodeText.length;
+        allTextNodes.push({ node, startIndex, endIndex });
+        textIndex = endIndex;
+      }
     }
     
-    // Add remaining invisible text
-    const afterText = text.substring(lastIndex);
-    if (afterText) {
-      errorSpans.push(`<span style="color: transparent !important; display: inline !important;">${this.escapeHtml(afterText)}</span>`);
+    // Make all text transparent
+    allTextNodes.forEach(({ node: textNode }) => {
+      if (textNode && textNode.textContent) {
+        const transparentSpan = document.createElement('span');
+        transparentSpan.style.cssText = 'color: transparent !important; display: inline !important;';
+        const parent = textNode.parentNode;
+        if (parent) {
+          parent.replaceChild(transparentSpan, textNode);
+          transparentSpan.appendChild(textNode);
+        }
+      }
+    });
+    
+    // Second pass: Insert error underlines at correct positions
+    // Process in reverse order to avoid index shifting
+    for (let i = allTextNodes.length - 1; i >= 0; i--) {
+      const item = allTextNodes[i];
+      if (!item) continue;
+      
+      const { node: textNode, startIndex } = item;
+      if (!textNode || !textNode.textContent) continue;
+      
+      // Find the transparent span that now contains this text node
+      let transparentSpan = textNode.parentElement;
+      while (transparentSpan && !transparentSpan.style.color.includes('transparent')) {
+        transparentSpan = transparentSpan.parentElement;
+      }
+      
+      if (!transparentSpan) continue;
+      
+      const nodeText = textNode.textContent;
+      const fragments: (Text | HTMLElement)[] = [];
+      let lastPos = 0;
+      
+      // Check for errors in this text node
+      for (let j = 0; j < nodeText.length; j++) {
+        const globalIndex = startIndex + j;
+        const error = errorMap.get(globalIndex);
+        
+        if (error && error.start === globalIndex) {
+          // Add text before error (already transparent)
+          if (j > lastPos) {
+            const beforeText = nodeText.substring(lastPos, j);
+            const beforeNode = document.createTextNode(beforeText);
+            fragments.push(beforeNode);
+          }
+          
+          // Add error underline span (NO TEXT, just underline)
+          const errorWord = text.substring(error.start, error.end);
+          const errorSpan = document.createElement('span');
+          errorSpan.className = 'rewordly-grammar-error';
+          errorSpan.setAttribute('data-error', JSON.stringify(error));
+          
+          // Get the actual element's text node at this position to copy its styles
+          const originalTextNodes: { node: Text; startIndex: number; endIndex: number }[] = [];
+          const originalWalker = document.createTreeWalker(
+            element,
+            NodeFilter.SHOW_TEXT,
+            null
+          );
+          
+          let originalIndex = 0;
+          let originalNode: Text | null;
+          while ((originalNode = originalWalker.nextNode() as Text | null)) {
+            if (originalNode && originalNode.textContent) {
+              const originalText = originalNode.textContent;
+              const origStart = originalIndex;
+              const origEnd = originalIndex + originalText.length;
+              originalTextNodes.push({ node: originalNode, startIndex: origStart, endIndex: origEnd });
+              originalIndex = origEnd;
+            }
+          }
+          
+          // Find the original text node that contains this error
+          let originalParent: HTMLElement | null = null;
+          for (const { node: origNode, startIndex: origStart, endIndex: origEnd } of originalTextNodes) {
+            if (error.start >= origStart && error.start < origEnd) {
+              originalParent = origNode.parentElement;
+              break;
+            }
+          }
+          
+          // Calculate width using the original element's styles
+          const tempSpan = document.createElement('span');
+          tempSpan.style.cssText = 'position: absolute !important; visibility: hidden !important; white-space: pre !important; pointer-events: none !important; top: -9999px !important; left: -9999px !important;';
+          
+          if (originalParent) {
+            const parentStyles = window.getComputedStyle(originalParent);
+            const relevantStyles = [
+              'font-size', 'font-weight', 'font-style', 'font-family',
+              'line-height', 'letter-spacing', 'text-decoration',
+              'text-transform', 'font-variant', 'font-stretch'
+            ];
+            
+            relevantStyles.forEach(prop => {
+              const value = parentStyles.getPropertyValue(prop);
+              if (value && value !== 'normal' && value !== 'none' && value !== 'auto') {
+                tempSpan.style.setProperty(prop, value, 'important');
+              }
+            });
+          }
+          
+          tempSpan.textContent = errorWord;
+          document.body.appendChild(tempSpan);
+          const width = Math.max(1, tempSpan.offsetWidth);
+          const height = Math.max(1, tempSpan.offsetHeight);
+          document.body.removeChild(tempSpan);
+          
+          // Create style string with calculated width and only underline (no text)
+          let styleString = `border-bottom: 2px solid #ef4444 !important; cursor: pointer !important; display: inline-block !important; position: relative !important; width: ${width}px !important; min-width: ${width}px !important; height: ${height}px !important; vertical-align: baseline !important; overflow: visible !important; line-height: ${height}px !important;`;
+          
+          if (originalParent) {
+            const parentStyles = window.getComputedStyle(originalParent);
+            const relevantStyles = [
+              'font-size', 'font-weight', 'font-style', 'font-family',
+              'letter-spacing', 'text-decoration', 'text-transform', 'font-variant'
+            ];
+            
+            relevantStyles.forEach(prop => {
+              const value = parentStyles.getPropertyValue(prop);
+              if (value && value !== 'normal' && value !== 'none' && value !== 'auto') {
+                styleString += `${prop}: ${value} !important; `;
+              }
+            });
+          }
+          
+          errorSpan.setAttribute('style', styleString);
+          fragments.push(errorSpan);
+          
+          lastPos = j + errorWord.length;
+          j += errorWord.length - 1; // Skip processed characters
+        }
+      }
+      
+      // Add remaining text (already transparent)
+      if (lastPos < nodeText.length) {
+        const afterText = nodeText.substring(lastPos);
+        fragments.push(document.createTextNode(afterText));
+      }
+      
+      // Replace the transparent span's content with fragments
+      if (fragments.length > 0 && transparentSpan) {
+        // Clear the span and add fragments
+        transparentSpan.innerHTML = '';
+        fragments.forEach(fragment => {
+          transparentSpan.appendChild(fragment);
+        });
+      }
     }
     
-    overlay.innerHTML = errorSpans.join('');
+    overlay.innerHTML = clone.innerHTML;
     
     console.log('Rewordly: Overlay HTML length:', overlay.innerHTML.length);
     
