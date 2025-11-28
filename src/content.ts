@@ -936,7 +936,25 @@ class RewordlyContentScript {
     console.log('Rewordly: Errors:', sortedErrors);
     
     // Clone the element to preserve all formatting structure
+    // But remove Twitter's own highlights (background-color spans)
     const clone = element.cloneNode(true) as HTMLElement;
+    
+    // Remove Twitter's highlight spans (they have background-color style)
+    // Also remove any spans with inline background-color styles
+    const allSpans = clone.querySelectorAll('span');
+    allSpans.forEach(span => {
+      const spanElement = span as HTMLElement;
+      const style = spanElement.getAttribute('style');
+      if (style && style.includes('background-color')) {
+        const parent = span.parentNode;
+        if (parent) {
+          // Replace highlight span with just its text content
+          const textNode = document.createTextNode(span.textContent || '');
+          parent.replaceChild(textNode, span);
+          parent.normalize();
+        }
+      }
+    });
     
     // Remove any existing grammar error markers from clone
     const existingErrors = clone.querySelectorAll('.rewordly-grammar-error');
@@ -1249,6 +1267,18 @@ class RewordlyContentScript {
    * Find the best parent container for overlay positioning
    */
   private findOverlayParent(element: HTMLElement): HTMLElement {
+    // For Draft.js editors (Twitter), use the editor container
+    if (element.classList.contains('public-DraftEditor-content')) {
+      const editorContainer = element.closest('.DraftEditor-editorContainer');
+      if (editorContainer) {
+        return editorContainer as HTMLElement;
+      }
+      const draftRoot = element.closest('.DraftEditor-root');
+      if (draftRoot) {
+        return draftRoot as HTMLElement;
+      }
+    }
+    
     // Try to find a suitable parent with positioning context
     let parent = element.parentElement;
     
@@ -1262,7 +1292,6 @@ class RewordlyContentScript {
     }
     
     // If no positioned parent found, use the element's immediate parent
-    // or create a wrapper if parent is body
     const immediateParent = element.parentElement;
     if (immediateParent && immediateParent !== document.body) {
       return immediateParent;
