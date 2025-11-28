@@ -555,10 +555,8 @@ class RewordlyContentScript {
     this.showGrammarSpinner(element);
 
     try {
-      // Mock API call - simulate delay
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      const response = this.mockGrammarCheck(text);
+      // Call real API
+      const response = await this.checkGrammarAPI(text);
       console.log('Rewordly: Grammar check - Found', response.errors.length, 'error(s)');
       
       // Hide spinner
@@ -571,11 +569,60 @@ class RewordlyContentScript {
     } catch (error) {
       console.error('Rewordly: Grammar check error:', error);
       this.hideGrammarSpinner();
+      // Fallback to mock if API fails (for development)
+      try {
+        const mockResponse = this.mockGrammarCheck(text);
+        if (mockResponse.errors.length > 0) {
+          this.displayGrammarErrors(element, mockResponse.errors);
+        }
+      } catch (mockError) {
+        console.error('Rewordly: Mock grammar check also failed:', mockError);
+      }
+    }
+  }
+
+  /**
+   * Check grammar using API
+   */
+  private async checkGrammarAPI(text: string): Promise<GrammarCheckResponse> {
+    const apiUrl = 'http://localhost:3000/api/grammar';
+    
+    try {
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      
+      // Validate response structure
+      if (!data || typeof data !== 'object') {
+        throw new Error('Invalid API response format');
+      }
+
+      // Ensure errors array exists
+      const errors = Array.isArray(data.errors) ? data.errors : [];
+      
+      return {
+        errors: errors,
+        corrected: data.corrected || text,
+      };
+    } catch (error) {
+      console.error('Rewordly: API request failed:', error);
+      throw error;
     }
   }
 
   /**
    * Mock grammar check API - returns grammar errors with positions
+   * Used as fallback when API is unavailable
    */
   private mockGrammarCheck(text: string): GrammarCheckResponse {
     // Mock grammar check with multiple error types
