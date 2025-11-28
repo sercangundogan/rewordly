@@ -940,6 +940,66 @@
   border-bottom: 3px solid #ef4444 !important;
 }
 
+/* Grammar Error Tooltip */
+.rewordly-grammar-tooltip {
+  position: fixed !important;
+  z-index: 2147483647 !important;
+  background: white !important;
+  border: 1px solid #e5e7eb !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+  padding: 12px !important;
+  min-width: 150px !important;
+  max-width: 300px !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  pointer-events: auto !important;
+}
+
+.rewordly-grammar-tooltip-content {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+}
+
+.rewordly-grammar-tooltip-word {
+  font-weight: 600 !important;
+  color: #ef4444 !important;
+  font-size: 14px !important;
+  padding-bottom: 8px !important;
+  border-bottom: 1px solid #e5e7eb !important;
+}
+
+.rewordly-grammar-tooltip-suggestions {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+}
+
+.rewordly-grammar-suggestion {
+  background: #f9fafb !important;
+  border: 1px solid #e5e7eb !important;
+  border-radius: 4px !important;
+  padding: 6px 12px !important;
+  text-align: left !important;
+  cursor: pointer !important;
+  font-size: 13px !important;
+  color: #374151 !important;
+  transition: all 0.2s ease !important;
+  font-family: inherit !important;
+}
+
+.rewordly-grammar-suggestion:hover {
+  background: #667eea !important;
+  color: white !important;
+  border-color: #667eea !important;
+}
+
+.rewordly-grammar-no-suggestions {
+  color: #6b7280 !important;
+  font-size: 12px !important;
+  font-style: italic !important;
+}
+
 .rewordly-grammar-overlay {
   position: fixed !important;
   pointer-events: none !important;

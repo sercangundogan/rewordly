@@ -1092,6 +1092,16 @@ class RewordlyContentScript {
     
     overlay.innerHTML = clone.innerHTML;
     
+    // Enable pointer events on error spans for hover interaction
+    const errorSpans = overlay.querySelectorAll('.rewordly-grammar-error');
+    errorSpans.forEach(span => {
+      (span as HTMLElement).style.pointerEvents = 'auto';
+      (span as HTMLElement).style.cursor = 'pointer';
+    });
+    
+    // Attach hover event listeners to error spans
+    this.attachGrammarErrorHoverListeners(overlay, element);
+    
     console.log('Rewordly: Overlay HTML length:', overlay.innerHTML.length);
     
     // Ensure overlay is visible and properly positioned
@@ -1576,6 +1586,197 @@ class RewordlyContentScript {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+  }
+
+  /**
+   * Attach hover event listeners to grammar error spans
+   */
+  private attachGrammarErrorHoverListeners(overlay: HTMLElement, element: HTMLElement): void {
+    const errorSpans = overlay.querySelectorAll('.rewordly-grammar-error');
+    let currentTooltip: HTMLElement | null = null;
+    
+    errorSpans.forEach(span => {
+      const errorSpan = span as HTMLElement;
+      
+      errorSpan.addEventListener('mouseenter', (_e) => {
+        // Remove existing tooltip
+        if (currentTooltip) {
+          currentTooltip.remove();
+          currentTooltip = null;
+        }
+        
+        // Get error data
+        const errorData = errorSpan.getAttribute('data-error');
+        if (!errorData) return;
+        
+        try {
+          const error: GrammarError = JSON.parse(errorData);
+          
+          // Create tooltip
+          const tooltip = document.createElement('div');
+          tooltip.className = 'rewordly-grammar-tooltip';
+          
+          // Get error span position
+          const spanRect = errorSpan.getBoundingClientRect();
+          
+          // Create suggestions list
+          const suggestionsHtml = error.suggestions && error.suggestions.length > 0
+            ? error.suggestions.map((suggestion) => 
+                `<button class="rewordly-grammar-suggestion" data-suggestion="${this.escapeHtml(suggestion)}" data-error-start="${error.start}" data-error-end="${error.end}">${this.escapeHtml(suggestion)}</button>`
+              ).join('')
+            : '<div class="rewordly-grammar-no-suggestions">No suggestions available</div>';
+          
+          tooltip.innerHTML = `
+            <div class="rewordly-grammar-tooltip-content">
+              <div class="rewordly-grammar-tooltip-word">${this.escapeHtml(error.word)}</div>
+              <div class="rewordly-grammar-tooltip-suggestions">${suggestionsHtml}</div>
+            </div>
+          `;
+          
+          document.body.appendChild(tooltip);
+          
+          // Position tooltip above the error span
+          const tooltipRect = tooltip.getBoundingClientRect();
+          const tooltipTop = spanRect.top - tooltipRect.height - 8;
+          const tooltipLeft = spanRect.left + (spanRect.width / 2) - (tooltipRect.width / 2);
+          
+          // Adjust if tooltip goes off screen
+          const adjustedLeft = Math.max(8, Math.min(tooltipLeft, window.innerWidth - tooltipRect.width - 8));
+          const adjustedTop = tooltipTop < 8 ? spanRect.bottom + 8 : tooltipTop;
+          
+          tooltip.style.top = `${adjustedTop}px`;
+          tooltip.style.left = `${adjustedLeft}px`;
+          
+          currentTooltip = tooltip;
+          
+          // Attach click handlers to suggestions
+          const suggestionButtons = tooltip.querySelectorAll('.rewordly-grammar-suggestion');
+          suggestionButtons.forEach(button => {
+            button.addEventListener('click', (e) => {
+              e.stopPropagation();
+              const suggestion = (button as HTMLElement).getAttribute('data-suggestion');
+              const errorStart = parseInt((button as HTMLElement).getAttribute('data-error-start') || '0');
+              const errorEnd = parseInt((button as HTMLElement).getAttribute('data-error-end') || '0');
+              
+              if (suggestion) {
+                this.replaceGrammarError(element, errorStart, errorEnd, suggestion);
+                if (currentTooltip) {
+                  currentTooltip.remove();
+                  currentTooltip = null;
+                }
+              }
+            });
+          });
+        } catch (err) {
+          console.error('Rewordly: Error parsing error data:', err);
+        }
+      });
+      
+      errorSpan.addEventListener('mouseleave', () => {
+        // Small delay to allow moving to tooltip
+        setTimeout(() => {
+          if (currentTooltip && !currentTooltip.matches(':hover') && !errorSpan.matches(':hover')) {
+            currentTooltip.remove();
+            currentTooltip = null;
+          }
+        }, 100);
+      });
+    });
+    
+    // Also handle tooltip hover to keep it visible
+    overlay.addEventListener('mouseleave', () => {
+      if (currentTooltip) {
+        setTimeout(() => {
+          if (currentTooltip && !currentTooltip.matches(':hover')) {
+            currentTooltip.remove();
+            currentTooltip = null;
+          }
+        }, 200);
+      }
+    });
+  }
+
+  /**
+   * Replace grammar error with suggestion
+   */
+  private replaceGrammarError(element: HTMLElement, start: number, end: number, replacement: string): void {
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+      // For input/textarea
+      const text = element.value;
+      const newText = text.substring(0, start) + replacement + text.substring(end);
+      element.value = newText;
+      
+      // Trigger input event
+      const inputEvent = new Event('input', { bubbles: true });
+      element.dispatchEvent(inputEvent);
+      
+      // Clear grammar errors and recheck
+      this.clearGrammarErrors(element);
+      setTimeout(() => {
+        this.performGrammarCheck(element);
+      }, 500);
+    } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
+      // For contenteditable
+      const selection = window.getSelection();
+      if (!selection) return;
+      
+      // Find the text node at the error position
+      const walker = document.createTreeWalker(
+        element,
+        NodeFilter.SHOW_TEXT,
+        null
+      );
+      
+      let textIndex = 0;
+      let targetNode: Text | null = null;
+      let targetStart = 0;
+      
+      let node: Text | null;
+      while ((node = walker.nextNode() as Text | null)) {
+        if (node && node.textContent) {
+          const nodeLength = node.textContent.length;
+          if (start >= textIndex && start < textIndex + nodeLength) {
+            targetNode = node;
+            targetStart = start - textIndex;
+            break;
+          }
+          textIndex += nodeLength;
+        }
+      }
+      
+      if (targetNode) {
+        const range = document.createRange();
+        const errorLength = end - start;
+        
+        // Set range to the error word
+        try {
+          range.setStart(targetNode, targetStart);
+          range.setEnd(targetNode, targetStart + errorLength);
+          selection.removeAllRanges();
+          selection.addRange(range);
+          
+          // Replace selected text
+          range.deleteContents();
+          const textNode = document.createTextNode(replacement);
+          range.insertNode(textNode);
+          
+          // Clear selection
+          selection.removeAllRanges();
+          
+          // Trigger input event
+          const inputEvent = new Event('input', { bubbles: true });
+          element.dispatchEvent(inputEvent);
+          
+          // Clear grammar errors and recheck
+          this.clearGrammarErrors(element);
+          setTimeout(() => {
+            this.performGrammarCheck(element);
+          }, 500);
+        } catch (err) {
+          console.error('Rewordly: Error replacing text:', err);
+        }
+      }
+    }
   }
 
   private setupContentObserver(): void {
