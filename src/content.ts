@@ -471,10 +471,8 @@ class RewordlyContentScript {
       clearTimeout(this.grammarCheckTimeout);
     }
 
-    // Clear existing errors
-    this.clearGrammarErrors(element);
-
-    // Hide spinner if it was showing
+    // Don't clear existing errors - keep overlays visible while user is typing
+    // Only hide spinner if it was showing
     this.hideGrammarSpinner();
 
     // Set new timeout for grammar check (1 second after typing stops)
@@ -774,12 +772,53 @@ class RewordlyContentScript {
       }
     }
 
-    // Remove existing highlights for this element
-    this.clearElementHighlights(element);
+    // Get existing highlights to compare by error position (not index)
+    const elementId = this.getElementId(element);
+    const existingHighlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
+    const existingErrorMap = new Map<string, HTMLElement>(); // Key: "start-end"
+    
+    existingHighlights.forEach((highlight) => {
+      const errorData = (highlight as HTMLElement).getAttribute('data-error');
+      if (errorData) {
+        try {
+          const error: GrammarError = JSON.parse(errorData);
+          const errorKey = `${error.start}-${error.end}`;
+          existingErrorMap.set(errorKey, highlight as HTMLElement);
+        } catch (e) {
+          // Error parsing, skip
+        }
+      }
+    });
 
-    // Create highlights for each error
+    // Update or create highlights for each error
     errors.forEach((error, index) => {
-      this.createHighlight(element, error, index);
+      const errorKey = `${error.start}-${error.end}`;
+      const existingHighlight = existingErrorMap.get(errorKey);
+      
+      if (existingHighlight) {
+        // Same error position, just update position (text might have changed)
+        const highlightRect = this.getErrorTextRect(element, error.start, error.end);
+        if (highlightRect) {
+          existingHighlight.style.top = `${highlightRect.top}px`;
+          existingHighlight.style.left = `${highlightRect.left}px`;
+          existingHighlight.style.width = `${highlightRect.width}px`;
+          existingHighlight.style.height = `${highlightRect.height}px`;
+          // Update error data in case suggestions changed
+          existingHighlight.setAttribute('data-error', JSON.stringify(error));
+          existingHighlight.setAttribute('data-error-index', index.toString());
+        }
+      } else {
+        // New error or error position changed, create new highlight
+        this.createHighlight(element, error, index);
+      }
+    });
+
+    // Remove highlights that no longer exist (errors that were fixed or removed)
+    const currentErrorKeys = new Set(errors.map(err => `${err.start}-${err.end}`));
+    existingErrorMap.forEach((highlight, errorKey) => {
+      if (!currentErrorKeys.has(errorKey)) {
+        highlight.remove();
+      }
     });
 
     // Update highlights on scroll/resize
@@ -2390,18 +2429,42 @@ class RewordlyContentScript {
   private replaceGrammarError(element: HTMLElement, start: number, end: number, replacement: string): void {
     // Close all tooltips before replacement
     this.closeAllGrammarTooltips();
+    
+    // Remove only the replaced error's highlight (not all highlights)
+    if (this.highlightsContent) {
+      const elementId = this.getElementId(element);
+      const highlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
+      highlights.forEach((highlight) => {
+        const errorData = (highlight as HTMLElement).getAttribute('data-error');
+        if (errorData) {
+          try {
+            const error: GrammarError = JSON.parse(errorData);
+            if (error.start === start && error.end === end) {
+              highlight.remove();
+            }
+          } catch (e) {
+            // Error parsing, skip
+          }
+        }
+      });
+    }
+    
+    // Update stored errors - remove the replaced error
+    const currentErrors = this.grammarErrors.get(element) || [];
+    const updatedErrors = currentErrors.filter(err => !(err.start === start && err.end === end));
+    this.grammarErrors.set(element, updatedErrors);
+    
     if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
       // For input/textarea
       const text = element.value;
       const newText = text.substring(0, start) + replacement + text.substring(end);
       element.value = newText;
       
-      // Trigger input event
+      // Trigger input event (this will reset timeout but won't clear errors)
       const inputEvent = new Event('input', { bubbles: true });
       element.dispatchEvent(inputEvent);
       
-      // Clear grammar errors and recheck
-      this.clearGrammarErrors(element);
+      // Recheck grammar after a short delay to update remaining errors
       setTimeout(() => {
         this.performGrammarCheck(element);
       }, 500);
@@ -2414,6 +2477,30 @@ class RewordlyContentScript {
         // For Draft.js editors (Twitter), use a different approach
         // We need to simulate user typing to trigger Draft.js onChange
         this.replaceTextInDraftJS(element, start, end, replacement);
+        
+        // Remove only the replaced error's highlight (not all highlights)
+        if (this.highlightsContent) {
+          const elementId = this.getElementId(element);
+          const highlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
+          highlights.forEach((highlight) => {
+            const errorData = (highlight as HTMLElement).getAttribute('data-error');
+            if (errorData) {
+              try {
+                const error: GrammarError = JSON.parse(errorData);
+                if (error.start === start && error.end === end) {
+                  highlight.remove();
+                }
+              } catch (e) {
+                // Error parsing, skip
+              }
+            }
+          });
+        }
+        
+        // Update stored errors - remove the replaced error
+        const currentErrors = this.grammarErrors.get(element) || [];
+        const updatedErrors = currentErrors.filter(err => !(err.start === start && err.end === end));
+        this.grammarErrors.set(element, updatedErrors);
       } else {
         // For regular contenteditable
         const selection = window.getSelection();
@@ -2502,8 +2589,8 @@ class RewordlyContentScript {
               element.dispatchEvent(event);
             });
             
-            // Clear grammar errors and recheck
-            this.clearGrammarErrors(element);
+            // Recheck grammar after a short delay to update remaining errors
+            // (Don't clear all errors - just update them)
             setTimeout(() => {
               this.performGrammarCheck(element);
             }, 500);
@@ -2618,8 +2705,8 @@ class RewordlyContentScript {
         // Force focus to ensure Draft.js updates
         element.focus();
         
-        // Clear grammar errors and recheck
-        this.clearGrammarErrors(element);
+        // Recheck grammar after a short delay to update remaining errors
+        // (Don't clear all errors - just update them)
         setTimeout(() => {
           this.performGrammarCheck(element);
         }, 500);
