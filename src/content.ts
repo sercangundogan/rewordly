@@ -471,6 +471,9 @@ class RewordlyContentScript {
       clearTimeout(this.grammarCheckTimeout);
     }
 
+    // Immediately validate and remove invalid highlights (when user deletes characters)
+    this.validateAndRemoveInvalidHighlights(element);
+
     // Don't clear existing errors - keep overlays visible while user is typing
     // Only hide spinner if it was showing
     this.hideGrammarSpinner();
@@ -799,6 +802,77 @@ class RewordlyContentScript {
       errors: uniqueErrors,
       corrected
     };
+  }
+
+  /**
+   * Validate and remove invalid highlights immediately when text changes
+   */
+  private validateAndRemoveInvalidHighlights(element: HTMLElement): void {
+    const currentErrors = this.grammarErrors.get(element);
+    if (!currentErrors || currentErrors.length === 0) {
+      return;
+    }
+
+    // Get current text
+    let text = '';
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+      text = element.value;
+    } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
+      text = element.innerText || element.textContent || '';
+    }
+
+    if (!this.highlightsContent) {
+      return;
+    }
+
+    const elementId = this.getElementId(element);
+    const highlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
+    
+    highlights.forEach((highlight) => {
+      const errorData = (highlight as HTMLElement).getAttribute('data-error');
+      if (!errorData) {
+        highlight.remove();
+        return;
+      }
+
+      try {
+        const error: GrammarError = JSON.parse(errorData);
+        
+        // Check if error position is still valid
+        if (error.start < 0 || error.end > text.length || error.start >= error.end) {
+          // Position out of bounds, remove highlight
+          highlight.remove();
+          return;
+        }
+
+        // Check if the error word still matches at that position
+        const errorWord = text.substring(error.start, error.end);
+        const isStillValid = errorWord.toLowerCase().trim() === error.word.toLowerCase().trim() ||
+                            errorWord.toLowerCase().includes(error.word.toLowerCase()) ||
+                            error.word.toLowerCase().includes(errorWord.toLowerCase());
+
+        if (!isStillValid) {
+          // Word changed or deleted, remove highlight immediately
+          highlight.remove();
+        }
+      } catch (e) {
+        // Error parsing, remove highlight
+        highlight.remove();
+      }
+    });
+
+    // Update stored errors - remove invalid ones
+    const validErrors = currentErrors.filter(error => {
+      if (error.start < 0 || error.end > text.length || error.start >= error.end) {
+        return false;
+      }
+      const errorWord = text.substring(error.start, error.end);
+      return errorWord.toLowerCase().trim() === error.word.toLowerCase().trim() ||
+             errorWord.toLowerCase().includes(error.word.toLowerCase()) ||
+             error.word.toLowerCase().includes(errorWord.toLowerCase());
+    });
+
+    this.grammarErrors.set(element, validErrors);
   }
 
   /**
@@ -1701,7 +1775,7 @@ class RewordlyContentScript {
         background: rgba(239, 68, 68, 0.1) !important;
       }
       .rewordly-highlight.rewordly-highlight-enter {
-        animation: rewordly-highlight-grow 0.3s ease-out forwards !important;
+        animation: rewordly-highlight-grow 0.3s ease-in-out forwards !important;
       }
       @keyframes rewordly-highlight-grow {
         from {
