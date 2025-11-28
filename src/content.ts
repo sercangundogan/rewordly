@@ -1775,17 +1775,7 @@ class RewordlyContentScript {
         background: rgba(239, 68, 68, 0.1) !important;
       }
       .rewordly-highlight.rewordly-highlight-enter {
-        animation: rewordly-highlight-grow 0.3s ease-in-out forwards !important;
-      }
-      @keyframes rewordly-highlight-grow {
-        from {
-          width: 0 !important;
-          opacity: 0 !important;
-        }
-        to {
-          width: var(--rewordly-target-width) !important;
-          opacity: 1 !important;
-        }
+        overflow: hidden !important;
       }
     `;
     
@@ -1836,10 +1826,12 @@ class RewordlyContentScript {
     highlight.style.height = `${highlightRect.height}px`;
     
     // Store target width for animation
-    highlight.style.setProperty('--rewordly-target-width', `${highlightRect.width}px`);
+    const targetWidth = highlightRect.width;
     
     // Initially set width to 0 for animation
     highlight.style.width = '0px';
+    highlight.style.overflow = 'hidden';
+    highlight.style.opacity = '0';
     
     // Add animation class
     highlight.classList.add('rewordly-highlight-enter');
@@ -1847,15 +1839,46 @@ class RewordlyContentScript {
     // Add hover listeners
     this.attachHighlightHoverListener(highlight, error, element);
 
-    // Append to highlights content
+    // Append to highlights content (must be in DOM for animation to work)
     this.highlightsContent.appendChild(highlight);
     
-    // Remove animation class after animation completes
-    setTimeout(() => {
-      highlight.classList.remove('rewordly-highlight-enter');
-      // Set final width after animation
-      highlight.style.width = `${highlightRect.width}px`;
-    }, 300);
+    // Force reflow to ensure animation starts
+    void highlight.offsetWidth;
+    
+    // Animate width using requestAnimationFrame for smooth animation
+    const startTime = performance.now();
+    const duration = 300; // 300ms
+    const startWidth = 0;
+    const startOpacity = 0;
+    const endOpacity = 1;
+    
+    const animate = (currentTime: number) => {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      
+      // Ease-in-out function
+      const easeInOut = progress < 0.5
+        ? 2 * progress * progress
+        : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+      
+      const currentWidth = startWidth + (targetWidth - startWidth) * easeInOut;
+      const currentOpacity = startOpacity + (endOpacity - startOpacity) * easeInOut;
+      
+      highlight.style.width = `${currentWidth}px`;
+      highlight.style.opacity = `${currentOpacity}`;
+      
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        // Animation complete
+        highlight.style.width = `${targetWidth}px`;
+        highlight.style.opacity = '1';
+        highlight.style.overflow = 'visible';
+        highlight.classList.remove('rewordly-highlight-enter');
+      }
+    };
+    
+    requestAnimationFrame(animate);
   }
 
   /**
