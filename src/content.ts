@@ -1006,24 +1006,131 @@ class RewordlyContentScript {
   }
 
   /**
-   * Show grammar spinner near the element
+   * Show grammar spinner near the cursor position
    */
   private showGrammarSpinner(element: HTMLElement): void {
     if (!this.grammarSpinner) {
       return;
     }
     
-    const rect = element.getBoundingClientRect();
+    let caretRect: DOMRect | null = null;
     
-    // Calculate position with scroll offset
-    const top = rect.bottom + window.scrollY + 10;
-    const left = rect.left + window.scrollX;
+    // Get cursor position based on element type
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+      caretRect = this.getInputTextareaSelectionRect(element);
+    } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
+      caretRect = this.getContentEditableCaretRect(element);
+    }
+    
+    // Fallback to element position if caret position not available
+    if (!caretRect) {
+      const rect = element.getBoundingClientRect();
+      caretRect = new DOMRect(
+        rect.left,
+        rect.top,
+        0,
+        rect.height
+      );
+    }
+    
+    // Position spinner at bottom-right of cursor
+    const spinnerWidth = 150; // Approximate spinner width
+    const spinnerHeight = 40; // Approximate spinner height
+    const offsetX = 10; // Offset from cursor
+    const offsetY = 5; // Offset from cursor
+    
+    let left = caretRect.right + window.scrollX + offsetX;
+    let top = caretRect.bottom + window.scrollY + offsetY;
+    
+    // Check if spinner would go off screen, adjust if needed
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    
+    // If spinner would go off right edge, position to left of cursor
+    if (left + spinnerWidth > viewportWidth) {
+      left = caretRect.left + window.scrollX - spinnerWidth - offsetX;
+    }
+    
+    // If spinner would go off bottom edge, position above cursor
+    if (top + spinnerHeight > viewportHeight + window.scrollY) {
+      top = caretRect.top + window.scrollY - spinnerHeight - offsetY;
+    }
+    
+    // Ensure spinner is always visible
+    left = Math.max(10, Math.min(left, viewportWidth - spinnerWidth - 10));
+    top = Math.max(10, Math.min(top, viewportHeight + window.scrollY - spinnerHeight - 10));
     
     this.grammarSpinner.style.setProperty('top', `${top}px`, 'important');
     this.grammarSpinner.style.setProperty('left', `${left}px`, 'important');
     this.grammarSpinner.style.setProperty('display', 'flex', 'important');
     this.grammarSpinner.style.setProperty('visibility', 'visible', 'important');
     this.grammarSpinner.style.setProperty('opacity', '1', 'important');
+  }
+
+  /**
+   * Get caret position for contenteditable elements
+   */
+  private getContentEditableCaretRect(element: HTMLElement): DOMRect | null {
+    try {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) {
+        return null;
+      }
+      
+      const range = selection.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      
+      // If range is collapsed (cursor position), use it directly
+      if (range.collapsed) {
+        // Create a temporary span to get exact caret position
+        const span = document.createElement('span');
+        span.style.cssText = 'position: absolute; visibility: hidden; white-space: pre;';
+        span.textContent = '\u200b'; // Zero-width space
+        
+        try {
+          range.insertNode(span);
+          const spanRect = span.getBoundingClientRect();
+          
+          // Calculate caret position relative to viewport
+          const caretX = spanRect.left;
+          const caretY = spanRect.top;
+          const caretHeight = spanRect.height || parseFloat(window.getComputedStyle(element).lineHeight) || 20;
+          
+          // Remove the temporary span
+          span.remove();
+          
+          return new DOMRect(
+            caretX,
+            caretY,
+            0,
+            caretHeight
+          );
+        } catch (e) {
+          // If insertNode fails, use range rect
+          return new DOMRect(
+            rect.left,
+            rect.top,
+            0,
+            rect.height || 20
+          );
+        }
+      } else {
+        // If there's a selection, use the end of selection
+        const endRange = range.cloneRange();
+        endRange.collapse(false); // Collapse to end
+        
+        const endRect = endRange.getBoundingClientRect();
+        return new DOMRect(
+          endRect.right,
+          endRect.top,
+          0,
+          endRect.height || 20
+        );
+      }
+    } catch (e) {
+      console.error('Rewordly: Error getting contenteditable caret position:', e);
+      return null;
+    }
   }
 
   /**
