@@ -562,21 +562,19 @@ class RewordlyContentScript {
       // Hide spinner
       this.hideGrammarSpinner();
       
-      // Display errors
-      if (response.errors.length > 0) {
-        this.displayGrammarErrors(element, response.errors);
-      }
+      // Display errors (or clear if no errors)
+      this.displayGrammarErrors(element, response.errors);
     } catch (error) {
       console.error('Rewordly: Grammar check error:', error);
       this.hideGrammarSpinner();
       // Fallback to mock if API fails (for development)
       try {
         const mockResponse = this.mockGrammarCheck(text);
-        if (mockResponse.errors.length > 0) {
-          this.displayGrammarErrors(element, mockResponse.errors);
-        }
+        this.displayGrammarErrors(element, mockResponse.errors);
       } catch (mockError) {
         console.error('Rewordly: Mock grammar check also failed:', mockError);
+        // Clear all highlights if both API and mock fail
+        this.displayGrammarErrors(element, []);
       }
     }
   }
@@ -807,7 +805,7 @@ class RewordlyContentScript {
    * Display grammar errors on an element using Grammarly-style highlights
    */
   private displayGrammarErrors(element: HTMLElement, errors: GrammarError[]): void {
-    // Store errors
+    // Store errors (empty array if no errors)
     this.grammarErrors.set(element, errors);
 
     // Ensure highlights container exists
@@ -837,8 +835,40 @@ class RewordlyContentScript {
       }
     });
 
-    // Update or create highlights for each error
-    errors.forEach((error, index) => {
+    // If no errors, remove all highlights for this element
+    if (errors.length === 0) {
+      existingErrorMap.forEach((highlight) => {
+        highlight.remove();
+      });
+      return;
+    }
+
+    // Validate error positions against current text
+    let text = '';
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+      text = element.value;
+    } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
+      text = element.innerText || element.textContent || '';
+    }
+
+    // Filter out errors that are no longer valid (text changed, error position out of bounds)
+    const validErrors = errors.filter(error => {
+      if (error.start < 0 || error.end > text.length || error.start >= error.end) {
+        return false;
+      }
+      // Check if the error word still matches at that position
+      const errorWord = text.substring(error.start, error.end);
+      // Allow some flexibility (case-insensitive, whitespace variations)
+      return errorWord.toLowerCase().trim() === error.word.toLowerCase().trim() ||
+             errorWord.toLowerCase().includes(error.word.toLowerCase()) ||
+             error.word.toLowerCase().includes(errorWord.toLowerCase());
+    });
+
+    // Update stored errors with only valid ones
+    this.grammarErrors.set(element, validErrors);
+
+    // Update or create highlights for each valid error
+    validErrors.forEach((error, index) => {
       const errorKey = `${error.start}-${error.end}`;
       const existingHighlight = existingErrorMap.get(errorKey);
       
@@ -853,6 +883,9 @@ class RewordlyContentScript {
           // Update error data in case suggestions changed
           existingHighlight.setAttribute('data-error', JSON.stringify(error));
           existingHighlight.setAttribute('data-error-index', index.toString());
+        } else {
+          // Position calculation failed, remove highlight
+          existingHighlight.remove();
         }
       } else {
         // New error or error position changed, create new highlight
@@ -861,7 +894,7 @@ class RewordlyContentScript {
     });
 
     // Remove highlights that no longer exist (errors that were fixed or removed)
-    const currentErrorKeys = new Set(errors.map(err => `${err.start}-${err.end}`));
+    const currentErrorKeys = new Set(validErrors.map(err => `${err.start}-${err.end}`));
     existingErrorMap.forEach((highlight, errorKey) => {
       if (!currentErrorKeys.has(errorKey)) {
         highlight.remove();
