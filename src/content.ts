@@ -1716,65 +1716,171 @@ class RewordlyContentScript {
         this.performGrammarCheck(element);
       }, 500);
     } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
-      // For contenteditable
-      const selection = window.getSelection();
-      if (!selection) return;
+      // For contenteditable - check if it's Draft.js (Twitter)
+      const isDraftJS = element.classList.contains('public-DraftEditor-content') || 
+                        element.closest('.DraftEditor-root') !== null;
       
-      // Find the text node at the error position
-      const walker = document.createTreeWalker(
-        element,
-        NodeFilter.SHOW_TEXT,
-        null
-      );
-      
-      let textIndex = 0;
-      let targetNode: Text | null = null;
-      let targetStart = 0;
-      
-      let node: Text | null;
-      while ((node = walker.nextNode() as Text | null)) {
-        if (node && node.textContent) {
-          const nodeLength = node.textContent.length;
-          if (start >= textIndex && start < textIndex + nodeLength) {
-            targetNode = node;
-            targetStart = start - textIndex;
-            break;
+      if (isDraftJS) {
+        // For Draft.js editors (Twitter), use a different approach
+        // We need to simulate user typing to trigger Draft.js onChange
+        this.replaceTextInDraftJS(element, start, end, replacement);
+      } else {
+        // For regular contenteditable
+        const selection = window.getSelection();
+        if (!selection) return;
+        
+        // Find the text node at the error position
+        const walker = document.createTreeWalker(
+          element,
+          NodeFilter.SHOW_TEXT,
+          null
+        );
+        
+        let textIndex = 0;
+        let targetNode: Text | null = null;
+        let targetStart = 0;
+        
+        let node: Text | null;
+        while ((node = walker.nextNode() as Text | null)) {
+          if (node && node.textContent) {
+            const nodeLength = node.textContent.length;
+            if (start >= textIndex && start < textIndex + nodeLength) {
+              targetNode = node;
+              targetStart = start - textIndex;
+              break;
+            }
+            textIndex += nodeLength;
           }
-          textIndex += nodeLength;
+        }
+        
+        if (targetNode) {
+          const range = document.createRange();
+          const errorLength = end - start;
+          
+          // Set range to the error word
+          try {
+            range.setStart(targetNode, targetStart);
+            range.setEnd(targetNode, targetStart + errorLength);
+            selection.removeAllRanges();
+            selection.addRange(range);
+            
+            // Replace selected text
+            range.deleteContents();
+            const textNode = document.createTextNode(replacement);
+            range.insertNode(textNode);
+            
+            // Clear selection
+            selection.removeAllRanges();
+            
+            // Trigger multiple events to ensure Draft.js picks it up
+            const events = ['beforeinput', 'input', 'textInput'];
+            events.forEach(eventType => {
+              const event = new Event(eventType, { bubbles: true, cancelable: true });
+              (event as any).data = replacement;
+              element.dispatchEvent(event);
+            });
+            
+            // Clear grammar errors and recheck
+            this.clearGrammarErrors(element);
+            setTimeout(() => {
+              this.performGrammarCheck(element);
+            }, 500);
+          } catch (err) {
+            console.error('Rewordly: Error replacing text:', err);
+          }
         }
       }
-      
-      if (targetNode) {
-        const range = document.createRange();
-        const errorLength = end - start;
-        
-        // Set range to the error word
-        try {
-          range.setStart(targetNode, targetStart);
-          range.setEnd(targetNode, targetStart + errorLength);
-          selection.removeAllRanges();
-          selection.addRange(range);
-          
-          // Replace selected text
-          range.deleteContents();
-          const textNode = document.createTextNode(replacement);
-          range.insertNode(textNode);
-          
-          // Clear selection
-          selection.removeAllRanges();
-          
-          // Trigger input event
-          const inputEvent = new Event('input', { bubbles: true });
-          element.dispatchEvent(inputEvent);
-          
-          // Clear grammar errors and recheck
-          this.clearGrammarErrors(element);
-          setTimeout(() => {
-            this.performGrammarCheck(element);
-          }, 500);
-        } catch (err) {
-          console.error('Rewordly: Error replacing text:', err);
+    }
+  }
+
+  /**
+   * Replace text in Draft.js editor (Twitter)
+   */
+  private replaceTextInDraftJS(element: HTMLElement, start: number, end: number, replacement: string): void {
+    const selection = window.getSelection();
+    if (!selection) return;
+    
+    // Find the text node at the error position
+    const walker = document.createTreeWalker(
+      element,
+      NodeFilter.SHOW_TEXT,
+      null
+    );
+    
+    let textIndex = 0;
+    let targetNode: Text | null = null;
+    let targetStart = 0;
+    
+    let node: Text | null;
+    while ((node = walker.nextNode() as Text | null)) {
+      if (node && node.textContent) {
+        const nodeLength = node.textContent.length;
+        if (start >= textIndex && start < textIndex + nodeLength) {
+          targetNode = node;
+          targetStart = start - textIndex;
+          break;
         }
+        textIndex += nodeLength;
+      }
+    }
+    
+    if (targetNode) {
+      const range = document.createRange();
+      const errorLength = end - start;
+      
+      try {
+        // Set range to the error word
+        range.setStart(targetNode, targetStart);
+        range.setEnd(targetNode, targetStart + errorLength);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        
+        // For Draft.js, we need to simulate user input more carefully
+        // Delete the old text first
+        range.deleteContents();
+        
+        // Insert the new text
+        const textNode = document.createTextNode(replacement);
+        range.insertNode(textNode);
+        
+        // Move cursor after inserted text
+        range.setStartAfter(textNode);
+        range.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        
+        // Trigger multiple events to ensure Draft.js picks it up
+        // Use InputEvent for better compatibility
+        const inputEvent = new InputEvent('input', {
+          bubbles: true,
+          cancelable: true,
+          inputType: 'insertText',
+          data: replacement
+        });
+        element.dispatchEvent(inputEvent);
+        
+        // Also trigger beforeinput
+        const beforeInputEvent = new InputEvent('beforeinput', {
+          bubbles: true,
+          cancelable: true,
+          inputType: 'insertText',
+          data: replacement
+        });
+        element.dispatchEvent(beforeInputEvent);
+        
+        // Clear selection
+        selection.removeAllRanges();
+        
+        // Force focus to ensure Draft.js updates
+        element.focus();
+        
+        // Clear grammar errors and recheck
+        this.clearGrammarErrors(element);
+        setTimeout(() => {
+          this.performGrammarCheck(element);
+        }, 500);
+      } catch (err) {
+        console.error('Rewordly: Error replacing text in Draft.js:', err);
       }
     }
   }
