@@ -1884,38 +1884,70 @@ class RewordlyContentScript {
         const selection = window.getSelection();
         if (!selection) return;
         
-        // Find the text node at the error position
+        // Find all text nodes and their positions
         const walker = document.createTreeWalker(
           element,
           NodeFilter.SHOW_TEXT,
           null
         );
         
+        const textNodes: { node: Text; startIndex: number; endIndex: number }[] = [];
         let textIndex = 0;
-        let targetNode: Text | null = null;
-        let targetStart = 0;
         
         let node: Text | null;
         while ((node = walker.nextNode() as Text | null)) {
           if (node && node.textContent) {
             const nodeLength = node.textContent.length;
-            if (start >= textIndex && start < textIndex + nodeLength) {
-              targetNode = node;
-              targetStart = start - textIndex;
-              break;
-            }
+            textNodes.push({
+              node,
+              startIndex: textIndex,
+              endIndex: textIndex + nodeLength
+            });
             textIndex += nodeLength;
           }
         }
         
-        if (targetNode) {
+        // Find the text nodes that contain the error
+        const startNodeInfo = textNodes.find(tn => start >= tn.startIndex && start < tn.endIndex);
+        const endNodeInfo = textNodes.find(tn => end > tn.startIndex && end <= tn.endIndex);
+        
+        if (startNodeInfo) {
           const range = document.createRange();
           const errorLength = end - start;
           
-          // Set range to the error word
           try {
-            range.setStart(targetNode, targetStart);
-            range.setEnd(targetNode, targetStart + errorLength);
+            // Calculate local positions within text nodes
+            const startNodeLocalPos = start - startNodeInfo.startIndex;
+            const startNodeLength = startNodeInfo.node.textContent!.length;
+            
+            // Check if error spans multiple nodes
+            if (endNodeInfo && startNodeInfo.node !== endNodeInfo.node) {
+              // Error spans multiple text nodes - need to handle differently
+              const endNodeLocalPos = end - endNodeInfo.startIndex;
+              
+              // Set range from start node to end node
+              range.setStart(startNodeInfo.node, Math.min(startNodeLocalPos, startNodeLength));
+              range.setEnd(endNodeInfo.node, Math.min(endNodeLocalPos, endNodeInfo.node.textContent!.length));
+            } else {
+              // Error is within a single text node
+              const endPos = startNodeLocalPos + errorLength;
+              
+              // Validate positions
+              if (startNodeLocalPos < 0 || endPos > startNodeLength) {
+                console.error('Rewordly: Invalid error position in text node', {
+                  startNodeLocalPos,
+                  endPos,
+                  nodeLength: startNodeLength,
+                  globalStart: start,
+                  globalEnd: end
+                });
+                return;
+              }
+              
+              range.setStart(startNodeInfo.node, startNodeLocalPos);
+              range.setEnd(startNodeInfo.node, endPos);
+            }
+            
             selection.removeAllRanges();
             selection.addRange(range);
             
@@ -1942,7 +1974,29 @@ class RewordlyContentScript {
             }, 500);
           } catch (err) {
             console.error('Rewordly: Error replacing text:', err);
+            console.error('Rewordly: Error details:', {
+              start,
+              end,
+              errorLength,
+              startNodeInfo,
+              endNodeInfo,
+              textNodes: textNodes.map(tn => ({
+                start: tn.startIndex,
+                end: tn.endIndex,
+                length: tn.node.textContent?.length
+              }))
+            });
           }
+        } else {
+          console.error('Rewordly: Could not find text node for error position', {
+            start,
+            end,
+            textNodes: textNodes.map(tn => ({
+              start: tn.startIndex,
+              end: tn.endIndex,
+              length: tn.node.textContent?.length
+            }))
+          });
         }
       }
     }
