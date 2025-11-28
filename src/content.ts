@@ -713,7 +713,7 @@ class RewordlyContentScript {
       'box-sizing', 'width', 'min-width', 'max-width'
     ];
     
-    let overlayStyles = 'position: fixed !important; pointer-events: none !important; z-index: 2147483645 !important; color: transparent !important; background: transparent !important; border-color: transparent !important;';
+    let overlayStyles = 'position: absolute !important; pointer-events: none !important; z-index: 2147483645 !important; color: transparent !important; background: transparent !important; border-color: transparent !important;';
     
     cssProperties.forEach(prop => {
       const value = styles.getPropertyValue(prop);
@@ -730,18 +730,30 @@ class RewordlyContentScript {
     
     overlay.style.cssText = overlayStyles;
 
-    // Position overlay exactly over the element
-    const rect = element.getBoundingClientRect();
-    // Use scrollWidth to ensure overlay covers all text
-    const scrollWidth = element.scrollWidth || rect.width;
-    const scrollHeight = element.scrollHeight || rect.height;
+    // Position overlay exactly over the element using absolute positioning
+    // Find the best parent container for the overlay
+    const parentContainer = this.findOverlayParent(element);
     
-    // For position: fixed, use viewport coordinates directly (no scroll offset needed)
-    overlay.style.top = `${rect.top}px`;
-    overlay.style.left = `${rect.left}px`;
-    overlay.style.width = `${Math.max(rect.width, scrollWidth)}px`;
-    overlay.style.height = `${Math.max(rect.height, scrollHeight)}px`;
-    overlay.style.minHeight = `${Math.max(rect.height, scrollHeight)}px`;
+    // Ensure parent has position: relative
+    const parentStyles = window.getComputedStyle(parentContainer);
+    if (parentStyles.position === 'static') {
+      parentContainer.style.position = 'relative';
+    }
+    
+    // Calculate position relative to parent
+    const elementRect = element.getBoundingClientRect();
+    const parentRect = parentContainer.getBoundingClientRect();
+    
+    // Use scrollWidth to ensure overlay covers all text
+    const scrollWidth = element.scrollWidth || elementRect.width;
+    const scrollHeight = element.scrollHeight || elementRect.height;
+    
+    // Position relative to parent
+    overlay.style.top = `${elementRect.top - parentRect.top}px`;
+    overlay.style.left = `${elementRect.left - parentRect.left}px`;
+    overlay.style.width = `${Math.max(elementRect.width, scrollWidth)}px`;
+    overlay.style.height = `${Math.max(elementRect.height, scrollHeight)}px`;
+    overlay.style.minHeight = `${Math.max(elementRect.height, scrollHeight)}px`;
 
     // Create text with error highlights
     const text = element.value;
@@ -767,24 +779,37 @@ class RewordlyContentScript {
     
     overlay.innerHTML = errorSpans.join('');
     
-    document.body.appendChild(overlay);
+    // Enable pointer events on error spans for hover interaction
+    const errorSpansElements = overlay.querySelectorAll('.rewordly-grammar-error');
+    errorSpansElements.forEach(span => {
+      (span as HTMLElement).style.pointerEvents = 'auto';
+      (span as HTMLElement).style.cursor = 'pointer';
+    });
+    
+    // Attach hover event listeners to error spans
+    this.attachGrammarErrorHoverListeners(overlay, element);
+    
+    // Append to parent container (not body) for absolute positioning
+    parentContainer.appendChild(overlay);
     
     // Force a reflow to ensure styles are applied
     void overlay.offsetHeight;
     
     // Update overlay position on scroll/resize
-    // Note: position: fixed uses viewport coordinates, getBoundingClientRect() already gives viewport coords
+    // For absolute positioning, calculate relative to parent
     const updatePosition = () => {
-      const newRect = element.getBoundingClientRect();
-      const newScrollWidth = element.scrollWidth || newRect.width;
-      const newScrollHeight = element.scrollHeight || newRect.height;
+      const parentContainer = overlay.parentElement || this.findOverlayParent(element);
+      const newElementRect = element.getBoundingClientRect();
+      const newParentRect = parentContainer.getBoundingClientRect();
+      const newScrollWidth = element.scrollWidth || newElementRect.width;
+      const newScrollHeight = element.scrollHeight || newElementRect.height;
       
-      // For position: fixed, use viewport coordinates directly (no scroll offset needed)
-      overlay.style.top = `${newRect.top}px`;
-      overlay.style.left = `${newRect.left}px`;
-      overlay.style.width = `${Math.max(newRect.width, newScrollWidth)}px`;
-      overlay.style.height = `${Math.max(newRect.height, newScrollHeight)}px`;
-      overlay.style.minHeight = `${Math.max(newRect.height, newScrollHeight)}px`;
+      // Position relative to parent
+      overlay.style.top = `${newElementRect.top - newParentRect.top}px`;
+      overlay.style.left = `${newElementRect.left - newParentRect.left}px`;
+      overlay.style.width = `${Math.max(newElementRect.width, newScrollWidth)}px`;
+      overlay.style.height = `${Math.max(newElementRect.height, newScrollHeight)}px`;
+      overlay.style.minHeight = `${Math.max(newElementRect.height, newScrollHeight)}px`;
     };
     
     window.addEventListener('scroll', updatePosition, true);
@@ -861,7 +886,7 @@ class RewordlyContentScript {
       'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left'
     ];
     
-    let overlayStyles = 'position: fixed !important; pointer-events: none !important; z-index: 2147483645 !important; color: transparent !important; background: transparent !important; border-color: transparent !important;';
+    let overlayStyles = 'position: absolute !important; pointer-events: none !important; z-index: 2147483645 !important; color: transparent !important; background: transparent !important; border-color: transparent !important;';
     
     cssProperties.forEach(prop => {
       const value = styles.getPropertyValue(prop);
@@ -877,20 +902,31 @@ class RewordlyContentScript {
     
     overlay.style.cssText = overlayStyles;
 
-    // Position overlay exactly over the element
-    // Note: position: fixed uses viewport coordinates, getBoundingClientRect() already gives viewport coords
-    const rect = element.getBoundingClientRect();
-    // Use scrollWidth to ensure overlay covers all text, especially for contenteditable
-    const scrollWidth = element.scrollWidth || rect.width;
-    const scrollHeight = element.scrollHeight || rect.height;
+    // Position overlay exactly over the element using absolute positioning
+    // Find the best parent container for the overlay
+    const parentContainer = this.findOverlayParent(element);
     
-    // For position: fixed, use viewport coordinates directly (no scroll offset needed)
-    overlay.style.top = `${rect.top}px`;
-    overlay.style.left = `${rect.left}px`;
-    overlay.style.width = `${Math.max(rect.width, scrollWidth)}px`;
-    overlay.style.height = `${Math.max(rect.height, scrollHeight)}px`;
-    overlay.style.minHeight = `${Math.max(rect.height, scrollHeight)}px`;
-    overlay.style.maxHeight = `${Math.max(rect.height, scrollHeight)}px`;
+    // Ensure parent has position: relative
+    const parentStyles = window.getComputedStyle(parentContainer);
+    if (parentStyles.position === 'static') {
+      parentContainer.style.position = 'relative';
+    }
+    
+    // Calculate position relative to parent
+    const elementRect = element.getBoundingClientRect();
+    const parentRect = parentContainer.getBoundingClientRect();
+    
+    // Use scrollWidth to ensure overlay covers all text, especially for contenteditable
+    const scrollWidth = element.scrollWidth || elementRect.width;
+    const scrollHeight = element.scrollHeight || elementRect.height;
+    
+    // Position relative to parent
+    overlay.style.top = `${elementRect.top - parentRect.top}px`;
+    overlay.style.left = `${elementRect.left - parentRect.left}px`;
+    overlay.style.width = `${Math.max(elementRect.width, scrollWidth)}px`;
+    overlay.style.height = `${Math.max(elementRect.height, scrollHeight)}px`;
+    overlay.style.minHeight = `${Math.max(elementRect.height, scrollHeight)}px`;
+    overlay.style.maxHeight = `${Math.max(elementRect.height, scrollHeight)}px`;
 
     // Universal approach: Clone element structure, make all text transparent, add only underlines for errors
     const sortedErrors = [...errors].sort((a, b) => a.start - b.start);
@@ -1114,8 +1150,8 @@ class RewordlyContentScript {
     overlay.removeAttribute('data-hidden-by-blur');
     overlay.removeAttribute('data-hidden-by-modal');
     
-    // Append to body and ensure it's in the right stacking context
-    document.body.appendChild(overlay);
+    // Append to parent container (not body) for absolute positioning
+    parentContainer.appendChild(overlay);
     
     // Force a reflow to ensure styles are applied
     void overlay.offsetHeight;
@@ -1210,21 +1246,50 @@ class RewordlyContentScript {
   }
 
   /**
+   * Find the best parent container for overlay positioning
+   */
+  private findOverlayParent(element: HTMLElement): HTMLElement {
+    // Try to find a suitable parent with positioning context
+    let parent = element.parentElement;
+    
+    // Look for a parent with position: relative, absolute, or fixed
+    while (parent && parent !== document.body) {
+      const styles = window.getComputedStyle(parent);
+      if (styles.position !== 'static') {
+        return parent;
+      }
+      parent = parent.parentElement;
+    }
+    
+    // If no positioned parent found, use the element's immediate parent
+    // or create a wrapper if parent is body
+    const immediateParent = element.parentElement;
+    if (immediateParent && immediateParent !== document.body) {
+      return immediateParent;
+    }
+    
+    // Fallback to body (shouldn't happen often)
+    return document.body;
+  }
+
+  /**
    * Update overlay position
    */
   private updateOverlayPosition(element: HTMLElement, overlay: HTMLElement): void {
-    // Note: position: fixed uses viewport coordinates, getBoundingClientRect() already gives viewport coords
-    const rect = element.getBoundingClientRect();
-    const scrollWidth = element.scrollWidth || rect.width;
-    const scrollHeight = element.scrollHeight || rect.height;
+    // For absolute positioning, calculate relative to parent
+    const parentContainer = overlay.parentElement || this.findOverlayParent(element);
+    const elementRect = element.getBoundingClientRect();
+    const parentRect = parentContainer.getBoundingClientRect();
+    const scrollWidth = element.scrollWidth || elementRect.width;
+    const scrollHeight = element.scrollHeight || elementRect.height;
     
-    // For position: fixed, use viewport coordinates directly (no scroll offset needed)
-    overlay.style.top = `${rect.top}px`;
-    overlay.style.left = `${rect.left}px`;
-    overlay.style.width = `${Math.max(rect.width, scrollWidth)}px`;
-    overlay.style.height = `${Math.max(rect.height, scrollHeight)}px`;
-    overlay.style.minHeight = `${Math.max(rect.height, scrollHeight)}px`;
-    overlay.style.maxHeight = `${Math.max(rect.height, scrollHeight)}px`;
+    // Position relative to parent
+    overlay.style.top = `${elementRect.top - parentRect.top}px`;
+    overlay.style.left = `${elementRect.left - parentRect.left}px`;
+    overlay.style.width = `${Math.max(elementRect.width, scrollWidth)}px`;
+    overlay.style.height = `${Math.max(elementRect.height, scrollHeight)}px`;
+    overlay.style.minHeight = `${Math.max(elementRect.height, scrollHeight)}px`;
+    overlay.style.maxHeight = `${Math.max(elementRect.height, scrollHeight)}px`;
   }
 
   /**
