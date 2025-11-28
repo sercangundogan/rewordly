@@ -804,9 +804,16 @@ class RewordlyContentScript {
       const newScrollWidth = element.scrollWidth || newElementRect.width;
       const newScrollHeight = element.scrollHeight || newElementRect.height;
       
-      // Position relative to parent
-      overlay.style.top = `${newElementRect.top - newParentRect.top}px`;
-      overlay.style.left = `${newElementRect.left - newParentRect.left}px`;
+      // Calculate position relative to parent, accounting for scroll
+      const parentScrollTop = parentContainer.scrollTop || 0;
+      const parentScrollLeft = parentContainer.scrollLeft || 0;
+      
+      // Position relative to parent (accounting for parent's scroll position)
+      const topOffset = newElementRect.top - newParentRect.top + parentScrollTop;
+      const leftOffset = newElementRect.left - newParentRect.left + parentScrollLeft;
+      
+      overlay.style.top = `${topOffset}px`;
+      overlay.style.left = `${leftOffset}px`;
       overlay.style.width = `${Math.max(newElementRect.width, newScrollWidth)}px`;
       overlay.style.height = `${Math.max(newElementRect.height, newScrollHeight)}px`;
       overlay.style.minHeight = `${Math.max(newElementRect.height, newScrollHeight)}px`;
@@ -920,9 +927,16 @@ class RewordlyContentScript {
     const scrollWidth = element.scrollWidth || elementRect.width;
     const scrollHeight = element.scrollHeight || elementRect.height;
     
-    // Position relative to parent
-    overlay.style.top = `${elementRect.top - parentRect.top}px`;
-    overlay.style.left = `${elementRect.left - parentRect.left}px`;
+    // Calculate position relative to parent, accounting for scroll
+    const parentScrollTop = parentContainer.scrollTop || 0;
+    const parentScrollLeft = parentContainer.scrollLeft || 0;
+    
+    // Position relative to parent (accounting for parent's scroll position)
+    const topOffset = elementRect.top - parentRect.top + parentScrollTop;
+    const leftOffset = elementRect.left - parentRect.left + parentScrollLeft;
+    
+    overlay.style.top = `${topOffset}px`;
+    overlay.style.left = `${leftOffset}px`;
     overlay.style.width = `${Math.max(elementRect.width, scrollWidth)}px`;
     overlay.style.height = `${Math.max(elementRect.height, scrollHeight)}px`;
     overlay.style.minHeight = `${Math.max(elementRect.height, scrollHeight)}px`;
@@ -1279,6 +1293,15 @@ class RewordlyContentScript {
       }
     }
     
+    // For Gmail, use the contenteditable wrapper
+    if (element.classList.contains('Am') && element.classList.contains('aiL') && element.classList.contains('Al')) {
+      // Gmail's contenteditable is inside .aO7 or .Ar.Au
+      const gmailWrapper = element.closest('.aO7') || element.closest('.Ar.Au') || element.closest('.Ar');
+      if (gmailWrapper) {
+        return gmailWrapper as HTMLElement;
+      }
+    }
+    
     // Try to find a suitable parent with positioning context
     let parent = element.parentElement;
     
@@ -1312,9 +1335,16 @@ class RewordlyContentScript {
     const scrollWidth = element.scrollWidth || elementRect.width;
     const scrollHeight = element.scrollHeight || elementRect.height;
     
-    // Position relative to parent
-    overlay.style.top = `${elementRect.top - parentRect.top}px`;
-    overlay.style.left = `${elementRect.left - parentRect.left}px`;
+    // Calculate position relative to parent, accounting for scroll
+    const parentScrollTop = parentContainer.scrollTop || 0;
+    const parentScrollLeft = parentContainer.scrollLeft || 0;
+    
+    // Position relative to parent (accounting for parent's scroll position)
+    const topOffset = elementRect.top - parentRect.top + parentScrollTop;
+    const leftOffset = elementRect.left - parentRect.left + parentScrollLeft;
+    
+    overlay.style.top = `${topOffset}px`;
+    overlay.style.left = `${leftOffset}px`;
     overlay.style.width = `${Math.max(elementRect.width, scrollWidth)}px`;
     overlay.style.height = `${Math.max(elementRect.height, scrollHeight)}px`;
     overlay.style.minHeight = `${Math.max(elementRect.height, scrollHeight)}px`;
@@ -1683,21 +1713,41 @@ class RewordlyContentScript {
   }
 
   /**
+   * Close all grammar tooltips
+   */
+  private closeAllGrammarTooltips(): void {
+    const allTooltips = document.querySelectorAll('.rewordly-grammar-tooltip');
+    allTooltips.forEach(tooltip => {
+      tooltip.remove();
+    });
+  }
+
+  /**
    * Attach hover event listeners to grammar error spans
    */
   private attachGrammarErrorHoverListeners(overlay: HTMLElement, element: HTMLElement): void {
     const errorSpans = overlay.querySelectorAll('.rewordly-grammar-error');
     let currentTooltip: HTMLElement | null = null;
+    let tooltipTimeout: number | null = null;
+    
+    // Helper function to close tooltip
+    const closeTooltip = () => {
+      if (tooltipTimeout !== null) {
+        clearTimeout(tooltipTimeout);
+        tooltipTimeout = null;
+      }
+      if (currentTooltip) {
+        currentTooltip.remove();
+        currentTooltip = null;
+      }
+    };
     
     errorSpans.forEach(span => {
       const errorSpan = span as HTMLElement;
       
       errorSpan.addEventListener('mouseenter', (_e) => {
         // Remove existing tooltip
-        if (currentTooltip) {
-          currentTooltip.remove();
-          currentTooltip = null;
-        }
+        closeTooltip();
         
         // Get error data
         const errorData = errorSpan.getAttribute('data-error');
@@ -1743,21 +1793,34 @@ class RewordlyContentScript {
           
           currentTooltip = tooltip;
           
+          // Attach mouseleave to tooltip itself
+          tooltip.addEventListener('mouseleave', () => {
+            tooltipTimeout = window.setTimeout(() => {
+              if (currentTooltip === tooltip && !errorSpan.matches(':hover')) {
+                closeTooltip();
+              }
+            }, 100);
+          });
+          
           // Attach click handlers to suggestions
           const suggestionButtons = tooltip.querySelectorAll('.rewordly-grammar-suggestion');
           suggestionButtons.forEach(button => {
             button.addEventListener('click', (e) => {
               e.stopPropagation();
+              e.preventDefault();
+              
               const suggestion = (button as HTMLElement).getAttribute('data-suggestion');
               const errorStart = parseInt((button as HTMLElement).getAttribute('data-error-start') || '0');
               const errorEnd = parseInt((button as HTMLElement).getAttribute('data-error-end') || '0');
               
               if (suggestion) {
+                // Close tooltip immediately before replacement
+                closeTooltip();
+                // Also close all tooltips as a safety measure
+                this.closeAllGrammarTooltips();
+                
+                // Replace the error
                 this.replaceGrammarError(element, errorStart, errorEnd, suggestion);
-                if (currentTooltip) {
-                  currentTooltip.remove();
-                  currentTooltip = null;
-                }
               }
             });
           });
@@ -1768,25 +1831,21 @@ class RewordlyContentScript {
       
       errorSpan.addEventListener('mouseleave', () => {
         // Small delay to allow moving to tooltip
-        setTimeout(() => {
+        tooltipTimeout = window.setTimeout(() => {
           if (currentTooltip && !currentTooltip.matches(':hover') && !errorSpan.matches(':hover')) {
-            currentTooltip.remove();
-            currentTooltip = null;
+            closeTooltip();
           }
         }, 100);
       });
     });
     
-    // Also handle tooltip hover to keep it visible
+    // Also handle overlay mouseleave to close tooltip
     overlay.addEventListener('mouseleave', () => {
-      if (currentTooltip) {
-        setTimeout(() => {
-          if (currentTooltip && !currentTooltip.matches(':hover')) {
-            currentTooltip.remove();
-            currentTooltip = null;
-          }
-        }, 200);
-      }
+      tooltipTimeout = window.setTimeout(() => {
+        if (currentTooltip && !currentTooltip.matches(':hover')) {
+          closeTooltip();
+        }
+      }, 200);
     });
   }
 
@@ -1794,6 +1853,8 @@ class RewordlyContentScript {
    * Replace grammar error with suggestion
    */
   private replaceGrammarError(element: HTMLElement, start: number, end: number, replacement: string): void {
+    // Close all tooltips before replacement
+    this.closeAllGrammarTooltips();
     if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
       // For input/textarea
       const text = element.value;
