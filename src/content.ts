@@ -477,8 +477,17 @@ class RewordlyContentScript {
   /**
    * Handle focus events on editable elements
    */
-  private handleFocus(_event: Event): void {
-    // Focus handler - can be used for future features
+  private handleFocus(event: Event): void {
+    const element = event.target as HTMLElement;
+    
+    if (!element || !this.isEditableElement(element)) {
+      return;
+    }
+    
+    // If element has grammar errors, show the overlay again
+    if (this.grammarErrors.has(element)) {
+      this.showGrammarOverlay(element);
+    }
   }
 
   /**
@@ -496,13 +505,13 @@ class RewordlyContentScript {
     // Hide spinner
     this.hideGrammarSpinner();
     
-    // Clear grammar errors/overlay when focus is lost
+    // Hide grammar errors/overlay when focus is lost (but don't delete)
     if (element && this.isEditableElement(element)) {
       // Small delay to allow for focus transfer (e.g., clicking on overlay)
       setTimeout(() => {
         // Check if element still doesn't have focus
         if (document.activeElement !== element) {
-          this.clearGrammarErrors(element);
+          this.hideGrammarOverlay(element);
         }
       }, 100);
     }
@@ -867,7 +876,51 @@ class RewordlyContentScript {
   }
 
   /**
-   * Clear grammar errors from an element
+   * Hide grammar overlay for an element (but keep errors stored)
+   */
+  private hideGrammarOverlay(element: HTMLElement): void {
+    const overlay = document.querySelector(`.rewordly-grammar-overlay[data-element-id="${this.getElementId(element)}"]`) as HTMLElement;
+    if (overlay) {
+      overlay.style.display = 'none';
+      overlay.setAttribute('data-hidden-by-blur', 'true');
+    }
+  }
+
+  /**
+   * Show grammar overlay for an element (if errors exist)
+   */
+  private showGrammarOverlay(element: HTMLElement): void {
+    if (!this.grammarErrors.has(element)) {
+      return;
+    }
+    
+    const overlay = document.querySelector(`.rewordly-grammar-overlay[data-element-id="${this.getElementId(element)}"]`) as HTMLElement;
+    if (overlay) {
+      overlay.style.display = '';
+      overlay.removeAttribute('data-hidden-by-blur');
+      this.updateOverlayPosition(element, overlay);
+    } else {
+      // Recreate if doesn't exist
+      const errors = this.grammarErrors.get(element);
+      if (errors) {
+        this.displayGrammarErrors(element, errors);
+      }
+    }
+  }
+
+  /**
+   * Update overlay position
+   */
+  private updateOverlayPosition(element: HTMLElement, overlay: HTMLElement): void {
+    const rect = element.getBoundingClientRect();
+    overlay.style.top = `${rect.top + window.scrollY}px`;
+    overlay.style.left = `${rect.left + window.scrollX}px`;
+    overlay.style.width = `${rect.width}px`;
+    overlay.style.height = `${rect.height}px`;
+  }
+
+  /**
+   * Clear grammar errors from an element (permanently remove)
    */
   private clearGrammarErrors(element: HTMLElement): void {
     // Remove overlay if exists (works for both input/textarea and contenteditable)
