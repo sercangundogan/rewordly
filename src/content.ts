@@ -39,6 +39,11 @@ class RewordlyContentScript {
   private grammarErrors: Map<HTMLElement, GrammarError[]> = new Map();
   private grammarSpinner: HTMLDivElement | null = null;
   private editableElements: Set<HTMLElement> = new Set();
+  
+  // Grammarly-style highlights container
+  private highlightsContainer: HTMLElement | null = null;
+  private highlightsShadowRoot: ShadowRoot | null = null;
+  private highlightsContent: HTMLElement | null = null;
 
   // Store bound event handlers to allow proper removal
   private boundHandleTextSelection = this.handleTextSelection.bind(this);
@@ -74,6 +79,12 @@ class RewordlyContentScript {
     
     // Create grammar spinner
     this.createGrammarSpinner();
+    
+    // Create Grammarly-style highlights container
+    this.createHighlightsContainer();
+    
+    // Set up scroll/resize listeners for highlights
+    this.setupHighlightsUpdateListeners();
     
     // Set up observer for dynamically loaded content
     this.setupContentObserver();
@@ -748,168 +759,180 @@ class RewordlyContentScript {
   }
 
   /**
-   * Display grammar errors on an element
+   * Display grammar errors on an element using Grammarly-style highlights
    */
   private displayGrammarErrors(element: HTMLElement, errors: GrammarError[]): void {
     // Store errors
     this.grammarErrors.set(element, errors);
 
-    // Use overlay for all editable elements to avoid DOM manipulation issues
-    // This prevents text loss in contenteditable elements
-    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-      // For input/textarea, create overlay
-      this.createErrorOverlay(element, errors);
-    } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
-      // For contenteditable, also use overlay instead of DOM manipulation
-      this.createErrorOverlayForContentEditable(element, errors);
+    // Ensure highlights container exists
+    if (!this.highlightsContainer || !this.highlightsShadowRoot || !this.highlightsContent) {
+      this.createHighlightsContainer();
+      if (!this.highlightsContainer || !this.highlightsShadowRoot || !this.highlightsContent) {
+        console.error('Rewordly: Failed to create highlights container');
+        return;
+      }
     }
+
+    // Remove existing highlights for this element
+    this.clearElementHighlights(element);
+
+    // Create highlights for each error
+    errors.forEach((error, index) => {
+      this.createHighlight(element, error, index);
+    });
+
+    // Update highlights on scroll/resize
+    this.updateHighlightsPosition(element);
   }
 
   /**
    * Create error overlay for input/textarea elements
+   * @deprecated Use Grammarly-style highlights instead
    */
-  private createErrorOverlay(element: HTMLInputElement | HTMLTextAreaElement, errors: GrammarError[]): void {
-    // Remove existing overlay
-    const existingOverlay = document.querySelector(`.rewordly-grammar-overlay[data-element-id="${this.getElementId(element)}"]`);
-    if (existingOverlay) {
-      existingOverlay.remove();
-    }
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // private createErrorOverlay(element: HTMLInputElement | HTMLTextAreaElement, errors: GrammarError[]): void {
+  //   // Remove existing overlay
+  //   const existingOverlay = document.querySelector(`.rewordly-grammar-overlay[data-element-id="${this.getElementId(element)}"]`);
+  //   if (existingOverlay) {
+  //     existingOverlay.remove();
+  //   }
 
-    // Create overlay
-    const overlay = document.createElement('div');
-    overlay.className = 'rewordly-grammar-overlay';
-    overlay.setAttribute('data-element-id', this.getElementId(element));
+  //   // Create overlay
+  //   const overlay = document.createElement('div');
+  //   overlay.className = 'rewordly-grammar-overlay';
+  //   overlay.setAttribute('data-element-id', this.getElementId(element));
     
-    // Copy ALL relevant styles from the element to ensure perfect alignment
-    const styles = window.getComputedStyle(element);
+  //   // Copy ALL relevant styles from the element to ensure perfect alignment
+  //   const styles = window.getComputedStyle(element);
     
-    // Get all CSS properties that affect text rendering
-    const cssProperties = [
-      'direction', 'text-align', 'text-indent', 'text-decoration', 'text-shadow',
-      'font-family', 'font-size', 'font-weight', 'font-style', 'font-variant',
-      'font-stretch', 'font-size-adjust', 'line-height', 'letter-spacing', 
-      'word-spacing', 'text-transform', 'white-space', 'word-wrap', 'word-break',
-      'overflow-wrap', 'hyphens', 'tab-size', 'text-rendering',
-      'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
-      'border', 'border-top', 'border-right', 'border-bottom', 'border-left',
-      'box-sizing', 'width', 'min-width', 'max-width'
-    ];
+  //   // Get all CSS properties that affect text rendering
+  //   const cssProperties = [
+  //     'direction', 'text-align', 'text-indent', 'text-decoration', 'text-shadow',
+  //     'font-family', 'font-size', 'font-weight', 'font-style', 'font-variant',
+  //     'font-stretch', 'font-size-adjust', 'line-height', 'letter-spacing', 
+  //     'word-spacing', 'text-transform', 'white-space', 'word-wrap', 'word-break',
+  //     'overflow-wrap', 'hyphens', 'tab-size', 'text-rendering',
+  //     'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+  //     'border', 'border-top', 'border-right', 'border-bottom', 'border-left',
+  //     'box-sizing', 'width', 'min-width', 'max-width'
+  //   ];
     
-    let overlayStyles = 'position: absolute !important; pointer-events: none !important; z-index: 2147483645 !important; color: transparent !important; background: transparent !important; border-color: transparent !important;';
+  //   let overlayStyles = 'position: absolute !important; pointer-events: none !important; z-index: 2147483645 !important; color: transparent !important; background: transparent !important; border-color: transparent !important;';
     
-    cssProperties.forEach(prop => {
-      const value = styles.getPropertyValue(prop);
-      if (value) {
-        overlayStyles += `${prop}: ${value} !important; `;
-      }
-    });
+  //   cssProperties.forEach(prop => {
+  //     const value = styles.getPropertyValue(prop);
+  //     if (value) {
+  //       overlayStyles += `${prop}: ${value} !important; `;
+  //     }
+  //   });
     
-    // Ensure white-space matches element
-    const whiteSpace = element instanceof HTMLInputElement ? 'pre' : (styles.whiteSpace || 'pre-wrap');
-    overlayStyles += `white-space: ${whiteSpace} !important; `;
-    overlayStyles += `word-wrap: ${styles.wordWrap || 'break-word'} !important; `;
-    overlayStyles += `overflow: hidden !important; `;
+  //   // Ensure white-space matches element
+  //   const whiteSpace = element instanceof HTMLInputElement ? 'pre' : (styles.whiteSpace || 'pre-wrap');
+  //   overlayStyles += `white-space: ${whiteSpace} !important; `;
+  //   overlayStyles += `word-wrap: ${styles.wordWrap || 'break-word'} !important; `;
+  //   overlayStyles += `overflow: hidden !important; `;
     
-    overlay.style.cssText = overlayStyles;
+  //   overlay.style.cssText = overlayStyles;
 
-    // Position overlay exactly over the element using absolute positioning
-    // Find the best parent container for the overlay
-    const parentContainer = this.findOverlayParent(element);
+  //   // Position overlay exactly over the element using absolute positioning
+  //   // Find the best parent container for the overlay
+  //   const parentContainer = this.findOverlayParent(element);
     
-    // Ensure parent has position: relative
-    const parentStyles = window.getComputedStyle(parentContainer);
-    if (parentStyles.position === 'static') {
-      parentContainer.style.position = 'relative';
-    }
+  //   // Ensure parent has position: relative
+  //   const parentStyles = window.getComputedStyle(parentContainer);
+  //   if (parentStyles.position === 'static') {
+  //     parentContainer.style.position = 'relative';
+  //   }
     
-    // Calculate position relative to parent
-    const elementRect = element.getBoundingClientRect();
-    const parentRect = parentContainer.getBoundingClientRect();
+  //   // Calculate position relative to parent
+  //   const elementRect = element.getBoundingClientRect();
+  //   const parentRect = parentContainer.getBoundingClientRect();
     
-    // Use scrollWidth to ensure overlay covers all text
-    const scrollWidth = element.scrollWidth || elementRect.width;
-    const scrollHeight = element.scrollHeight || elementRect.height;
+  //   // Use scrollWidth to ensure overlay covers all text
+  //   const scrollWidth = element.scrollWidth || elementRect.width;
+  //   const scrollHeight = element.scrollHeight || elementRect.height;
     
-    // Position relative to parent
-    overlay.style.top = `${elementRect.top - parentRect.top}px`;
-    overlay.style.left = `${elementRect.left - parentRect.left}px`;
-    overlay.style.width = `${Math.max(elementRect.width, scrollWidth)}px`;
-    overlay.style.height = `${Math.max(elementRect.height, scrollHeight)}px`;
-    overlay.style.minHeight = `${Math.max(elementRect.height, scrollHeight)}px`;
+  //   // Position relative to parent
+  //   overlay.style.top = `${elementRect.top - parentRect.top}px`;
+  //   overlay.style.left = `${elementRect.left - parentRect.left}px`;
+  //   overlay.style.width = `${Math.max(elementRect.width, scrollWidth)}px`;
+  //   overlay.style.height = `${Math.max(elementRect.height, scrollHeight)}px`;
+  //   overlay.style.minHeight = `${Math.max(elementRect.height, scrollHeight)}px`;
 
-    // Create text with error highlights
-    const text = element.value;
-    const errorSpans: string[] = [];
+  //   // Create text with error highlights
+  //   const text = element.value;
+  //   const errorSpans: string[] = [];
     
-    // Sort errors by position
-    const sortedErrors = [...errors].sort((a, b) => a.start - b.start);
+  //   // Sort errors by position
+  //   const sortedErrors = [...errors].sort((a, b) => a.start - b.start);
     
-    let lastIndex = 0;
-    for (const error of sortedErrors) {
-      // Add text before error
-      errorSpans.push(this.escapeHtml(text.substring(lastIndex, error.start)));
+  //   let lastIndex = 0;
+  //   for (const error of sortedErrors) {
+  //     // Add text before error
+  //     errorSpans.push(this.escapeHtml(text.substring(lastIndex, error.start)));
       
-      // Add error word with underline - use exact substring
-      const errorWord = text.substring(error.start, error.end);
-      errorSpans.push(`<span class="rewordly-grammar-error" style="border-bottom: 2px solid #ef4444 !important; cursor: pointer !important; background: rgba(239, 68, 68, 0.1) !important; display: inline !important;" data-error="${this.escapeHtml(JSON.stringify(error))}">${this.escapeHtml(errorWord)}</span>`);
+  //     // Add error word with underline - use exact substring
+  //     const errorWord = text.substring(error.start, error.end);
+  //     errorSpans.push(`<span class="rewordly-grammar-error" style="border-bottom: 2px solid #ef4444 !important; cursor: pointer !important; background: rgba(239, 68, 68, 0.1) !important; display: inline !important;" data-error="${this.escapeHtml(JSON.stringify(error))}">${this.escapeHtml(errorWord)}</span>`);
       
-      lastIndex = error.end;
-    }
+  //     lastIndex = error.end;
+  //   }
     
-    // Add remaining text
-    errorSpans.push(this.escapeHtml(text.substring(lastIndex)));
+  //   // Add remaining text
+  //   errorSpans.push(this.escapeHtml(text.substring(lastIndex)));
     
-    overlay.innerHTML = errorSpans.join('');
+  //   overlay.innerHTML = errorSpans.join('');
     
-    // Enable pointer events on error spans for hover interaction
-    const errorSpansElements = overlay.querySelectorAll('.rewordly-grammar-error');
-    errorSpansElements.forEach(span => {
-      (span as HTMLElement).style.pointerEvents = 'auto';
-      (span as HTMLElement).style.cursor = 'pointer';
-    });
+  //   // Enable pointer events on error spans for hover interaction
+  //   const errorSpansElements = overlay.querySelectorAll('.rewordly-grammar-error');
+  //   errorSpansElements.forEach(span => {
+  //     (span as HTMLElement).style.pointerEvents = 'auto';
+  //     (span as HTMLElement).style.cursor = 'pointer';
+  //   });
     
-    // Attach hover event listeners to error spans
-    this.attachGrammarErrorHoverListeners(overlay, element);
+  //   // Attach hover event listeners to error spans
+  //   this.attachGrammarErrorHoverListeners(overlay, element);
     
-    // Append to parent container (not body) for absolute positioning
-    parentContainer.appendChild(overlay);
+  //   // Append to parent container (not body) for absolute positioning
+  //   parentContainer.appendChild(overlay);
     
-    // Force a reflow to ensure styles are applied
-    void overlay.offsetHeight;
+  //   // Force a reflow to ensure styles are applied
+  //   void overlay.offsetHeight;
     
-    // Update overlay position on scroll/resize
-    // For absolute positioning, calculate relative to parent
-    const updatePosition = () => {
-      const parentContainer = overlay.parentElement || this.findOverlayParent(element);
-      const newElementRect = element.getBoundingClientRect();
-      const newParentRect = parentContainer.getBoundingClientRect();
-      const newScrollWidth = element.scrollWidth || newElementRect.width;
-      const newScrollHeight = element.scrollHeight || newElementRect.height;
+  //   // Update overlay position on scroll/resize
+  //   // For absolute positioning, calculate relative to parent
+  //   const updatePosition = () => {
+  //     const parentContainer = overlay.parentElement || this.findOverlayParent(element);
+  //     const newElementRect = element.getBoundingClientRect();
+  //     const newParentRect = parentContainer.getBoundingClientRect();
+  //     const newScrollWidth = element.scrollWidth || newElementRect.width;
+  //     const newScrollHeight = element.scrollHeight || newElementRect.height;
       
-      // Calculate position relative to parent, accounting for scroll
-      const parentScrollTop = parentContainer.scrollTop || 0;
-      const parentScrollLeft = parentContainer.scrollLeft || 0;
+  //     // Calculate position relative to parent, accounting for scroll
+  //     const parentScrollTop = parentContainer.scrollTop || 0;
+  //     const parentScrollLeft = parentContainer.scrollLeft || 0;
       
-      // Position relative to parent (accounting for parent's scroll position)
-      const topOffset = newElementRect.top - newParentRect.top + parentScrollTop;
-      const leftOffset = newElementRect.left - newParentRect.left + parentScrollLeft;
+  //     // Position relative to parent (accounting for parent's scroll position)
+  //     const topOffset = newElementRect.top - newParentRect.top + parentScrollTop;
+  //     const leftOffset = newElementRect.left - newParentRect.left + parentScrollLeft;
       
-      overlay.style.top = `${topOffset}px`;
-      overlay.style.left = `${leftOffset}px`;
-      overlay.style.width = `${Math.max(newElementRect.width, newScrollWidth)}px`;
-      overlay.style.height = `${Math.max(newElementRect.height, newScrollHeight)}px`;
-      overlay.style.minHeight = `${Math.max(newElementRect.height, newScrollHeight)}px`;
-    };
+  //     overlay.style.top = `${topOffset}px`;
+  //     overlay.style.left = `${leftOffset}px`;
+  //     overlay.style.width = `${Math.max(newElementRect.width, newScrollWidth)}px`;
+  //     overlay.style.height = `${Math.max(newElementRect.height, newScrollHeight)}px`;
+  //     overlay.style.minHeight = `${Math.max(newElementRect.height, newScrollHeight)}px`;
+  //   };
     
-    window.addEventListener('scroll', updatePosition, true);
-    window.addEventListener('resize', updatePosition);
+  //   window.addEventListener('scroll', updatePosition, true);
+  //   window.addEventListener('resize', updatePosition);
     
-    // Store cleanup function
-    (overlay as any).__cleanup = () => {
-      window.removeEventListener('scroll', updatePosition, true);
-      window.removeEventListener('resize', updatePosition);
-    };
-  }
+  //   // Store cleanup function
+  //   (overlay as any).__cleanup = () => {
+  //     window.removeEventListener('scroll', updatePosition, true);
+  //     window.removeEventListener('resize', updatePosition);
+  //   };
+  // }
 
   /**
    * Get unique ID for an element
@@ -924,553 +947,567 @@ class RewordlyContentScript {
   /**
    * Create error overlay for contenteditable elements
    * This avoids DOM manipulation which can cause text loss
+   * @deprecated Use Grammarly-style highlights instead
    */
-  private createErrorOverlayForContentEditable(element: HTMLElement, errors: GrammarError[]): void {
-    // Remove existing overlay
-    const existingOverlay = document.querySelector(`.rewordly-grammar-overlay[data-element-id="${this.getElementId(element)}"]`);
-    if (existingOverlay) {
-      existingOverlay.remove();
-    }
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // private createErrorOverlayForContentEditable(element: HTMLElement, errors: GrammarError[]): void {
+  //   // Remove existing overlay
+  //   const existingOverlay = document.querySelector(`.rewordly-grammar-overlay[data-element-id="${this.getElementId(element)}"]`);
+  //   if (existingOverlay) {
+  //     existingOverlay.remove();
+  //   }
 
-    // Get text content - use the same source as grammar check
-    const textSource = (element as any).__rewordlyTextSource || 'innerText';
-    let text = '';
+  //   // Get text content - use the same source as grammar check
+  //   const textSource = (element as any).__rewordlyTextSource || 'innerText';
+  //   let text = '';
     
-    if (textSource === 'innerText') {
-      text = element.innerText || element.textContent || '';
-    } else if (textSource === 'textContent') {
-      text = element.textContent || element.innerText || '';
-    } else {
-      // Fallback
-      text = element.innerText || element.textContent || '';
-    }
+  //   if (textSource === 'innerText') {
+  //     text = element.innerText || element.textContent || '';
+  //   } else if (textSource === 'textContent') {
+  //     text = element.textContent || element.innerText || '';
+  //   } else {
+  //     // Fallback
+  //     text = element.innerText || element.textContent || '';
+  //   }
     
-    // If we have stored text from grammar check, use it for exact matching
-    if ((element as any).__rewordlyText) {
-      text = (element as any).__rewordlyText;
-    }
+  //   // If we have stored text from grammar check, use it for exact matching
+  //   if ((element as any).__rewordlyText) {
+  //     text = (element as any).__rewordlyText;
+  //   }
     
-    if (!text) return;
+  //   if (!text) return;
     
-    console.log('Rewordly: Overlay text length:', text.length, 'Text:', text.substring(0, 50));
+  //   console.log('Rewordly: Overlay text length:', text.length, 'Text:', text.substring(0, 50));
 
-    // Create overlay
-    const overlay = document.createElement('div');
-    overlay.className = 'rewordly-grammar-overlay';
-    overlay.setAttribute('data-element-id', this.getElementId(element));
+  //   // Create overlay
+  //   const overlay = document.createElement('div');
+  //   overlay.className = 'rewordly-grammar-overlay';
+  //   overlay.setAttribute('data-element-id', this.getElementId(element));
     
-    // Copy ALL relevant styles from the element to ensure perfect alignment
-    const styles = window.getComputedStyle(element);
+  //   // Copy ALL relevant styles from the element to ensure perfect alignment
+  //   const styles = window.getComputedStyle(element);
     
-    // Get all CSS properties that affect text rendering
-    const cssProperties = [
-      'direction', 'text-align', 'text-indent', 'text-decoration', 'text-shadow',
-      'font-family', 'font-size', 'font-weight', 'font-style', 'font-variant',
-      'font-stretch', 'font-size-adjust', 'line-height', 'letter-spacing', 
-      'word-spacing', 'text-transform', 'white-space', 'word-wrap', 'word-break',
-      'overflow-wrap', 'hyphens', 'tab-size', 'text-rendering',
-      'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
-      'border', 'border-top', 'border-right', 'border-bottom', 'border-left',
-      'box-sizing', 'width', 'min-width', 'max-width',
-      'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left'
-    ];
+  //   // Get all CSS properties that affect text rendering
+  //   const cssProperties = [
+  //     'direction', 'text-align', 'text-indent', 'text-decoration', 'text-shadow',
+  //     'font-family', 'font-size', 'font-weight', 'font-style', 'font-variant',
+  //     'font-stretch', 'font-size-adjust', 'line-height', 'letter-spacing', 
+  //     'word-spacing', 'text-transform', 'white-space', 'word-wrap', 'word-break',
+  //     'overflow-wrap', 'hyphens', 'tab-size', 'text-rendering',
+  //     'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+  //     'border', 'border-top', 'border-right', 'border-bottom', 'border-left',
+  //     'box-sizing', 'width', 'min-width', 'max-width',
+  //     'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left'
+  //   ];
     
-    let overlayStyles = 'position: absolute !important; pointer-events: none !important; z-index: 2147483645 !important; color: transparent !important; background: transparent !important; border-color: transparent !important;';
+  //   let overlayStyles = 'position: absolute !important; pointer-events: none !important; z-index: 2147483645 !important; color: transparent !important; background: transparent !important; border-color: transparent !important;';
     
-    cssProperties.forEach(prop => {
-      const value = styles.getPropertyValue(prop);
-      if (value) {
-        overlayStyles += `${prop}: ${value} !important; `;
-      }
-    });
+  //   cssProperties.forEach(prop => {
+  //     const value = styles.getPropertyValue(prop);
+  //     if (value) {
+  //       overlayStyles += `${prop}: ${value} !important; `;
+  //     }
+  //   });
     
-    // Ensure white-space matches element
-    overlayStyles += `white-space: ${styles.whiteSpace || 'pre-wrap'} !important; `;
-    overlayStyles += `word-wrap: ${styles.wordWrap || 'break-word'} !important; `;
-    overlayStyles += `overflow: hidden !important; `;
+  //   // Ensure white-space matches element
+  //   overlayStyles += `white-space: ${styles.whiteSpace || 'pre-wrap'} !important; `;
+  //   overlayStyles += `word-wrap: ${styles.wordWrap || 'break-word'} !important; `;
+  //   overlayStyles += `overflow: hidden !important; `;
     
-    overlay.style.cssText = overlayStyles;
+  //   overlay.style.cssText = overlayStyles;
 
-    // Position overlay exactly over the element using absolute positioning
-    // Find the best parent container for the overlay
-    const parentContainer = this.findOverlayParent(element);
+  //   // Position overlay exactly over the element using absolute positioning
+  //   // Find the best parent container for the overlay
+  //   const parentContainer = this.findOverlayParent(element);
     
-    // Ensure parent has position: relative
-    const parentStyles = window.getComputedStyle(parentContainer);
-    if (parentStyles.position === 'static') {
-      parentContainer.style.position = 'relative';
-    }
+  //   // Ensure parent has position: relative
+  //   const parentStyles = window.getComputedStyle(parentContainer);
+  //   if (parentStyles.position === 'static') {
+  //     parentContainer.style.position = 'relative';
+  //   }
     
-    // Calculate position relative to parent
-    const elementRect = element.getBoundingClientRect();
-    const parentRect = parentContainer.getBoundingClientRect();
+  //   // Calculate position relative to parent
+  //   const elementRect = element.getBoundingClientRect();
+  //   const parentRect = parentContainer.getBoundingClientRect();
     
-    // Use scrollWidth to ensure overlay covers all text, especially for contenteditable
-    const scrollWidth = element.scrollWidth || elementRect.width;
-    const scrollHeight = element.scrollHeight || elementRect.height;
+  //   // Use scrollWidth to ensure overlay covers all text, especially for contenteditable
+  //   const scrollWidth = element.scrollWidth || elementRect.width;
+  //   const scrollHeight = element.scrollHeight || elementRect.height;
     
-    // Calculate position relative to parent, accounting for scroll
-    const parentScrollTop = parentContainer.scrollTop || 0;
-    const parentScrollLeft = parentContainer.scrollLeft || 0;
+  //   // Calculate position relative to parent, accounting for scroll
+  //   const parentScrollTop = parentContainer.scrollTop || 0;
+  //   const parentScrollLeft = parentContainer.scrollLeft || 0;
     
-    // Position relative to parent (accounting for parent's scroll position)
-    const topOffset = elementRect.top - parentRect.top + parentScrollTop;
-    const leftOffset = elementRect.left - parentRect.left + parentScrollLeft;
+  //   // Position relative to parent (accounting for parent's scroll position)
+  //   const topOffset = elementRect.top - parentRect.top + parentScrollTop;
+  //   const leftOffset = elementRect.left - parentRect.left + parentScrollLeft;
     
-    overlay.style.top = `${topOffset}px`;
-    overlay.style.left = `${leftOffset}px`;
-    overlay.style.width = `${Math.max(elementRect.width, scrollWidth)}px`;
-    overlay.style.height = `${Math.max(elementRect.height, scrollHeight)}px`;
-    overlay.style.minHeight = `${Math.max(elementRect.height, scrollHeight)}px`;
-    overlay.style.maxHeight = `${Math.max(elementRect.height, scrollHeight)}px`;
+  //   overlay.style.top = `${topOffset}px`;
+  //   overlay.style.left = `${leftOffset}px`;
+  //   overlay.style.width = `${Math.max(elementRect.width, scrollWidth)}px`;
+  //   overlay.style.height = `${Math.max(elementRect.height, scrollHeight)}px`;
+  //   overlay.style.minHeight = `${Math.max(elementRect.height, scrollHeight)}px`;
+  //   overlay.style.maxHeight = `${Math.max(elementRect.height, scrollHeight)}px`;
 
-    // Universal approach: Clone element structure, make all text transparent, add only underlines for errors
-    const sortedErrors = [...errors].sort((a, b) => a.start - b.start);
+  //   // Universal approach: Clone element structure, make all text transparent, add only underlines for errors
+  //   const sortedErrors = [...errors].sort((a, b) => a.start - b.start);
     
-    console.log('Rewordly: Creating overlay with', sortedErrors.length, 'errors');
-    console.log('Rewordly: Text for overlay:', text);
-    console.log('Rewordly: Errors:', sortedErrors);
+  //   console.log('Rewordly: Creating overlay with', sortedErrors.length, 'errors');
+  //   console.log('Rewordly: Text for overlay:', text);
+  //   console.log('Rewordly: Errors:', sortedErrors);
     
-    // Clone the element to preserve all formatting structure
-    // But remove Twitter's own highlights (background-color spans)
-    const clone = element.cloneNode(true) as HTMLElement;
+  //   // Clone the element to preserve all formatting structure
+  //   // But remove Twitter's own highlights (background-color spans)
+  //   const clone = element.cloneNode(true) as HTMLElement;
     
-    // Remove Twitter's highlight spans (they have background-color style)
-    // Also remove any spans with inline background-color styles
-    const allSpans = clone.querySelectorAll('span');
-    allSpans.forEach(span => {
-      const spanElement = span as HTMLElement;
-      const style = spanElement.getAttribute('style');
-      if (style && style.includes('background-color')) {
-        const parent = span.parentNode;
-        if (parent) {
-          // Replace highlight span with just its text content
-          const textNode = document.createTextNode(span.textContent || '');
-          parent.replaceChild(textNode, span);
-          parent.normalize();
-        }
-      }
-    });
+  //   // Remove Twitter's highlight spans (they have background-color style)
+  //   // Also remove any spans with inline background-color styles
+  //   const allSpans = clone.querySelectorAll('span');
+  //   allSpans.forEach(span => {
+  //     const spanElement = span as HTMLElement;
+  //     const style = spanElement.getAttribute('style');
+  //     if (style && style.includes('background-color')) {
+  //       const parent = span.parentNode;
+  //       if (parent) {
+  //         // Replace highlight span with just its text content
+  //         const textNode = document.createTextNode(span.textContent || '');
+  //         parent.replaceChild(textNode, span);
+  //         parent.normalize();
+  //       }
+  //     }
+  //   });
     
-    // Remove any existing grammar error markers from clone
-    const existingErrors = clone.querySelectorAll('.rewordly-grammar-error');
-    existingErrors.forEach(err => {
-      const parent = err.parentNode;
-      if (parent) {
-        parent.replaceChild(document.createTextNode(err.textContent || ''), err);
-        parent.normalize();
-      }
-    });
+  //   // Remove any existing grammar error markers from clone
+  //   const existingErrors = clone.querySelectorAll('.rewordly-grammar-error');
+  //   existingErrors.forEach(err => {
+  //     const parent = err.parentNode;
+  //     if (parent) {
+  //       parent.replaceChild(document.createTextNode(err.textContent || ''), err);
+  //       parent.normalize();
+  //     }
+  //   });
     
-    // Build a map of error positions for quick lookup
-    const errorMap = new Map<number, GrammarError>();
-    sortedErrors.forEach(error => {
-      for (let i = error.start; i < error.end; i++) {
-        errorMap.set(i, error);
-      }
-    });
+  //   // Build a map of error positions for quick lookup
+  //   const errorMap = new Map<number, GrammarError>();
+  //   sortedErrors.forEach(error => {
+  //     for (let i = error.start; i < error.end; i++) {
+  //       errorMap.set(i, error);
+  //     }
+  //   });
     
-    // First pass: Make all text transparent
-    const allTextNodes: { node: Text; startIndex: number; endIndex: number }[] = [];
-    const walker = document.createTreeWalker(
-      clone,
-      NodeFilter.SHOW_TEXT,
-      null
-    );
+  //   // First pass: Make all text transparent
+  //   const allTextNodes: { node: Text; startIndex: number; endIndex: number }[] = [];
+  //   const walker = document.createTreeWalker(
+  //     clone,
+  //     NodeFilter.SHOW_TEXT,
+  //     null
+  //   );
     
-    let textIndex = 0;
-    let node: Text | null;
-    while ((node = walker.nextNode() as Text | null)) {
-      if (node && node.textContent) {
-        const nodeText = node.textContent;
-        const startIndex = textIndex;
-        const endIndex = textIndex + nodeText.length;
-        allTextNodes.push({ node, startIndex, endIndex });
-        textIndex = endIndex;
-      }
-    }
+  //   let textIndex = 0;
+  //   let node: Text | null;
+  //   while ((node = walker.nextNode() as Text | null)) {
+  //     if (node && node.textContent) {
+  //       const nodeText = node.textContent;
+  //       const startIndex = textIndex;
+  //       const endIndex = textIndex + nodeText.length;
+  //       allTextNodes.push({ node, startIndex, endIndex });
+  //       textIndex = endIndex;
+  //     }
+  //   }
     
-    // Make all text transparent
-    allTextNodes.forEach(({ node: textNode }) => {
-      if (textNode && textNode.textContent) {
-        const transparentSpan = document.createElement('span');
-        transparentSpan.style.cssText = 'color: transparent !important; display: inline !important;';
-        const parent = textNode.parentNode;
-        if (parent) {
-          parent.replaceChild(transparentSpan, textNode);
-          transparentSpan.appendChild(textNode);
-        }
-      }
-    });
+  //   // Make all text transparent
+  //   allTextNodes.forEach(({ node: textNode }) => {
+  //     if (textNode && textNode.textContent) {
+  //       const transparentSpan = document.createElement('span');
+  //       transparentSpan.style.cssText = 'color: transparent !important; display: inline !important;';
+  //       const parent = textNode.parentNode;
+  //       if (parent) {
+  //         parent.replaceChild(transparentSpan, textNode);
+  //         transparentSpan.appendChild(textNode);
+  //       }
+  //     }
+  //   });
     
-    // Second pass: Insert error underlines at correct positions
-    // Process in reverse order to avoid index shifting
-    for (let i = allTextNodes.length - 1; i >= 0; i--) {
-      const item = allTextNodes[i];
-      if (!item) continue;
+  //   // Second pass: Insert error underlines at correct positions
+  //   // Process in reverse order to avoid index shifting
+  //   for (let i = allTextNodes.length - 1; i >= 0; i--) {
+  //     const item = allTextNodes[i];
+  //     if (!item) continue;
       
-      const { node: textNode, startIndex } = item;
-      if (!textNode || !textNode.textContent) continue;
+  //     const { node: textNode, startIndex } = item;
+  //     if (!textNode || !textNode.textContent) continue;
       
-      // Find the transparent span that now contains this text node
-      let transparentSpan = textNode.parentElement;
-      while (transparentSpan && !transparentSpan.style.color.includes('transparent')) {
-        transparentSpan = transparentSpan.parentElement;
-      }
+  //     // Find the transparent span that now contains this text node
+  //     let transparentSpan = textNode.parentElement;
+  //     while (transparentSpan && !transparentSpan.style.color.includes('transparent')) {
+  //       transparentSpan = transparentSpan.parentElement;
+  //     }
       
-      if (!transparentSpan) continue;
+  //     if (!transparentSpan) continue;
       
-      const nodeText = textNode.textContent;
-      const fragments: (Text | HTMLElement)[] = [];
-      let lastPos = 0;
+  //     const nodeText = textNode.textContent;
+  //     const fragments: (Text | HTMLElement)[] = [];
+  //     let lastPos = 0;
       
-      // Check for errors in this text node
-      for (let j = 0; j < nodeText.length; j++) {
-        const globalIndex = startIndex + j;
-        const error = errorMap.get(globalIndex);
+  //     // Check for errors in this text node
+  //     for (let j = 0; j < nodeText.length; j++) {
+  //       const globalIndex = startIndex + j;
+  //       const error = errorMap.get(globalIndex);
         
-        if (error && error.start === globalIndex) {
-          // Add text before error (already transparent)
-          if (j > lastPos) {
-            const beforeText = nodeText.substring(lastPos, j);
-            const beforeNode = document.createTextNode(beforeText);
-            fragments.push(beforeNode);
-          }
+  //       if (error && error.start === globalIndex) {
+  //         // Add text before error (already transparent)
+  //         if (j > lastPos) {
+  //           const beforeText = nodeText.substring(lastPos, j);
+  //           const beforeNode = document.createTextNode(beforeText);
+  //           fragments.push(beforeNode);
+  //         }
           
-          // Add error underline span (NO TEXT, just underline)
-          const errorWord = text.substring(error.start, error.end);
-          const errorSpan = document.createElement('span');
-          errorSpan.className = 'rewordly-grammar-error';
-          errorSpan.setAttribute('data-error', JSON.stringify(error));
+  //         // Add error underline span (NO TEXT, just underline)
+  //         const errorWord = text.substring(error.start, error.end);
+  //         const errorSpan = document.createElement('span');
+  //         errorSpan.className = 'rewordly-grammar-error';
+  //         errorSpan.setAttribute('data-error', JSON.stringify(error));
           
-          // Get the actual element's text node at this position to copy its styles
-          const originalTextNodes: { node: Text; startIndex: number; endIndex: number }[] = [];
-          const originalWalker = document.createTreeWalker(
-            element,
-            NodeFilter.SHOW_TEXT,
-            null
-          );
+  //         // Get the actual element's text node at this position to copy its styles
+  //         const originalTextNodes: { node: Text; startIndex: number; endIndex: number }[] = [];
+  //         const originalWalker = document.createTreeWalker(
+  //           element,
+  //           NodeFilter.SHOW_TEXT,
+  //           null
+  //         );
           
-          let originalIndex = 0;
-          let originalNode: Text | null;
-          while ((originalNode = originalWalker.nextNode() as Text | null)) {
-            if (originalNode && originalNode.textContent) {
-              const originalText = originalNode.textContent;
-              const origStart = originalIndex;
-              const origEnd = originalIndex + originalText.length;
-              originalTextNodes.push({ node: originalNode, startIndex: origStart, endIndex: origEnd });
-              originalIndex = origEnd;
-            }
-          }
+  //         let originalIndex = 0;
+  //         let originalNode: Text | null;
+  //         while ((originalNode = originalWalker.nextNode() as Text | null)) {
+  //           if (originalNode && originalNode.textContent) {
+  //             const originalText = originalNode.textContent;
+  //             const origStart = originalIndex;
+  //             const origEnd = originalIndex + originalText.length;
+  //             originalTextNodes.push({ node: originalNode, startIndex: origStart, endIndex: origEnd });
+  //             originalIndex = origEnd;
+  //           }
+  //         }
           
-          // Find the original text node that contains this error
-          let originalParent: HTMLElement | null = null;
-          for (const { node: origNode, startIndex: origStart, endIndex: origEnd } of originalTextNodes) {
-            if (error.start >= origStart && error.start < origEnd) {
-              originalParent = origNode.parentElement;
-              break;
-            }
-          }
+  //         // Find the original text node that contains this error
+  //         let originalParent: HTMLElement | null = null;
+  //         for (const { node: origNode, startIndex: origStart, endIndex: origEnd } of originalTextNodes) {
+  //           if (error.start >= origStart && error.start < origEnd) {
+  //             originalParent = origNode.parentElement;
+  //             break;
+  //           }
+  //         }
           
-          // Calculate width using the original element's styles
-          const tempSpan = document.createElement('span');
-          tempSpan.style.cssText = 'position: absolute !important; visibility: hidden !important; white-space: pre !important; pointer-events: none !important; top: -9999px !important; left: -9999px !important;';
+  //         // Calculate width using the original element's styles
+  //         const tempSpan = document.createElement('span');
+  //         tempSpan.style.cssText = 'position: absolute !important; visibility: hidden !important; white-space: pre !important; pointer-events: none !important; top: -9999px !important; left: -9999px !important;';
           
-          if (originalParent) {
-            const parentStyles = window.getComputedStyle(originalParent);
-            const relevantStyles = [
-              'font-size', 'font-weight', 'font-style', 'font-family',
-              'line-height', 'letter-spacing', 'text-decoration',
-              'text-transform', 'font-variant', 'font-stretch'
-            ];
+  //         if (originalParent) {
+  //           const parentStyles = window.getComputedStyle(originalParent);
+  //           const relevantStyles = [
+  //             'font-size', 'font-weight', 'font-style', 'font-family',
+  //             'line-height', 'letter-spacing', 'text-decoration',
+  //             'text-transform', 'font-variant', 'font-stretch'
+  //           ];
             
-            relevantStyles.forEach(prop => {
-              const value = parentStyles.getPropertyValue(prop);
-              if (value && value !== 'normal' && value !== 'none' && value !== 'auto') {
-                tempSpan.style.setProperty(prop, value, 'important');
-              }
-            });
-          }
+  //           relevantStyles.forEach(prop => {
+  //             const value = parentStyles.getPropertyValue(prop);
+  //             if (value && value !== 'normal' && value !== 'none' && value !== 'auto') {
+  //               tempSpan.style.setProperty(prop, value, 'important');
+  //             }
+  //           });
+  //         }
           
-          tempSpan.textContent = errorWord;
-          document.body.appendChild(tempSpan);
-          const width = Math.max(1, tempSpan.offsetWidth);
-          const height = Math.max(1, tempSpan.offsetHeight);
-          document.body.removeChild(tempSpan);
+  //         tempSpan.textContent = errorWord;
+  //         document.body.appendChild(tempSpan);
+  //         const width = Math.max(1, tempSpan.offsetWidth);
+  //         const height = Math.max(1, tempSpan.offsetHeight);
+  //         document.body.removeChild(tempSpan);
           
-          // Create style string with calculated width and only underline (no text)
-          let styleString = `border-bottom: 2px solid #ef4444 !important; cursor: pointer !important; display: inline-block !important; position: relative !important; width: ${width}px !important; min-width: ${width}px !important; height: ${height}px !important; vertical-align: baseline !important; overflow: visible !important; line-height: ${height}px !important;`;
+  //         // Create style string with calculated width and only underline (no text)
+  //         let styleString = `border-bottom: 2px solid #ef4444 !important; cursor: pointer !important; display: inline-block !important; position: relative !important; width: ${width}px !important; min-width: ${width}px !important; height: ${height}px !important; vertical-align: baseline !important; overflow: visible !important; line-height: ${height}px !important;`;
           
-          if (originalParent) {
-            const parentStyles = window.getComputedStyle(originalParent);
-            const relevantStyles = [
-              'font-size', 'font-weight', 'font-style', 'font-family',
-              'letter-spacing', 'text-decoration', 'text-transform', 'font-variant'
-            ];
+  //         if (originalParent) {
+  //           const parentStyles = window.getComputedStyle(originalParent);
+  //           const relevantStyles = [
+  //             'font-size', 'font-weight', 'font-style', 'font-family',
+  //             'letter-spacing', 'text-decoration', 'text-transform', 'font-variant'
+  //           ];
             
-            relevantStyles.forEach(prop => {
-              const value = parentStyles.getPropertyValue(prop);
-              if (value && value !== 'normal' && value !== 'none' && value !== 'auto') {
-                styleString += `${prop}: ${value} !important; `;
-              }
-            });
-          }
+  //           relevantStyles.forEach(prop => {
+  //             const value = parentStyles.getPropertyValue(prop);
+  //             if (value && value !== 'normal' && value !== 'none' && value !== 'auto') {
+  //               styleString += `${prop}: ${value} !important; `;
+  //             }
+  //           });
+  //         }
           
-          errorSpan.setAttribute('style', styleString);
-          fragments.push(errorSpan);
+  //         errorSpan.setAttribute('style', styleString);
+  //         fragments.push(errorSpan);
           
-          lastPos = j + errorWord.length;
-          j += errorWord.length - 1; // Skip processed characters
-        }
-      }
+  //         lastPos = j + errorWord.length;
+  //         j += errorWord.length - 1; // Skip processed characters
+  //       }
+  //     }
       
-      // Add remaining text (already transparent)
-      if (lastPos < nodeText.length) {
-        const afterText = nodeText.substring(lastPos);
-        fragments.push(document.createTextNode(afterText));
-      }
+  //     // Add remaining text (already transparent)
+  //     if (lastPos < nodeText.length) {
+  //       const afterText = nodeText.substring(lastPos);
+  //       fragments.push(document.createTextNode(afterText));
+  //     }
       
-      // Replace the transparent span's content with fragments
-      if (fragments.length > 0 && transparentSpan) {
-        // Clear the span and add fragments
-        transparentSpan.innerHTML = '';
-        fragments.forEach(fragment => {
-          transparentSpan.appendChild(fragment);
-        });
-      }
-    }
+  //     // Replace the transparent span's content with fragments
+  //     if (fragments.length > 0 && transparentSpan) {
+  //       // Clear the span and add fragments
+  //       transparentSpan.innerHTML = '';
+  //       fragments.forEach(fragment => {
+  //         transparentSpan.appendChild(fragment);
+  //       });
+  //     }
+  //   }
     
-    overlay.innerHTML = clone.innerHTML;
+  //   overlay.innerHTML = clone.innerHTML;
     
-    // Enable pointer events on error spans for hover interaction
-    const errorSpans = overlay.querySelectorAll('.rewordly-grammar-error');
-    errorSpans.forEach(span => {
-      (span as HTMLElement).style.pointerEvents = 'auto';
-      (span as HTMLElement).style.cursor = 'pointer';
-    });
+  //   // Enable pointer events on error spans for hover interaction
+  //   const errorSpans = overlay.querySelectorAll('.rewordly-grammar-error');
+  //   errorSpans.forEach(span => {
+  //     (span as HTMLElement).style.pointerEvents = 'auto';
+  //     (span as HTMLElement).style.cursor = 'pointer';
+  //   });
     
-    // Attach hover event listeners to error spans
-    this.attachGrammarErrorHoverListeners(overlay, element);
+  //   // Attach hover event listeners to error spans
+  //   this.attachGrammarErrorHoverListeners(overlay, element);
     
-    console.log('Rewordly: Overlay HTML length:', overlay.innerHTML.length);
+  //   console.log('Rewordly: Overlay HTML length:', overlay.innerHTML.length);
     
-    // Ensure overlay is visible and properly positioned
-    overlay.style.display = 'block';
-    overlay.style.visibility = 'visible';
-    overlay.style.opacity = '1';
-    overlay.style.pointerEvents = 'none';
+  //   // Ensure overlay is visible and properly positioned
+  //   overlay.style.display = 'block';
+  //   overlay.style.visibility = 'visible';
+  //   overlay.style.opacity = '1';
+  //   overlay.style.pointerEvents = 'none';
     
-    // Remove any hidden attributes
-    overlay.removeAttribute('data-hidden-by-blur');
-    overlay.removeAttribute('data-hidden-by-modal');
+  //   // Remove any hidden attributes
+  //   overlay.removeAttribute('data-hidden-by-blur');
+  //   overlay.removeAttribute('data-hidden-by-modal');
     
-    // Append to parent container (not body) for absolute positioning
-    parentContainer.appendChild(overlay);
+  //   // Append to parent container (not body) for absolute positioning
+  //   parentContainer.appendChild(overlay);
     
-    // Force a reflow to ensure styles are applied
-    void overlay.offsetHeight;
+  //   // Force a reflow to ensure styles are applied
+  //   void overlay.offsetHeight;
     
-    // Debug: Check if overlay is actually visible
-    const overlayRect = overlay.getBoundingClientRect();
-    const computedStyle = window.getComputedStyle(overlay);
-    console.log('Rewordly: Overlay created - Position:', {
-      top: overlayRect.top,
-      left: overlayRect.left,
-      width: overlayRect.width,
-      height: overlayRect.height,
-      zIndex: computedStyle.zIndex,
-      display: computedStyle.display,
-      visibility: computedStyle.visibility,
-      opacity: computedStyle.opacity,
-      position: computedStyle.position
-    });
+  //   // Debug: Check if overlay is actually visible
+  //   const overlayRect = overlay.getBoundingClientRect();
+  //   const computedStyle = window.getComputedStyle(overlay);
+  //   console.log('Rewordly: Overlay created - Position:', {
+  //     top: overlayRect.top,
+  //     left: overlayRect.left,
+  //     width: overlayRect.width,
+  //     height: overlayRect.height,
+  //     zIndex: computedStyle.zIndex,
+  //     display: computedStyle.display,
+  //     visibility: computedStyle.visibility,
+  //     opacity: computedStyle.opacity,
+  //     position: computedStyle.position
+  //   });
     
-    // Additional check: verify overlay is actually in DOM and visible
-    if (!document.body.contains(overlay)) {
-      console.error('Rewordly: Overlay not in DOM!');
-    }
-    if (overlayRect.width === 0 || overlayRect.height === 0) {
-      console.warn('Rewordly: Overlay has zero dimensions!');
-    }
+  //   // Additional check: verify overlay is actually in DOM and visible
+  //   if (!document.body.contains(overlay)) {
+  //     console.error('Rewordly: Overlay not in DOM!');
+  //   }
+  //   if (overlayRect.width === 0 || overlayRect.height === 0) {
+  //     console.warn('Rewordly: Overlay has zero dimensions!');
+  //   }
     
-      // Update overlay position on scroll/resize
-      // Note: position: fixed uses viewport coordinates, getBoundingClientRect() already gives viewport coords
-      const updatePosition = () => {
-        const newRect = element.getBoundingClientRect();
-        const newScrollWidth = element.scrollWidth || newRect.width;
-        const newScrollHeight = element.scrollHeight || newRect.height;
+  //     // Update overlay position on scroll/resize
+  //     // Note: position: fixed uses viewport coordinates, getBoundingClientRect() already gives viewport coords
+  //     const updatePosition = () => {
+  //       const newRect = element.getBoundingClientRect();
+  //       const newScrollWidth = element.scrollWidth || newRect.width;
+  //       const newScrollHeight = element.scrollHeight || newRect.height;
         
-        // For position: fixed, use viewport coordinates directly (no scroll offset needed)
-        overlay.style.top = `${newRect.top}px`;
-        overlay.style.left = `${newRect.left}px`;
-        overlay.style.width = `${Math.max(newRect.width, newScrollWidth)}px`;
-        overlay.style.height = `${Math.max(newRect.height, newScrollHeight)}px`;
-        overlay.style.minHeight = `${Math.max(newRect.height, newScrollHeight)}px`;
-        overlay.style.maxHeight = `${Math.max(newRect.height, newScrollHeight)}px`;
-      };
+  //       // For position: fixed, use viewport coordinates directly (no scroll offset needed)
+  //       overlay.style.top = `${newRect.top}px`;
+  //       overlay.style.left = `${newRect.left}px`;
+  //       overlay.style.width = `${Math.max(newRect.width, newScrollWidth)}px`;
+  //       overlay.style.height = `${Math.max(newRect.height, newScrollHeight)}px`;
+  //       overlay.style.minHeight = `${Math.max(newRect.height, newScrollHeight)}px`;
+  //       overlay.style.maxHeight = `${Math.max(newRect.height, newScrollHeight)}px`;
+  //     };
     
-    window.addEventListener('scroll', updatePosition, true);
-    window.addEventListener('resize', updatePosition);
+  //   window.addEventListener('scroll', updatePosition, true);
+  //   window.addEventListener('resize', updatePosition);
     
-    // Store cleanup function
-    (overlay as any).__cleanup = () => {
-      window.removeEventListener('scroll', updatePosition, true);
-      window.removeEventListener('resize', updatePosition);
-    };
-  }
+  //   // Store cleanup function
+  //   (overlay as any).__cleanup = () => {
+  //     window.removeEventListener('scroll', updatePosition, true);
+  //     window.removeEventListener('resize', updatePosition);
+  //   };
+  // }
 
 
   /**
-   * Hide grammar overlay for an element (but keep errors stored)
+   * Hide grammar highlights for an element (but keep errors stored)
    */
   private hideGrammarOverlay(element: HTMLElement): void {
-    const overlay = document.querySelector(`.rewordly-grammar-overlay[data-element-id="${this.getElementId(element)}"]`) as HTMLElement;
-    if (overlay) {
-      overlay.style.display = 'none';
-      overlay.setAttribute('data-hidden-by-blur', 'true');
-    }
+    if (!this.highlightsContent) return;
+    
+    const elementId = this.getElementId(element);
+    const highlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
+    highlights.forEach(highlight => {
+      (highlight as HTMLElement).style.display = 'none';
+      (highlight as HTMLElement).setAttribute('data-hidden-by-blur', 'true');
+    });
   }
 
   /**
-   * Show grammar overlay for an element (if errors exist)
+   * Show grammar highlights for an element (if errors exist)
    */
   private showGrammarOverlay(element: HTMLElement): void {
     if (!this.grammarErrors.has(element)) {
       return;
     }
     
-    const overlay = document.querySelector(`.rewordly-grammar-overlay[data-element-id="${this.getElementId(element)}"]`) as HTMLElement;
-    if (overlay) {
-      overlay.style.display = 'block';
-      overlay.style.visibility = 'visible';
-      overlay.style.opacity = '1';
-      overlay.removeAttribute('data-hidden-by-blur');
-      overlay.removeAttribute('data-hidden-by-modal');
-      this.updateOverlayPosition(element, overlay);
-      
-      console.log('Rewordly: Showing overlay for element', this.getElementId(element));
-    } else {
+    if (!this.highlightsContent) {
       // Recreate if doesn't exist
       const errors = this.grammarErrors.get(element);
       if (errors) {
-        console.log('Rewordly: Recreating overlay for element', this.getElementId(element));
         this.displayGrammarErrors(element, errors);
       }
+      return;
+    }
+    
+    const elementId = this.getElementId(element);
+    const highlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
+    
+    if (highlights.length === 0) {
+      // Recreate if doesn't exist
+      const errors = this.grammarErrors.get(element);
+      if (errors) {
+        this.displayGrammarErrors(element, errors);
+      }
+    } else {
+      // Show existing highlights
+      highlights.forEach(highlight => {
+        (highlight as HTMLElement).style.display = '';
+        (highlight as HTMLElement).removeAttribute('data-hidden-by-blur');
+        (highlight as HTMLElement).removeAttribute('data-hidden-by-modal');
+      });
+      // Update positions
+      this.updateHighlightsPosition(element);
     }
   }
 
   /**
    * Find the best parent container for overlay positioning
    */
-  private findOverlayParent(element: HTMLElement): HTMLElement {
-    // For Draft.js editors (Twitter), use the editor container
-    if (element.classList.contains('public-DraftEditor-content')) {
-      const editorContainer = element.closest('.DraftEditor-editorContainer');
-      if (editorContainer) {
-        return editorContainer as HTMLElement;
-      }
-      const draftRoot = element.closest('.DraftEditor-root');
-      if (draftRoot) {
-        return draftRoot as HTMLElement;
-      }
-    }
+  // private findOverlayParent(element: HTMLElement): HTMLElement {
+  //   // For Draft.js editors (Twitter), use the editor container
+  //   if (element.classList.contains('public-DraftEditor-content')) {
+  //     const editorContainer = element.closest('.DraftEditor-editorContainer');
+  //     if (editorContainer) {
+  //       return editorContainer as HTMLElement;
+  //     }
+  //     const draftRoot = element.closest('.DraftEditor-root');
+  //     if (draftRoot) {
+  //       return draftRoot as HTMLElement;
+  //     }
+  //   }
     
-    // For Gmail, use the contenteditable wrapper
-    if (element.classList.contains('Am') && element.classList.contains('aiL') && element.classList.contains('Al')) {
-      // Gmail's contenteditable is inside .aO7 or .Ar.Au
-      const gmailWrapper = element.closest('.aO7') || element.closest('.Ar.Au') || element.closest('.Ar');
-      if (gmailWrapper) {
-        return gmailWrapper as HTMLElement;
-      }
-    }
+  //   // For Gmail, use the contenteditable wrapper
+  //   if (element.classList.contains('Am') && element.classList.contains('aiL') && element.classList.contains('Al')) {
+  //     // Gmail's contenteditable is inside .aO7 or .Ar.Au
+  //     const gmailWrapper = element.closest('.aO7') || element.closest('.Ar.Au') || element.closest('.Ar');
+  //     if (gmailWrapper) {
+  //       return gmailWrapper as HTMLElement;
+  //     }
+  //   }
     
-    // Try to find a suitable parent with positioning context
-    let parent = element.parentElement;
+  //   // Try to find a suitable parent with positioning context
+  //   let parent = element.parentElement;
     
-    // Look for a parent with position: relative, absolute, or fixed
-    while (parent && parent !== document.body) {
-      const styles = window.getComputedStyle(parent);
-      if (styles.position !== 'static') {
-        return parent;
-      }
-      parent = parent.parentElement;
-    }
+  //   // Look for a parent with position: relative, absolute, or fixed
+  //   while (parent && parent !== document.body) {
+  //     const styles = window.getComputedStyle(parent);
+  //     if (styles.position !== 'static') {
+  //       return parent;
+  //     }
+  //     parent = parent.parentElement;
+  //   }
     
-    // If no positioned parent found, use the element's immediate parent
-    const immediateParent = element.parentElement;
-    if (immediateParent && immediateParent !== document.body) {
-      return immediateParent;
-    }
+  //   // If no positioned parent found, use the element's immediate parent
+  //   const immediateParent = element.parentElement;
+  //   if (immediateParent && immediateParent !== document.body) {
+  //     return immediateParent;
+  //   }
     
-    // Fallback to body (shouldn't happen often)
-    return document.body;
-  }
+  //   // Fallback to body (shouldn't happen often)
+  //   return document.body;
+  // }
 
   /**
    * Update overlay position
+   * @deprecated Use updateHighlightsPosition instead
    */
-  private updateOverlayPosition(element: HTMLElement, overlay: HTMLElement): void {
-    // For absolute positioning, calculate relative to parent
-    const parentContainer = overlay.parentElement || this.findOverlayParent(element);
-    const elementRect = element.getBoundingClientRect();
-    const parentRect = parentContainer.getBoundingClientRect();
-    const scrollWidth = element.scrollWidth || elementRect.width;
-    const scrollHeight = element.scrollHeight || elementRect.height;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // private updateOverlayPosition(element: HTMLElement, overlay: HTMLElement): void {
+  //   // For absolute positioning, calculate relative to parent
+  //   const parentContainer = overlay.parentElement || this.findOverlayParent(element);
+  //   const elementRect = element.getBoundingClientRect();
+  //   const parentRect = parentContainer.getBoundingClientRect();
+  //   const scrollWidth = element.scrollWidth || elementRect.width;
+  //   const scrollHeight = element.scrollHeight || elementRect.height;
     
-    // Calculate position relative to parent, accounting for scroll
-    const parentScrollTop = parentContainer.scrollTop || 0;
-    const parentScrollLeft = parentContainer.scrollLeft || 0;
+  //   // Calculate position relative to parent, accounting for scroll
+  //   const parentScrollTop = parentContainer.scrollTop || 0;
+  //   const parentScrollLeft = parentContainer.scrollLeft || 0;
     
-    // Position relative to parent (accounting for parent's scroll position)
-    const topOffset = elementRect.top - parentRect.top + parentScrollTop;
-    const leftOffset = elementRect.left - parentRect.left + parentScrollLeft;
+  //   // Position relative to parent (accounting for parent's scroll position)
+  //   const topOffset = elementRect.top - parentRect.top + parentScrollTop;
+  //   const leftOffset = elementRect.left - parentRect.left + parentScrollLeft;
     
-    overlay.style.top = `${topOffset}px`;
-    overlay.style.left = `${leftOffset}px`;
-    overlay.style.width = `${Math.max(elementRect.width, scrollWidth)}px`;
-    overlay.style.height = `${Math.max(elementRect.height, scrollHeight)}px`;
-    overlay.style.minHeight = `${Math.max(elementRect.height, scrollHeight)}px`;
-    overlay.style.maxHeight = `${Math.max(elementRect.height, scrollHeight)}px`;
-  }
+  //   overlay.style.top = `${topOffset}px`;
+  //   overlay.style.left = `${leftOffset}px`;
+  //   overlay.style.width = `${Math.max(elementRect.width, scrollWidth)}px`;
+  //   overlay.style.height = `${Math.max(elementRect.height, scrollHeight)}px`;
+  //   overlay.style.minHeight = `${Math.max(elementRect.height, scrollHeight)}px`;
+  //   overlay.style.maxHeight = `${Math.max(elementRect.height, scrollHeight)}px`;
+  // }
 
   /**
    * Clear grammar errors from an element (permanently remove)
    */
   private clearGrammarErrors(element: HTMLElement): void {
-    // Remove overlay if exists (works for both input/textarea and contenteditable)
-    const overlay = document.querySelector(`.rewordly-grammar-overlay[data-element-id="${this.getElementId(element)}"]`);
-    if (overlay) {
-      // Clean up event listeners
-      if ((overlay as any).__cleanup) {
-        (overlay as any).__cleanup();
-      }
-      overlay.remove();
-    }
+    // Remove highlights for this element
+    this.clearElementHighlights(element);
     
     // Clear stored errors
     this.grammarErrors.delete(element);
   }
 
   /**
-   * Hide all grammar error overlays
+   * Hide all grammar error highlights
    */
   private hideAllGrammarOverlays(): void {
-    const allOverlays = document.querySelectorAll('.rewordly-grammar-overlay');
-    allOverlays.forEach((overlay) => {
-      (overlay as HTMLElement).style.display = 'none';
-      (overlay as HTMLElement).setAttribute('data-hidden-by-modal', 'true');
+    if (!this.highlightsContent) return;
+    
+    const allHighlights = this.highlightsContent.querySelectorAll('.rewordly-highlight');
+    allHighlights.forEach((highlight) => {
+      (highlight as HTMLElement).style.display = 'none';
+      (highlight as HTMLElement).setAttribute('data-hidden-by-modal', 'true');
     });
   }
 
   /**
-   * Restore grammar overlays that were hidden by modal
+   * Restore grammar highlights that were hidden by modal
    */
   private restoreGrammarOverlays(): void {
-    const hiddenOverlays = document.querySelectorAll('.rewordly-grammar-overlay[data-hidden-by-modal="true"]');
-    hiddenOverlays.forEach((overlay) => {
-      const htmlOverlay = overlay as HTMLElement;
-      htmlOverlay.style.display = '';
-      htmlOverlay.removeAttribute('data-hidden-by-modal');
+    if (!this.highlightsContent) return;
+    
+    const hiddenHighlights = this.highlightsContent.querySelectorAll('.rewordly-highlight[data-hidden-by-modal="true"]');
+    hiddenHighlights.forEach((highlight) => {
+      const htmlHighlight = highlight as HTMLElement;
+      htmlHighlight.style.display = '';
+      htmlHighlight.removeAttribute('data-hidden-by-modal');
     });
   }
 
@@ -1486,6 +1523,407 @@ class RewordlyContentScript {
       if (!document.contains(element) && !element.isConnected) {
         this.clearGrammarErrors(element);
       }
+    });
+  }
+
+  /**
+   * Create Grammarly-style highlights container with Shadow DOM
+   */
+  private createHighlightsContainer(): void {
+    // Remove existing container if any
+    if (this.highlightsContainer) {
+      this.highlightsContainer.remove();
+    }
+
+    // Create container element (like <grammarly-highlights>)
+    this.highlightsContainer = document.createElement('rewordly-highlights');
+    this.highlightsContainer.setAttribute('data-rewordly-shadow-root', 'true');
+    this.highlightsContainer.style.cssText = `
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 0 !important;
+      height: 0 !important;
+      pointer-events: none !important;
+      z-index: 2147483645 !important;
+      overflow: visible !important;
+    `;
+    
+    // Create Shadow DOM
+    this.highlightsShadowRoot = this.highlightsContainer.attachShadow({ mode: 'open' });
+    
+    // Create content div inside Shadow DOM
+    this.highlightsContent = document.createElement('div');
+    this.highlightsContent.setAttribute('data-rewordly-part', 'highlights');
+    this.highlightsContent.style.cssText = `
+      position: absolute !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      pointer-events: none !important;
+      overflow: visible !important;
+    `;
+    
+    // Add styles to Shadow DOM
+    const style = document.createElement('style');
+    style.textContent = `
+      .rewordly-highlight {
+        position: absolute !important;
+        pointer-events: auto !important;
+        cursor: pointer !important;
+        border-bottom: 2px solid #ef4444 !important;
+        box-sizing: content-box !important;
+        z-index: 1 !important;
+        transition: top 0.2s ease-in-out, left 0.2s ease-in-out !important;
+      }
+      .rewordly-highlight:hover {
+        background: rgba(239, 68, 68, 0.1) !important;
+      }
+    `;
+    
+    this.highlightsShadowRoot.appendChild(style);
+    this.highlightsShadowRoot.appendChild(this.highlightsContent);
+    
+    // Append to document body (at the end, like Grammarly)
+    document.body.appendChild(this.highlightsContainer);
+  }
+
+  /**
+   * Create a single highlight for an error
+   */
+  private createHighlight(element: HTMLElement, error: GrammarError, index: number): void {
+    if (!this.highlightsContent) return;
+
+    // Get text from element
+    let text = '';
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+      text = element.value;
+    } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
+      text = element.innerText || element.textContent || '';
+    }
+
+    if (!text || error.start >= text.length || error.end > text.length) {
+      return;
+    }
+
+    // Calculate the position of the error text in viewport coordinates
+    const highlightRect = this.getErrorTextRect(element, error.start, error.end);
+    if (!highlightRect) {
+      return;
+    }
+
+    // Create highlight element
+    const highlight = document.createElement('div');
+    highlight.className = 'rewordly-highlight';
+    highlight.setAttribute('data-rewordly-part', 'highlight');
+    highlight.setAttribute('data-highlight-format', 'underline');
+    highlight.setAttribute('data-highlight-color-name', 'red');
+    highlight.setAttribute('data-element-id', this.getElementId(element));
+    highlight.setAttribute('data-error-index', index.toString());
+    highlight.setAttribute('data-error', JSON.stringify(error));
+    
+    // Set position and size
+    highlight.style.top = `${highlightRect.top}px`;
+    highlight.style.left = `${highlightRect.left}px`;
+    highlight.style.width = `${highlightRect.width}px`;
+    highlight.style.height = `${highlightRect.height}px`;
+
+    // Add hover listeners
+    this.attachHighlightHoverListener(highlight, error, element);
+
+    // Append to highlights content
+    this.highlightsContent.appendChild(highlight);
+  }
+
+  /**
+   * Get the bounding rect of error text in viewport coordinates
+   */
+  private getErrorTextRect(element: HTMLElement, start: number, end: number): DOMRect | null {
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+      return this.getInputTextareaErrorRect(element, start, end);
+    } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
+      return this.getContentEditableErrorRect(element, start, end);
+    }
+    return null;
+  }
+
+  /**
+   * Get error rect for input/textarea elements
+   */
+  private getInputTextareaErrorRect(element: HTMLInputElement | HTMLTextAreaElement, start: number, end: number): DOMRect | null {
+    const text = element.value;
+    if (start >= text.length || end > text.length) {
+      return null;
+    }
+
+    const elementRect = element.getBoundingClientRect();
+    const styles = window.getComputedStyle(element);
+    
+    // Create a mirror div to measure text position
+    const div = document.createElement('div');
+    const divStyle = div.style;
+    
+    // Copy all relevant styles
+    const properties = [
+      'direction', 'boxSizing', 'width', 'height', 'overflowX', 'overflowY',
+      'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth', 'borderStyle',
+      'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+      'fontStyle', 'fontVariant', 'fontWeight', 'fontStretch', 'fontSize', 'fontSizeAdjust', 'lineHeight', 'fontFamily',
+      'textAlign', 'textTransform', 'textIndent', 'textDecoration', 'letterSpacing', 'wordSpacing',
+      'tabSize', 'MozTabSize', 'whiteSpace'
+    ];
+    
+    properties.forEach(prop => {
+      // @ts-ignore
+      divStyle[prop] = styles[prop];
+    });
+    
+    divStyle.position = 'absolute';
+    divStyle.visibility = 'hidden';
+    divStyle.whiteSpace = element instanceof HTMLInputElement ? 'pre' : 'pre-wrap';
+    if (!(element instanceof HTMLInputElement)) {
+      divStyle.wordWrap = 'break-word';
+    }
+    
+    // Add text before error
+    div.textContent = text.substring(0, start);
+    
+    // Add marker for start position
+    const startMarker = document.createElement('span');
+    startMarker.textContent = '|';
+    div.appendChild(startMarker);
+    
+    // Add error text
+    const errorText = text.substring(start, end);
+    const errorSpan = document.createElement('span');
+    errorSpan.textContent = errorText;
+    div.appendChild(errorSpan);
+    
+    // Add marker for end position
+    const endMarker = document.createElement('span');
+    endMarker.textContent = '|';
+    div.appendChild(endMarker);
+    
+    document.body.appendChild(div);
+    
+    // Get positions
+    const startRect = startMarker.getBoundingClientRect();
+    const errorRect = errorSpan.getBoundingClientRect();
+    
+    // Account for scroll
+    const scrollLeft = element.scrollLeft || 0;
+    const scrollTop = element.scrollTop || 0;
+    
+    // Get padding and border
+    const paddingLeft = parseFloat(styles.paddingLeft) || 0;
+    const borderLeft = parseFloat(styles.borderLeftWidth) || 0;
+    const paddingTop = parseFloat(styles.paddingTop) || 0;
+    const borderTop = parseFloat(styles.borderTopWidth) || 0;
+    
+    // Calculate viewport coordinates
+    const left = elementRect.left + paddingLeft + borderLeft + (startRect.left - div.getBoundingClientRect().left) - scrollLeft;
+    const top = elementRect.top + paddingTop + borderTop + (startRect.top - div.getBoundingClientRect().top) - scrollTop;
+    const width = errorRect.width;
+    const height = errorRect.height || parseFloat(styles.lineHeight) || elementRect.height;
+    
+    document.body.removeChild(div);
+    
+    return new DOMRect(left, top, width, height);
+  }
+
+  /**
+   * Get error rect for contenteditable elements
+   */
+  private getContentEditableErrorRect(element: HTMLElement, start: number, end: number): DOMRect | null {
+    const text = element.innerText || element.textContent || '';
+    if (start >= text.length || end > text.length) {
+      return null;
+    }
+
+    // Find text nodes and their positions
+    const walker = document.createTreeWalker(
+      element,
+      NodeFilter.SHOW_TEXT,
+      null
+    );
+
+    const textNodes: { node: Text; startIndex: number; endIndex: number }[] = [];
+    let textIndex = 0;
+
+    let node: Text | null;
+    while ((node = walker.nextNode() as Text | null)) {
+      if (node && node.textContent) {
+        const nodeLength = node.textContent.length;
+        textNodes.push({
+          node,
+          startIndex: textIndex,
+          endIndex: textIndex + nodeLength
+        });
+        textIndex += nodeLength;
+      }
+    }
+
+    // Find nodes containing the error
+    const startNodeInfo = textNodes.find(tn => start >= tn.startIndex && start < tn.endIndex);
+    const endNodeInfo = textNodes.find(tn => end > tn.startIndex && end <= tn.endIndex);
+
+    if (!startNodeInfo) {
+      return null;
+    }
+
+    try {
+      const range = document.createRange();
+      
+      if (startNodeInfo && endNodeInfo && startNodeInfo.node !== endNodeInfo.node) {
+        // Error spans multiple nodes
+        const startNodeLocalPos = start - startNodeInfo.startIndex;
+        const endNodeLocalPos = end - endNodeInfo.startIndex;
+        range.setStart(startNodeInfo.node, Math.min(startNodeLocalPos, startNodeInfo.node.textContent!.length));
+        range.setEnd(endNodeInfo.node, Math.min(endNodeLocalPos, endNodeInfo.node.textContent!.length));
+      } else {
+        // Error is within a single node
+        const startNodeLocalPos = start - startNodeInfo.startIndex;
+        const endPos = startNodeLocalPos + (end - start);
+        range.setStart(startNodeInfo.node, startNodeLocalPos);
+        range.setEnd(startNodeInfo.node, Math.min(endPos, startNodeInfo.node.textContent!.length));
+      }
+
+      const rect = range.getBoundingClientRect();
+      if (rect && rect.width > 0 && rect.height > 0) {
+        return rect;
+      }
+    } catch (e) {
+      console.error('Rewordly: Error getting contenteditable error rect:', e);
+    }
+
+    return null;
+  }
+
+  /**
+   * Clear highlights for a specific element
+   */
+  private clearElementHighlights(element: HTMLElement): void {
+    if (!this.highlightsContent) return;
+    
+    const elementId = this.getElementId(element);
+    const highlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
+    highlights.forEach(highlight => highlight.remove());
+  }
+
+  /**
+   * Update highlights position on scroll/resize
+   */
+  private updateHighlightsPosition(element: HTMLElement): void {
+    if (!this.highlightsContent) return;
+
+    const elementId = this.getElementId(element);
+    const errors = this.grammarErrors.get(element);
+    if (!errors) return;
+
+    const highlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
+    highlights.forEach((highlight, index) => {
+      const error = errors[index];
+      if (!error) return;
+
+      const highlightRect = this.getErrorTextRect(element, error.start, error.end);
+      if (highlightRect) {
+        (highlight as HTMLElement).style.top = `${highlightRect.top}px`;
+        (highlight as HTMLElement).style.left = `${highlightRect.left}px`;
+        (highlight as HTMLElement).style.width = `${highlightRect.width}px`;
+        (highlight as HTMLElement).style.height = `${highlightRect.height}px`;
+      }
+    });
+  }
+
+  /**
+   * Attach hover listener to highlight
+   */
+  private attachHighlightHoverListener(highlight: HTMLElement, error: GrammarError, element: HTMLElement): void {
+    let currentTooltip: HTMLElement | null = null;
+    let tooltipTimeout: number | null = null;
+
+    const closeTooltip = () => {
+      if (tooltipTimeout !== null) {
+        clearTimeout(tooltipTimeout);
+        tooltipTimeout = null;
+      }
+      if (currentTooltip) {
+        currentTooltip.remove();
+        currentTooltip = null;
+      }
+    };
+
+    highlight.addEventListener('mouseenter', () => {
+      closeTooltip();
+
+      // Create tooltip
+      const tooltip = document.createElement('div');
+      tooltip.className = 'rewordly-grammar-tooltip';
+
+      const suggestionsHtml = error.suggestions && error.suggestions.length > 0
+        ? error.suggestions.map((suggestion) => 
+            `<button class="rewordly-grammar-suggestion" data-suggestion="${this.escapeHtml(suggestion)}" data-error-start="${error.start}" data-error-end="${error.end}">${this.escapeHtml(suggestion)}</button>`
+          ).join('')
+        : '<div class="rewordly-grammar-no-suggestions">No suggestions available</div>';
+
+      tooltip.innerHTML = `
+        <div class="rewordly-grammar-tooltip-content">
+          <div class="rewordly-grammar-tooltip-word">${this.escapeHtml(error.word)}</div>
+          <div class="rewordly-grammar-tooltip-suggestions">${suggestionsHtml}</div>
+        </div>
+      `;
+
+      document.body.appendChild(tooltip);
+
+      // Position tooltip
+      const highlightRect = highlight.getBoundingClientRect();
+      const tooltipRect = tooltip.getBoundingClientRect();
+      const tooltipTop = highlightRect.top - tooltipRect.height - 8;
+      const tooltipLeft = highlightRect.left + (highlightRect.width / 2) - (tooltipRect.width / 2);
+
+      const adjustedLeft = Math.max(8, Math.min(tooltipLeft, window.innerWidth - tooltipRect.width - 8));
+      const adjustedTop = tooltipTop < 8 ? highlightRect.bottom + 8 : tooltipTop;
+
+      tooltip.style.top = `${adjustedTop}px`;
+      tooltip.style.left = `${adjustedLeft}px`;
+
+      currentTooltip = tooltip;
+
+      // Attach click handlers
+      const suggestionButtons = tooltip.querySelectorAll('.rewordly-grammar-suggestion');
+      suggestionButtons.forEach(button => {
+        button.addEventListener('click', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+
+          const suggestion = (button as HTMLElement).getAttribute('data-suggestion');
+          const errorStart = parseInt((button as HTMLElement).getAttribute('data-error-start') || '0');
+          const errorEnd = parseInt((button as HTMLElement).getAttribute('data-error-end') || '0');
+
+          if (suggestion) {
+            closeTooltip();
+            this.closeAllGrammarTooltips();
+            this.replaceGrammarError(element, errorStart, errorEnd, suggestion);
+          }
+        });
+      });
+
+      tooltip.addEventListener('mouseleave', () => {
+        tooltipTimeout = window.setTimeout(() => {
+          if (currentTooltip === tooltip && !highlight.matches(':hover')) {
+            closeTooltip();
+          }
+        }, 100);
+      });
+    });
+
+    highlight.addEventListener('mouseleave', () => {
+      tooltipTimeout = window.setTimeout(() => {
+        if (currentTooltip && !currentTooltip.matches(':hover') && !highlight.matches(':hover')) {
+          closeTooltip();
+        }
+      }, 100);
     });
   }
 
@@ -1795,6 +2233,21 @@ class RewordlyContentScript {
   }
 
   /**
+   * Set up scroll/resize listeners for highlights
+   */
+  private setupHighlightsUpdateListeners(): void {
+    const updateAllHighlights = () => {
+      // Update highlights for all elements with errors
+      this.grammarErrors.forEach((_errors, element) => {
+        this.updateHighlightsPosition(element);
+      });
+    };
+
+    window.addEventListener('scroll', updateAllHighlights, true);
+    window.addEventListener('resize', updateAllHighlights);
+  }
+
+  /**
    * Close all grammar tooltips
    */
   private closeAllGrammarTooltips(): void {
@@ -1807,129 +2260,129 @@ class RewordlyContentScript {
   /**
    * Attach hover event listeners to grammar error spans
    */
-  private attachGrammarErrorHoverListeners(overlay: HTMLElement, element: HTMLElement): void {
-    const errorSpans = overlay.querySelectorAll('.rewordly-grammar-error');
-    let currentTooltip: HTMLElement | null = null;
-    let tooltipTimeout: number | null = null;
+  // private attachGrammarErrorHoverListeners(overlay: HTMLElement, element: HTMLElement): void {
+  //   const errorSpans = overlay.querySelectorAll('.rewordly-grammar-error');
+  //   let currentTooltip: HTMLElement | null = null;
+  //   let tooltipTimeout: number | null = null;
     
-    // Helper function to close tooltip
-    const closeTooltip = () => {
-      if (tooltipTimeout !== null) {
-        clearTimeout(tooltipTimeout);
-        tooltipTimeout = null;
-      }
-      if (currentTooltip) {
-        currentTooltip.remove();
-        currentTooltip = null;
-      }
-    };
+  //   // Helper function to close tooltip
+  //   const closeTooltip = () => {
+  //     if (tooltipTimeout !== null) {
+  //       clearTimeout(tooltipTimeout);
+  //       tooltipTimeout = null;
+  //     }
+  //     if (currentTooltip) {
+  //       currentTooltip.remove();
+  //       currentTooltip = null;
+  //     }
+  //   };
     
-    errorSpans.forEach(span => {
-      const errorSpan = span as HTMLElement;
+  //   errorSpans.forEach(span => {
+  //     const errorSpan = span as HTMLElement;
       
-      errorSpan.addEventListener('mouseenter', (_e) => {
-        // Remove existing tooltip
-        closeTooltip();
+  //     errorSpan.addEventListener('mouseenter', (_e) => {
+  //       // Remove existing tooltip
+  //       closeTooltip();
         
-        // Get error data
-        const errorData = errorSpan.getAttribute('data-error');
-        if (!errorData) return;
+  //       // Get error data
+  //       const errorData = errorSpan.getAttribute('data-error');
+  //       if (!errorData) return;
         
-        try {
-          const error: GrammarError = JSON.parse(errorData);
+  //       try {
+  //         const error: GrammarError = JSON.parse(errorData);
           
-          // Create tooltip
-          const tooltip = document.createElement('div');
-          tooltip.className = 'rewordly-grammar-tooltip';
+  //         // Create tooltip
+  //         const tooltip = document.createElement('div');
+  //         tooltip.className = 'rewordly-grammar-tooltip';
           
-          // Get error span position
-          const spanRect = errorSpan.getBoundingClientRect();
+  //         // Get error span position
+  //         const spanRect = errorSpan.getBoundingClientRect();
           
-          // Create suggestions list
-          const suggestionsHtml = error.suggestions && error.suggestions.length > 0
-            ? error.suggestions.map((suggestion) => 
-                `<button class="rewordly-grammar-suggestion" data-suggestion="${this.escapeHtml(suggestion)}" data-error-start="${error.start}" data-error-end="${error.end}">${this.escapeHtml(suggestion)}</button>`
-              ).join('')
-            : '<div class="rewordly-grammar-no-suggestions">No suggestions available</div>';
+  //         // Create suggestions list
+  //         const suggestionsHtml = error.suggestions && error.suggestions.length > 0
+  //           ? error.suggestions.map((suggestion) => 
+  //               `<button class="rewordly-grammar-suggestion" data-suggestion="${this.escapeHtml(suggestion)}" data-error-start="${error.start}" data-error-end="${error.end}">${this.escapeHtml(suggestion)}</button>`
+  //             ).join('')
+  //           : '<div class="rewordly-grammar-no-suggestions">No suggestions available</div>';
           
-          tooltip.innerHTML = `
-            <div class="rewordly-grammar-tooltip-content">
-              <div class="rewordly-grammar-tooltip-word">${this.escapeHtml(error.word)}</div>
-              <div class="rewordly-grammar-tooltip-suggestions">${suggestionsHtml}</div>
-            </div>
-          `;
+  //         tooltip.innerHTML = `
+  //           <div class="rewordly-grammar-tooltip-content">
+  //             <div class="rewordly-grammar-tooltip-word">${this.escapeHtml(error.word)}</div>
+  //             <div class="rewordly-grammar-tooltip-suggestions">${suggestionsHtml}</div>
+  //           </div>
+  //         `;
           
-          document.body.appendChild(tooltip);
+  //         document.body.appendChild(tooltip);
           
-          // Position tooltip above the error span
-          const tooltipRect = tooltip.getBoundingClientRect();
-          const tooltipTop = spanRect.top - tooltipRect.height - 8;
-          const tooltipLeft = spanRect.left + (spanRect.width / 2) - (tooltipRect.width / 2);
+  //         // Position tooltip above the error span
+  //         const tooltipRect = tooltip.getBoundingClientRect();
+  //         const tooltipTop = spanRect.top - tooltipRect.height - 8;
+  //         const tooltipLeft = spanRect.left + (spanRect.width / 2) - (tooltipRect.width / 2);
           
-          // Adjust if tooltip goes off screen
-          const adjustedLeft = Math.max(8, Math.min(tooltipLeft, window.innerWidth - tooltipRect.width - 8));
-          const adjustedTop = tooltipTop < 8 ? spanRect.bottom + 8 : tooltipTop;
+  //         // Adjust if tooltip goes off screen
+  //         const adjustedLeft = Math.max(8, Math.min(tooltipLeft, window.innerWidth - tooltipRect.width - 8));
+  //         const adjustedTop = tooltipTop < 8 ? spanRect.bottom + 8 : tooltipTop;
           
-          tooltip.style.top = `${adjustedTop}px`;
-          tooltip.style.left = `${adjustedLeft}px`;
+  //         tooltip.style.top = `${adjustedTop}px`;
+  //         tooltip.style.left = `${adjustedLeft}px`;
           
-          currentTooltip = tooltip;
+  //         currentTooltip = tooltip;
           
-          // Attach mouseleave to tooltip itself
-          tooltip.addEventListener('mouseleave', () => {
-            tooltipTimeout = window.setTimeout(() => {
-              if (currentTooltip === tooltip && !errorSpan.matches(':hover')) {
-                closeTooltip();
-              }
-            }, 100);
-          });
+  //         // Attach mouseleave to tooltip itself
+  //         tooltip.addEventListener('mouseleave', () => {
+  //           tooltipTimeout = window.setTimeout(() => {
+  //             if (currentTooltip === tooltip && !errorSpan.matches(':hover')) {
+  //               closeTooltip();
+  //             }
+  //           }, 100);
+  //         });
           
-          // Attach click handlers to suggestions
-          const suggestionButtons = tooltip.querySelectorAll('.rewordly-grammar-suggestion');
-          suggestionButtons.forEach(button => {
-            button.addEventListener('click', (e) => {
-              e.stopPropagation();
-              e.preventDefault();
+  //         // Attach click handlers to suggestions
+  //         const suggestionButtons = tooltip.querySelectorAll('.rewordly-grammar-suggestion');
+  //         suggestionButtons.forEach(button => {
+  //           button.addEventListener('click', (e) => {
+  //             e.stopPropagation();
+  //             e.preventDefault();
               
-              const suggestion = (button as HTMLElement).getAttribute('data-suggestion');
-              const errorStart = parseInt((button as HTMLElement).getAttribute('data-error-start') || '0');
-              const errorEnd = parseInt((button as HTMLElement).getAttribute('data-error-end') || '0');
+  //             const suggestion = (button as HTMLElement).getAttribute('data-suggestion');
+  //             const errorStart = parseInt((button as HTMLElement).getAttribute('data-error-start') || '0');
+  //             const errorEnd = parseInt((button as HTMLElement).getAttribute('data-error-end') || '0');
               
-              if (suggestion) {
-                // Close tooltip immediately before replacement
-                closeTooltip();
-                // Also close all tooltips as a safety measure
-                this.closeAllGrammarTooltips();
+  //             if (suggestion) {
+  //               // Close tooltip immediately before replacement
+  //               closeTooltip();
+  //               // Also close all tooltips as a safety measure
+  //               this.closeAllGrammarTooltips();
                 
-                // Replace the error
-                this.replaceGrammarError(element, errorStart, errorEnd, suggestion);
-              }
-            });
-          });
-        } catch (err) {
-          console.error('Rewordly: Error parsing error data:', err);
-        }
-      });
+  //               // Replace the error
+  //               this.replaceGrammarError(element, errorStart, errorEnd, suggestion);
+  //             }
+  //           });
+  //         });
+  //       } catch (err) {
+  //         console.error('Rewordly: Error parsing error data:', err);
+  //       }
+  //     });
       
-      errorSpan.addEventListener('mouseleave', () => {
-        // Small delay to allow moving to tooltip
-        tooltipTimeout = window.setTimeout(() => {
-          if (currentTooltip && !currentTooltip.matches(':hover') && !errorSpan.matches(':hover')) {
-            closeTooltip();
-          }
-        }, 100);
-      });
-    });
+  //     errorSpan.addEventListener('mouseleave', () => {
+  //       // Small delay to allow moving to tooltip
+  //       tooltipTimeout = window.setTimeout(() => {
+  //         if (currentTooltip && !currentTooltip.matches(':hover') && !errorSpan.matches(':hover')) {
+  //           closeTooltip();
+  //         }
+  //       }, 100);
+  //     });
+  //   });
     
-    // Also handle overlay mouseleave to close tooltip
-    overlay.addEventListener('mouseleave', () => {
-      tooltipTimeout = window.setTimeout(() => {
-        if (currentTooltip && !currentTooltip.matches(':hover')) {
-          closeTooltip();
-        }
-      }, 200);
-    });
-  }
+  //   // Also handle overlay mouseleave to close tooltip
+  //   overlay.addEventListener('mouseleave', () => {
+  //     tooltipTimeout = window.setTimeout(() => {
+  //       if (currentTooltip && !currentTooltip.matches(':hover')) {
+  //         closeTooltip();
+  //       }
+  //     }, 200);
+  //   });
+  // }
 
   /**
    * Replace grammar error with suggestion
