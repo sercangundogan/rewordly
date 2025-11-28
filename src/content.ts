@@ -736,8 +736,9 @@ class RewordlyContentScript {
     const scrollWidth = element.scrollWidth || rect.width;
     const scrollHeight = element.scrollHeight || rect.height;
     
-    overlay.style.top = `${rect.top + window.scrollY}px`;
-    overlay.style.left = `${rect.left + window.scrollX}px`;
+    // For position: fixed, use viewport coordinates directly (no scroll offset needed)
+    overlay.style.top = `${rect.top}px`;
+    overlay.style.left = `${rect.left}px`;
     overlay.style.width = `${Math.max(rect.width, scrollWidth)}px`;
     overlay.style.height = `${Math.max(rect.height, scrollHeight)}px`;
     overlay.style.minHeight = `${Math.max(rect.height, scrollHeight)}px`;
@@ -772,13 +773,15 @@ class RewordlyContentScript {
     void overlay.offsetHeight;
     
     // Update overlay position on scroll/resize
+    // Note: position: fixed uses viewport coordinates, getBoundingClientRect() already gives viewport coords
     const updatePosition = () => {
       const newRect = element.getBoundingClientRect();
       const newScrollWidth = element.scrollWidth || newRect.width;
       const newScrollHeight = element.scrollHeight || newRect.height;
       
-      overlay.style.top = `${newRect.top + window.scrollY}px`;
-      overlay.style.left = `${newRect.left + window.scrollX}px`;
+      // For position: fixed, use viewport coordinates directly (no scroll offset needed)
+      overlay.style.top = `${newRect.top}px`;
+      overlay.style.left = `${newRect.left}px`;
       overlay.style.width = `${Math.max(newRect.width, newScrollWidth)}px`;
       overlay.style.height = `${Math.max(newRect.height, newScrollHeight)}px`;
       overlay.style.minHeight = `${Math.max(newRect.height, newScrollHeight)}px`;
@@ -875,13 +878,15 @@ class RewordlyContentScript {
     overlay.style.cssText = overlayStyles;
 
     // Position overlay exactly over the element
+    // Note: position: fixed uses viewport coordinates, getBoundingClientRect() already gives viewport coords
     const rect = element.getBoundingClientRect();
     // Use scrollWidth to ensure overlay covers all text, especially for contenteditable
     const scrollWidth = element.scrollWidth || rect.width;
     const scrollHeight = element.scrollHeight || rect.height;
     
-    overlay.style.top = `${rect.top + window.scrollY}px`;
-    overlay.style.left = `${rect.left + window.scrollX}px`;
+    // For position: fixed, use viewport coordinates directly (no scroll offset needed)
+    overlay.style.top = `${rect.top}px`;
+    overlay.style.left = `${rect.left}px`;
     overlay.style.width = `${Math.max(rect.width, scrollWidth)}px`;
     overlay.style.height = `${Math.max(rect.height, scrollHeight)}px`;
     overlay.style.minHeight = `${Math.max(rect.height, scrollHeight)}px`;
@@ -1128,19 +1133,21 @@ class RewordlyContentScript {
       console.warn('Rewordly: Overlay has zero dimensions!');
     }
     
-    // Update overlay position on scroll/resize
-    const updatePosition = () => {
-      const newRect = element.getBoundingClientRect();
-      const newScrollWidth = element.scrollWidth || newRect.width;
-      const newScrollHeight = element.scrollHeight || newRect.height;
-      
-      overlay.style.top = `${newRect.top + window.scrollY}px`;
-      overlay.style.left = `${newRect.left + window.scrollX}px`;
-      overlay.style.width = `${Math.max(newRect.width, newScrollWidth)}px`;
-      overlay.style.height = `${Math.max(newRect.height, newScrollHeight)}px`;
-      overlay.style.minHeight = `${Math.max(newRect.height, newScrollHeight)}px`;
-      overlay.style.maxHeight = `${Math.max(newRect.height, newScrollHeight)}px`;
-    };
+      // Update overlay position on scroll/resize
+      // Note: position: fixed uses viewport coordinates, getBoundingClientRect() already gives viewport coords
+      const updatePosition = () => {
+        const newRect = element.getBoundingClientRect();
+        const newScrollWidth = element.scrollWidth || newRect.width;
+        const newScrollHeight = element.scrollHeight || newRect.height;
+        
+        // For position: fixed, use viewport coordinates directly (no scroll offset needed)
+        overlay.style.top = `${newRect.top}px`;
+        overlay.style.left = `${newRect.left}px`;
+        overlay.style.width = `${Math.max(newRect.width, newScrollWidth)}px`;
+        overlay.style.height = `${Math.max(newRect.height, newScrollHeight)}px`;
+        overlay.style.minHeight = `${Math.max(newRect.height, newScrollHeight)}px`;
+        overlay.style.maxHeight = `${Math.max(newRect.height, newScrollHeight)}px`;
+      };
     
     window.addEventListener('scroll', updatePosition, true);
     window.addEventListener('resize', updatePosition);
@@ -1196,12 +1203,14 @@ class RewordlyContentScript {
    * Update overlay position
    */
   private updateOverlayPosition(element: HTMLElement, overlay: HTMLElement): void {
+    // Note: position: fixed uses viewport coordinates, getBoundingClientRect() already gives viewport coords
     const rect = element.getBoundingClientRect();
     const scrollWidth = element.scrollWidth || rect.width;
     const scrollHeight = element.scrollHeight || rect.height;
     
-    overlay.style.top = `${rect.top + window.scrollY}px`;
-    overlay.style.left = `${rect.left + window.scrollX}px`;
+    // For position: fixed, use viewport coordinates directly (no scroll offset needed)
+    overlay.style.top = `${rect.top}px`;
+    overlay.style.left = `${rect.left}px`;
     overlay.style.width = `${Math.max(rect.width, scrollWidth)}px`;
     overlay.style.height = `${Math.max(rect.height, scrollHeight)}px`;
     overlay.style.minHeight = `${Math.max(rect.height, scrollHeight)}px`;
