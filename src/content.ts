@@ -2458,7 +2458,32 @@ class RewordlyContentScript {
       // For input/textarea
       const text = element.value;
       const newText = text.substring(0, start) + replacement + text.substring(end);
+      const replacementLength = replacement.length;
+      const originalLength = end - start;
+      const lengthDiff = replacementLength - originalLength;
+      
       element.value = newText;
+      
+      // Update error positions for remaining errors (they may have shifted)
+      const currentErrors = this.grammarErrors.get(element) || [];
+      const updatedErrors = currentErrors
+        .filter(err => !(err.start === start && err.end === end))
+        .map(err => {
+          // If error is after the replaced text, adjust its position
+          if (err.start > end) {
+            return {
+              ...err,
+              start: err.start + lengthDiff,
+              end: err.end + lengthDiff
+            };
+          }
+          // If error overlaps with replaced text, it's already removed
+          return err;
+        });
+      this.grammarErrors.set(element, updatedErrors);
+      
+      // Immediately update highlight positions (no delay)
+      this.updateHighlightsPosition(element);
       
       // Trigger input event (this will reset timeout but won't clear errors)
       const inputEvent = new Event('input', { bubbles: true });
@@ -2497,10 +2522,31 @@ class RewordlyContentScript {
           });
         }
         
-        // Update stored errors - remove the replaced error
+        // Calculate length difference for position adjustment
+        const replacementLength = replacement.length;
+        const originalLength = end - start;
+        const lengthDiff = replacementLength - originalLength;
+        
+        // Update stored errors - remove the replaced error and adjust positions
         const currentErrors = this.grammarErrors.get(element) || [];
-        const updatedErrors = currentErrors.filter(err => !(err.start === start && err.end === end));
+        const updatedErrors = currentErrors
+          .filter(err => !(err.start === start && err.end === end))
+          .map(err => {
+            // If error is after the replaced text, adjust its position
+            if (err.start > end) {
+              return {
+                ...err,
+                start: err.start + lengthDiff,
+                end: err.end + lengthDiff
+              };
+            }
+            // If error overlaps with replaced text, it's already removed
+            return err;
+          });
         this.grammarErrors.set(element, updatedErrors);
+        
+        // Immediately update highlight positions (no delay)
+        this.updateHighlightsPosition(element);
       } else {
         // For regular contenteditable
         const selection = window.getSelection();
@@ -2588,6 +2634,32 @@ class RewordlyContentScript {
               (event as any).data = replacement;
               element.dispatchEvent(event);
             });
+            
+            // Calculate length difference for position adjustment
+            const replacementLength = replacement.length;
+            const originalLength = end - start;
+            const lengthDiff = replacementLength - originalLength;
+            
+            // Update stored errors - remove the replaced error and adjust positions
+            const currentErrors = this.grammarErrors.get(element) || [];
+            const updatedErrors = currentErrors
+              .filter(err => !(err.start === start && err.end === end))
+              .map(err => {
+                // If error is after the replaced text, adjust its position
+                if (err.start > end) {
+                  return {
+                    ...err,
+                    start: err.start + lengthDiff,
+                    end: err.end + lengthDiff
+                  };
+                }
+                // If error overlaps with replaced text, it's already removed
+                return err;
+              });
+            this.grammarErrors.set(element, updatedErrors);
+            
+            // Immediately update highlight positions (no delay)
+            this.updateHighlightsPosition(element);
             
             // Recheck grammar after a short delay to update remaining errors
             // (Don't clear all errors - just update them)
@@ -2704,6 +2776,32 @@ class RewordlyContentScript {
         
         // Force focus to ensure Draft.js updates
         element.focus();
+        
+        // Calculate length difference for position adjustment
+        const replacementLength = replacement.length;
+        const originalLength = end - start;
+        const lengthDiff = replacementLength - originalLength;
+        
+        // Update stored errors - remove the replaced error and adjust positions
+        const currentErrors = this.grammarErrors.get(element) || [];
+        const updatedErrors = currentErrors
+          .filter(err => !(err.start === start && err.end === end))
+          .map(err => {
+            // If error is after the replaced text, adjust its position
+            if (err.start > end) {
+              return {
+                ...err,
+                start: err.start + lengthDiff,
+                end: err.end + lengthDiff
+              };
+            }
+            // If error overlaps with replaced text, it's already removed
+            return err;
+          });
+        this.grammarErrors.set(element, updatedErrors);
+        
+        // Immediately update highlight positions (no delay)
+        this.updateHighlightsPosition(element);
         
         // Recheck grammar after a short delay to update remaining errors
         // (Don't clear all errors - just update them)
