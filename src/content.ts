@@ -57,7 +57,6 @@ class RewordlyContentScript {
   }
 
   private async init(): Promise<void> {
-    console.log('Rewordly: Initializing content script');
     
     // Load configuration from storage
     await this.loadConfig();
@@ -66,7 +65,6 @@ class RewordlyContentScript {
     this.setupEventListeners();
     
     // Set up real-time grammar checking for editable elements
-    console.log('Rewordly: Setting up real-time grammar check');
     this.setupRealtimeGrammarCheck();
     
     // Create floating button (initially hidden)
@@ -89,19 +87,15 @@ class RewordlyContentScript {
     
     // Listen for settings updates from popup
     this.setupMessageListener();
-    
-    console.log('Rewordly: Content script initialized');
   }
 
   private async loadConfig(): Promise<void> {
     try {
       const result = await chrome.storage.sync.get(['rewordlyEnabled']);
-      console.log('Rewordly: Raw storage result:', result);
       
       // Use environment variables as defaults if not set in storage
       this.config.enabled = result['rewordlyEnabled'] !== false;
-      
-      console.log('Rewordly: Config loaded - Extension enabled:', this.config.enabled);
+
     } catch (error) {
       console.error('Failed to load Rewordly config:', error);
     }
@@ -125,7 +119,6 @@ class RewordlyContentScript {
    * Set up real-time grammar checking for editable elements
    */
   private setupRealtimeGrammarCheck(): void {
-    console.log('Rewordly: setupRealtimeGrammarCheck called');
     
     // Use event delegation at document level to catch all input events
     // This works even for dynamically added elements and Shadow DOM
@@ -134,11 +127,9 @@ class RewordlyContentScript {
     // Wait for DOM to be ready
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', () => {
-        console.log('Rewordly: DOMContentLoaded fired, finding editable elements');
         this.findAndAttachToEditableElements();
       });
     } else {
-      console.log('Rewordly: DOM already ready, finding editable elements');
       this.findAndAttachToEditableElements();
     }
     
@@ -192,9 +183,7 @@ class RewordlyContentScript {
         attributes: true,
         attributeFilter: ['contenteditable']
       });
-      console.log('Rewordly: MutationObserver started');
     } else {
-      console.log('Rewordly: document.body not ready, waiting...');
       const bodyObserver = new MutationObserver(() => {
         if (document.body) {
           observer.observe(document.body, {
@@ -203,7 +192,6 @@ class RewordlyContentScript {
             attributes: true,
             attributeFilter: ['contenteditable']
           });
-          console.log('Rewordly: MutationObserver started (after body ready)');
           bodyObserver.disconnect();
         }
       });
@@ -223,8 +211,6 @@ class RewordlyContentScript {
    * This catches all input events even from dynamically added elements
    */
   private setupEventDelegation(): void {
-    console.log('Rewordly: Setting up event delegation');
-    
     // Listen to all input events at document level (capture phase)
     document.addEventListener('input', (event) => {
       this.handleDelegatedInput(event);
@@ -241,8 +227,6 @@ class RewordlyContentScript {
         this.handleDelegatedInput(event);
       }
     }, true);
-    
-    console.log('Rewordly: Event delegation set up');
   }
 
   /**
@@ -257,7 +241,6 @@ class RewordlyContentScript {
     
     // Ensure element is tracked
     if (!this.editableElements.has(element)) {
-      console.log('Rewordly: Found new editable element via delegation:', element.tagName);
       this.editableElements.add(element);
     }
     
@@ -343,9 +326,7 @@ class RewordlyContentScript {
     
     // Combine and deduplicate
     const allEditable = new Set([...inputs, ...contentEditableElements]);
-    
-    console.log(`Rewordly: Found ${allEditable.size} editable elements (${inputs.length} via selector, ${contentEditableElements.length} via contentEditable check)`);
-    
+        
     allEditable.forEach((element) => {
       const el = element as HTMLElement;
       this.attachToEditableElement(el);
@@ -353,8 +334,6 @@ class RewordlyContentScript {
     
     // Check Shadow DOM
     this.findEditableInShadowDOM(document.body);
-    
-    console.log(`Rewordly: Total tracked elements: ${this.editableElements.size}`);
   }
 
   /**
@@ -414,9 +393,6 @@ class RewordlyContentScript {
     }
 
     this.editableElements.add(element);
-    const elementType = element instanceof HTMLInputElement ? (element as HTMLInputElement).type : 
-                        element instanceof HTMLTextAreaElement ? 'textarea' : 'contenteditable';
-    console.log('Rewordly: Attaching listeners to:', element.tagName, elementType, element);
     
     // Add multiple event listeners to catch all input types
     // Use capture phase to catch events before they're stopped
@@ -430,31 +406,22 @@ class RewordlyContentScript {
     if (element.getAttribute('contenteditable') === 'true') {
       element.addEventListener('textInput', this.boundHandleInput, true);
     }
-    
-    console.log('Rewordly: Listeners attached successfully to', element);
   }
 
   /**
    * Handle input events on editable elements
    */
   private handleInput(event: Event): void {
-    console.log('Rewordly: Input event triggered!', event);
     
     if (!this.config.enabled) {
-      console.log('Rewordly: Extension disabled, skipping');
       return;
     }
 
     const element = event.target as HTMLElement;
-    console.log('Rewordly: Input on element:', element.tagName, element);
-    console.log('Rewordly: Element in editableElements set?', this.editableElements.has(element));
     
     if (!this.isEditableElement(element)) {
-      console.log('Rewordly: Element not editable, skipping');
       return;
     }
-
-    console.log('Rewordly: Processing input event');
 
     // Show AI button if element has focus and has text
     if (document.activeElement === element) {
@@ -483,9 +450,7 @@ class RewordlyContentScript {
     this.hideGrammarSpinner();
 
     // Set new timeout for grammar check (1 second after typing stops)
-    console.log('Rewordly: Setting timeout for grammar check');
     this.grammarCheckTimeout = window.setTimeout(() => {
-      console.log('Rewordly: Timeout fired, performing grammar check');
       this.performGrammarCheck(element);
     }, 1000);
   }
@@ -597,7 +562,6 @@ class RewordlyContentScript {
     try {
       // Call real API
       const response = await this.checkGrammarAPI(text);
-      console.log('Rewordly: Grammar check - Found', response.errors.length, 'error(s)');
       
       // Hide spinner
       this.hideGrammarSpinner();
@@ -846,6 +810,8 @@ class RewordlyContentScript {
    */
   private validateAndRemoveInvalidHighlights(element: HTMLElement): void {
     const currentErrors = this.grammarErrors.get(element);
+
+    console.log("Current errors:", currentErrors);
     if (!currentErrors || currentErrors.length === 0) {
       return;
     }
@@ -861,7 +827,7 @@ class RewordlyContentScript {
     if (!this.highlightsContent) {
       return;
     }
-
+    
     const elementId = this.getElementId(element);
     const highlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
     
@@ -986,6 +952,7 @@ class RewordlyContentScript {
       if (existingHighlight) {
         // Same error position, just update position (text might have changed)
         const highlightRect = this.getErrorTextRect(element, error.start, error.end);
+        console.log("Highlight rect:", highlightRect);
         if (highlightRect) {
           existingHighlight.style.top = `${highlightRect.top}px`;
           existingHighlight.style.left = `${highlightRect.left}px`;
@@ -1207,7 +1174,6 @@ class RewordlyContentScript {
     
   //   if (!text) return;
     
-  //   console.log('Rewordly: Overlay text length:', text.length, 'Text:', text.substring(0, 50));
 
   //   // Create overlay
   //   const overlay = document.createElement('div');
@@ -1281,10 +1247,6 @@ class RewordlyContentScript {
 
   //   // Universal approach: Clone element structure, make all text transparent, add only underlines for errors
   //   const sortedErrors = [...errors].sort((a, b) => a.start - b.start);
-    
-  //   console.log('Rewordly: Creating overlay with', sortedErrors.length, 'errors');
-  //   console.log('Rewordly: Text for overlay:', text);
-  //   console.log('Rewordly: Errors:', sortedErrors);
     
   //   // Clone the element to preserve all formatting structure
   //   // But remove Twitter's own highlights (background-color spans)
@@ -1507,8 +1469,6 @@ class RewordlyContentScript {
   //   // Attach hover event listeners to error spans
   //   this.attachGrammarErrorHoverListeners(overlay, element);
     
-  //   console.log('Rewordly: Overlay HTML length:', overlay.innerHTML.length);
-    
   //   // Ensure overlay is visible and properly positioned
   //   overlay.style.display = 'block';
   //   overlay.style.visibility = 'visible';
@@ -1528,17 +1488,6 @@ class RewordlyContentScript {
   //   // Debug: Check if overlay is actually visible
   //   const overlayRect = overlay.getBoundingClientRect();
   //   const computedStyle = window.getComputedStyle(overlay);
-  //   console.log('Rewordly: Overlay created - Position:', {
-  //     top: overlayRect.top,
-  //     left: overlayRect.left,
-  //     width: overlayRect.width,
-  //     height: overlayRect.height,
-  //     zIndex: computedStyle.zIndex,
-  //     display: computedStyle.display,
-  //     visibility: computedStyle.visibility,
-  //     opacity: computedStyle.opacity,
-  //     position: computedStyle.position
-  //   });
     
   //   // Additional check: verify overlay is actually in DOM and visible
   //   if (!document.body.contains(overlay)) {
@@ -1805,7 +1754,8 @@ class RewordlyContentScript {
         border-bottom: 2px solid #ef4444 !important;
         box-sizing: content-box !important;
         z-index: 1 !important;
-        transition: top 0.2s ease-in-out, left 0.2s ease-in-out !important;
+        /* No transition for top/left to avoid lag during scroll - position updates instantly */
+        /* Width and opacity transitions handled by JavaScript animation in createHighlight */
         transform-origin: left center !important;
       }
       .rewordly-highlight:hover {
@@ -1925,6 +1875,7 @@ class RewordlyContentScript {
     if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
       return this.getInputTextareaErrorRect(element, start, end);
     } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
+      console.log("Burası")
       return this.getContentEditableErrorRect(element, start, end);
     }
     return null;
@@ -1942,13 +1893,24 @@ class RewordlyContentScript {
     const elementRect = element.getBoundingClientRect();
     const styles = window.getComputedStyle(element);
     
+    // Get padding and border for accurate width calculation
+    const paddingLeft = parseFloat(styles.paddingLeft) || 0;
+    const paddingRight = parseFloat(styles.paddingRight) || 0;
+    const borderLeft = parseFloat(styles.borderLeftWidth) || 0;
+    const borderRight = parseFloat(styles.borderRightWidth) || 0;
+    const paddingTop = parseFloat(styles.paddingTop) || 0;
+    const borderTop = parseFloat(styles.borderTopWidth) || 0;
+    
+    // Calculate content width (element width minus padding and borders)
+    const contentWidth = elementRect.width - paddingLeft - paddingRight - borderLeft - borderRight;
+    
     // Create a mirror div to measure text position
     const div = document.createElement('div');
     const divStyle = div.style;
     
     // Copy all relevant styles
     const properties = [
-      'direction', 'boxSizing', 'width', 'height', 'overflowX', 'overflowY',
+      'direction', 'boxSizing', 'overflowX', 'overflowY',
       'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth', 'borderStyle',
       'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
       'fontStyle', 'fontVariant', 'fontWeight', 'fontStretch', 'fontSize', 'fontSizeAdjust', 'lineHeight', 'fontFamily',
@@ -1961,53 +1923,55 @@ class RewordlyContentScript {
       divStyle[prop] = styles[prop];
     });
     
+    // Set exact content width to ensure proper text wrapping
+    divStyle.width = `${contentWidth}px`;
     divStyle.position = 'absolute';
     divStyle.visibility = 'hidden';
+    divStyle.top = '-9999px';
+    divStyle.left = '-9999px';
     divStyle.whiteSpace = element instanceof HTMLInputElement ? 'pre' : 'pre-wrap';
     if (!(element instanceof HTMLInputElement)) {
       divStyle.wordWrap = 'break-word';
     }
     
-    // Add text before error
-    div.textContent = text.substring(0, start);
-    
-    // Add marker for start position
-    const startMarker = document.createElement('span');
-    startMarker.textContent = '|';
-    div.appendChild(startMarker);
-    
-    // Add error text
-    const errorText = text.substring(start, end);
-    const errorSpan = document.createElement('span');
-    errorSpan.textContent = errorText;
-    div.appendChild(errorSpan);
-    
-    // Add marker for end position
-    const endMarker = document.createElement('span');
-    endMarker.textContent = '|';
-    div.appendChild(endMarker);
+    // Build the complete text structure for accurate measurement
+    div.textContent = text;
     
     document.body.appendChild(div);
     
-    // Get positions
-    const startRect = startMarker.getBoundingClientRect();
-    const errorRect = errorSpan.getBoundingClientRect();
+    // Force layout calculation
+    void div.offsetHeight;
+    
+    // Use Range API to measure the exact position of the error text
+    const range = document.createRange();
+    const textNode = div.firstChild;
+    
+    if (!textNode || textNode.nodeType !== Node.TEXT_NODE) {
+      document.body.removeChild(div);
+      return null;
+    }
+    
+    // Set range to cover the error text
+    const startOffset = Math.min(start, textNode.textContent!.length);
+    const endOffset = Math.min(end, textNode.textContent!.length);
+    
+    range.setStart(textNode, startOffset);
+    range.setEnd(textNode, endOffset);
+    
+    // Get the bounding rect of the error text
+    const errorRect = range.getBoundingClientRect();
+    const divRect = div.getBoundingClientRect();
     
     // Account for scroll
     const scrollLeft = element.scrollLeft || 0;
     const scrollTop = element.scrollTop || 0;
     
-    // Get padding and border
-    const paddingLeft = parseFloat(styles.paddingLeft) || 0;
-    const borderLeft = parseFloat(styles.borderLeftWidth) || 0;
-    const paddingTop = parseFloat(styles.paddingTop) || 0;
-    const borderTop = parseFloat(styles.borderTopWidth) || 0;
-    
     // Calculate viewport coordinates
-    const left = elementRect.left + paddingLeft + borderLeft + (startRect.left - div.getBoundingClientRect().left) - scrollLeft;
-    const top = elementRect.top + paddingTop + borderTop + (startRect.top - div.getBoundingClientRect().top) - scrollTop;
+    // Position relative to div, then offset by element position and padding/border
+    const left = elementRect.left + paddingLeft + borderLeft + (errorRect.left - divRect.left) - scrollLeft;
+    const top = elementRect.top + paddingTop + borderTop + (errorRect.top - divRect.top) - scrollTop;
     const width = errorRect.width;
-    const height = errorRect.height || parseFloat(styles.lineHeight) || elementRect.height;
+    const height = errorRect.height || parseFloat(styles.lineHeight) || parseFloat(styles.fontSize) * 1.2;
     
     document.body.removeChild(div);
     
@@ -2018,60 +1982,179 @@ class RewordlyContentScript {
    * Get error rect for contenteditable elements
    */
   private getContentEditableErrorRect(element: HTMLElement, start: number, end: number): DOMRect | null {
-    const text = element.innerText || element.textContent || '';
-    if (start >= text.length || end > text.length) {
+    const innerText = element.innerText || element.textContent || '';
+    if (start >= innerText.length || end > innerText.length) {
       return null;
     }
 
-    // Find text nodes and their positions
+    // Find text nodes and map their positions to innerText
+    // The API uses innerText, so start/end positions are relative to innerText
+    // Strategy: For each text node, find where its textContent appears in innerText
     const walker = document.createTreeWalker(
       element,
       NodeFilter.SHOW_TEXT,
       null
     );
 
-    const textNodes: { node: Text; startIndex: number; endIndex: number }[] = [];
-    let textIndex = 0;
+    const textNodes: Array<{ node: Text; innerTextStart: number; innerTextEnd: number }> = [];
+    let searchStart = 0; // Where to start searching in innerText
 
     let node: Text | null;
     while ((node = walker.nextNode() as Text | null)) {
-      if (node && node.textContent) {
-        const nodeLength = node.textContent.length;
+      if (!node || !node.textContent) continue;
+      
+      const parent = node.parentElement;
+      if (!parent) continue;
+      
+      // Check visibility
+      const style = window.getComputedStyle(parent);
+      if (style.display === 'none' || style.visibility === 'hidden') continue;
+      
+      const nodeText = node.textContent;
+      
+      // Find where this node's text appears in innerText
+      // We need to account for \n characters that innerText adds between nodes
+      // So we search for the node text, but skip over \n characters in innerText
+      let foundIndex = -1;
+      let searchPos = searchStart;
+      
+      // Try to find the node text in innerText, accounting for \n characters
+      while (searchPos < innerText.length) {
+        // Skip \n characters in innerText (they don't come from text nodes)
+        while (searchPos < innerText.length && innerText[searchPos] === '\n') {
+          searchPos++;
+        }
+        
+        if (searchPos >= innerText.length) break;
+        
+        // Try to match node text starting at this position
+        let match = true;
+        let innerPos = searchPos;
+        let nodePos = 0;
+        
+        while (nodePos < nodeText.length && innerPos < innerText.length) {
+          const nodeChar = nodeText[nodePos];
+          const innerChar = innerText[innerPos];
+          
+          if (nodeChar === innerChar) {
+            innerPos++;
+            nodePos++;
+          } else if (innerChar === '\n') {
+            // Skip \n in innerText
+            innerPos++;
+          } else if (nodeChar === '\r' || nodeChar === '\n') {
+            // Skip \r or \n in node text (normalized by innerText)
+            nodePos++;
+          } else {
+            // Mismatch
+            match = false;
+            break;
+          }
+        }
+        
+        if (match && nodePos === nodeText.length) {
+          // Found a match!
+          foundIndex = searchPos;
+          break;
+        }
+        
+        // No match, try next position
+        searchPos++;
+      }
+      
+      if (foundIndex !== -1) {
+        // Calculate end position (accounting for \n characters in innerText)
+        let innerTextEnd = foundIndex;
+        let nodePos = 0;
+        
+        while (nodePos < nodeText.length && innerTextEnd < innerText.length) {
+          const nodeChar = nodeText[nodePos];
+          const innerChar = innerText[innerTextEnd];
+          
+          if (nodeChar === innerChar) {
+            innerTextEnd++;
+            nodePos++;
+          } else if (innerChar === '\n') {
+            innerTextEnd++;
+          } else if (nodeChar === '\r' || nodeChar === '\n') {
+            nodePos++;
+          } else {
+            break;
+          }
+        }
+        
         textNodes.push({
           node,
-          startIndex: textIndex,
-          endIndex: textIndex + nodeLength
+          innerTextStart: foundIndex,
+          innerTextEnd: innerTextEnd
         });
-        textIndex += nodeLength;
+        
+        searchStart = innerTextEnd;
+      } else {
+        // Couldn't find node text in innerText - this shouldn't happen
+        // But continue anyway
+        console.warn('Rewordly: Could not find node text in innerText:', nodeText.substring(0, 20));
       }
     }
 
-    // Find nodes containing the error
-    const startNodeInfo = textNodes.find(tn => start >= tn.startIndex && start < tn.endIndex);
-    const endNodeInfo = textNodes.find(tn => end > tn.startIndex && end <= tn.endIndex);
+    // Find the node(s) containing the error
+    const startNodeInfo = textNodes.find(tn => start >= tn.innerTextStart && start < tn.innerTextEnd);
+    const endNodeInfo = textNodes.find(tn => end > tn.innerTextStart && end <= tn.innerTextEnd);
 
     if (!startNodeInfo) {
+      console.warn('Rewordly: Could not find start node for position', start);
       return null;
     }
 
     try {
       const range = document.createRange();
       
-      if (startNodeInfo && endNodeInfo && startNodeInfo.node !== endNodeInfo.node) {
+      // Calculate local positions within the text nodes
+      // We need to account for \n characters in innerText that don't exist in text nodes
+      let startNodeLocalPos = 0;
+      let endNodeLocalPos = 0;
+      
+      // For start position: count characters from innerTextStart to start, skipping \n
+      let pos = startNodeInfo.innerTextStart;
+      while (pos < start && pos < innerText.length) {
+        if (innerText[pos] !== '\n') {
+          startNodeLocalPos++;
+        }
+        pos++;
+      }
+      
+      if (endNodeInfo && endNodeInfo.node !== startNodeInfo.node) {
         // Error spans multiple nodes
-        const startNodeLocalPos = start - startNodeInfo.startIndex;
-        const endNodeLocalPos = end - endNodeInfo.startIndex;
+        // For end position in end node: count characters from endNodeInfo.innerTextStart to end, skipping \n
+        pos = endNodeInfo.innerTextStart;
+        while (pos < end && pos < innerText.length) {
+          if (innerText[pos] !== '\n') {
+            endNodeLocalPos++;
+          }
+          pos++;
+        }
+        
         range.setStart(startNodeInfo.node, Math.min(startNodeLocalPos, startNodeInfo.node.textContent!.length));
         range.setEnd(endNodeInfo.node, Math.min(endNodeLocalPos, endNodeInfo.node.textContent!.length));
       } else {
         // Error is within a single node
-        const startNodeLocalPos = start - startNodeInfo.startIndex;
-        const endPos = startNodeLocalPos + (end - start);
+        // For end position: count characters from startNodeInfo.innerTextStart to end, skipping \n
+        pos = startNodeInfo.innerTextStart;
+        while (pos < end && pos < innerText.length) {
+          if (innerText[pos] !== '\n') {
+            endNodeLocalPos++;
+          }
+          pos++;
+        }
+        
         range.setStart(startNodeInfo.node, startNodeLocalPos);
-        range.setEnd(startNodeInfo.node, Math.min(endPos, startNodeInfo.node.textContent!.length));
+        range.setEnd(startNodeInfo.node, Math.min(endNodeLocalPos, startNodeInfo.node.textContent!.length));
       }
 
+      console.log("Range:", range);
+      
       const rect = range.getBoundingClientRect();
+      console.log("Rect:", rect);
       if (rect && rect.width > 0 && rect.height > 0) {
         return rect;
       }
@@ -2244,7 +2327,6 @@ class RewordlyContentScript {
    */
   private showGrammarSpinner(element: HTMLElement): void {
     if (!this.grammarSpinner) {
-      console.log('Rewordly: Grammar spinner not found');
       return;
     }
     
@@ -2253,15 +2335,12 @@ class RewordlyContentScript {
     // Get cursor position based on element type
     if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
       caretRect = this.getInputTextareaSelectionRect(element);
-      console.log('Rewordly: Got caret rect for input/textarea:', caretRect);
     } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
       caretRect = this.getContentEditableCaretRect(element);
-      console.log('Rewordly: Got caret rect for contenteditable:', caretRect);
     }
     
     // Fallback to element position if caret position not available
     if (!caretRect || caretRect.width === 0 && caretRect.height === 0) {
-      console.log('Rewordly: Using fallback element position');
       const rect = element.getBoundingClientRect();
       caretRect = new DOMRect(
         rect.left,
@@ -2282,8 +2361,6 @@ class RewordlyContentScript {
     let left = caretRect.right + offsetX;
     let top = caretRect.bottom + offsetY;
     
-    console.log('Rewordly: Initial spinner position (viewport):', left, top);
-    
     // Check if spinner would go off screen, adjust if needed
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
@@ -2291,20 +2368,16 @@ class RewordlyContentScript {
     // If spinner would go off right edge, position to left of cursor
     if (left + spinnerWidth > viewportWidth) {
       left = caretRect.left - spinnerWidth - offsetX;
-      console.log('Rewordly: Adjusted left (off right edge):', left);
     }
     
     // If spinner would go off bottom edge, position above cursor
     if (top + spinnerHeight > viewportHeight) {
       top = caretRect.top - spinnerHeight - offsetY;
-      console.log('Rewordly: Adjusted top (off bottom edge):', top);
     }
     
     // Ensure spinner is always visible within viewport
     left = Math.max(10, Math.min(left, viewportWidth - spinnerWidth - 10));
     top = Math.max(10, Math.min(top, viewportHeight - spinnerHeight - 10));
-    
-    console.log('Rewordly: Final spinner position (viewport):', left, top);
     
     // Set position using fixed positioning (no scroll offset needed)
     this.grammarSpinner.style.setProperty('position', 'fixed', 'important');
@@ -2318,18 +2391,6 @@ class RewordlyContentScript {
     
     // Force a reflow to ensure styles are applied
     void this.grammarSpinner.offsetHeight;
-    
-    // Verify spinner is actually visible
-    const computedStyle = window.getComputedStyle(this.grammarSpinner);
-    const spinnerRect = this.grammarSpinner.getBoundingClientRect();
-    console.log('Rewordly: Spinner computed display:', computedStyle.display);
-    console.log('Rewordly: Spinner computed visibility:', computedStyle.visibility);
-    console.log('Rewordly: Spinner computed opacity:', computedStyle.opacity);
-    console.log('Rewordly: Spinner computed position:', computedStyle.position);
-    console.log('Rewordly: Spinner computed z-index:', computedStyle.zIndex);
-    console.log('Rewordly: Spinner in DOM:', document.body.contains(this.grammarSpinner));
-    console.log('Rewordly: Spinner bounding rect:', spinnerRect);
-    console.log('Rewordly: Spinner offsetParent:', this.grammarSpinner.offsetParent);
   }
 
   /**
@@ -2339,7 +2400,6 @@ class RewordlyContentScript {
     try {
       const selection = window.getSelection();
       if (!selection || selection.rangeCount === 0) {
-        console.log('Rewordly: No selection found for contenteditable');
         return null;
       }
       
@@ -2347,7 +2407,6 @@ class RewordlyContentScript {
       
       // Check if range is within our element
       if (!element.contains(range.commonAncestorContainer)) {
-        console.log('Rewordly: Selection is not within element');
         return null;
       }
       
@@ -2399,7 +2458,6 @@ class RewordlyContentScript {
             );
           }
         } catch (e) {
-          console.log('Rewordly: insertNode failed, trying alternative method:', e);
         }
         
         // Method 3: Use getBoundingClientRect on range
@@ -2414,7 +2472,6 @@ class RewordlyContentScript {
             );
           }
         } catch (e) {
-          console.log('Rewordly: getBoundingClientRect failed:', e);
         }
         
         // Method 4: Fallback - use focus node position
@@ -3096,7 +3153,6 @@ class RewordlyContentScript {
       if (request.type === 'SETTINGS_UPDATED') {
         // Reload config when settings are updated
         this.loadConfig().then(() => {
-          console.log('Rewordly: Settings updated - Extension enabled:', this.config.enabled);
           
           // Hide button if extension is disabled
           if (!this.config.enabled) {
@@ -3374,7 +3430,6 @@ class RewordlyContentScript {
         }
       }
     } catch (e) {
-      console.log('Rewordly: getClientRects failed');
     }
     
     // Method 2: Fallback to getBoundingClientRect() on the range
@@ -3385,7 +3440,6 @@ class RewordlyContentScript {
           rect = rangeRect;
         }
       } catch (e) {
-        console.log('Rewordly: getBoundingClientRect failed on range');
       }
     }
     
@@ -3498,7 +3552,6 @@ class RewordlyContentScript {
               rect = elementRect;
             }
           } catch (e) {
-            console.log('Rewordly: Input/textarea position calculation failed', e);
           }
         }
       }
@@ -3523,13 +3576,11 @@ class RewordlyContentScript {
           }
         }
       } catch (e) {
-        console.log('Rewordly: Failed to get position from common ancestor');
       }
     }
     
     // If we still don't have a valid rect, don't show the button
     if (!rect || rect.width === 0 || rect.height === 0) {
-      console.log('Rewordly: Could not determine selection position');
       return;
     }
     
