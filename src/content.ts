@@ -1979,17 +1979,25 @@ class RewordlyContentScript {
   }
 
   /**
-   * Get error rect for contenteditable elements
+   * Map innerText positions to text node positions for contenteditable elements
+   * Returns mapping information for start and end positions
    */
-  private getContentEditableErrorRect(element: HTMLElement, start: number, end: number): DOMRect | null {
+  private mapInnerTextToTextNodes(
+    element: HTMLElement, 
+    start: number, 
+    end: number
+  ): { 
+    startNode: Text | null; 
+    startOffset: number; 
+    endNode: Text | null; 
+    endOffset: number;
+  } | null {
     const innerText = element.innerText || element.textContent || '';
     if (start >= innerText.length || end > innerText.length) {
       return null;
     }
 
     // Find text nodes and map their positions to innerText
-    // The API uses innerText, so start/end positions are relative to innerText
-    // Strategy: For each text node, find where its textContent appears in innerText
     const walker = document.createTreeWalker(
       element,
       NodeFilter.SHOW_TEXT,
@@ -1997,7 +2005,7 @@ class RewordlyContentScript {
     );
 
     const textNodes: Array<{ node: Text; innerTextStart: number; innerTextEnd: number }> = [];
-    let searchStart = 0; // Where to start searching in innerText
+    let searchStart = 0;
 
     let node: Text | null;
     while ((node = walker.nextNode() as Text | null)) {
@@ -2013,21 +2021,18 @@ class RewordlyContentScript {
       const nodeText = node.textContent;
       
       // Find where this node's text appears in innerText
-      // We need to account for \n characters that innerText adds between nodes
-      // So we search for the node text, but skip over \n characters in innerText
       let foundIndex = -1;
       let searchPos = searchStart;
       
-      // Try to find the node text in innerText, accounting for \n characters
       while (searchPos < innerText.length) {
-        // Skip \n characters in innerText (they don't come from text nodes)
+        // Skip \n characters in innerText
         while (searchPos < innerText.length && innerText[searchPos] === '\n') {
           searchPos++;
         }
         
         if (searchPos >= innerText.length) break;
         
-        // Try to match node text starting at this position
+        // Try to match node text
         let match = true;
         let innerPos = searchPos;
         let nodePos = 0;
@@ -2040,30 +2045,25 @@ class RewordlyContentScript {
             innerPos++;
             nodePos++;
           } else if (innerChar === '\n') {
-            // Skip \n in innerText
             innerPos++;
           } else if (nodeChar === '\r' || nodeChar === '\n') {
-            // Skip \r or \n in node text (normalized by innerText)
             nodePos++;
           } else {
-            // Mismatch
             match = false;
             break;
           }
         }
         
         if (match && nodePos === nodeText.length) {
-          // Found a match!
           foundIndex = searchPos;
           break;
         }
         
-        // No match, try next position
         searchPos++;
       }
       
       if (foundIndex !== -1) {
-        // Calculate end position (accounting for \n characters in innerText)
+        // Calculate end position
         let innerTextEnd = foundIndex;
         let nodePos = 0;
         
@@ -2090,10 +2090,6 @@ class RewordlyContentScript {
         });
         
         searchStart = innerTextEnd;
-      } else {
-        // Couldn't find node text in innerText - this shouldn't happen
-        // But continue anyway
-        console.warn('Rewordly: Could not find node text in innerText:', nodeText.substring(0, 20));
       }
     }
 
@@ -2102,53 +2098,77 @@ class RewordlyContentScript {
     const endNodeInfo = textNodes.find(tn => end > tn.innerTextStart && end <= tn.innerTextEnd);
 
     if (!startNodeInfo) {
-      console.warn('Rewordly: Could not find start node for position', start);
+      return null;
+    }
+
+    // Calculate local positions within the text nodes (skipping \n characters)
+    let startNodeLocalPos = 0;
+    let endNodeLocalPos = 0;
+    
+    // For start position: count characters from innerTextStart to start, skipping \n
+    let pos = startNodeInfo.innerTextStart;
+    while (pos < start && pos < innerText.length) {
+      if (innerText[pos] !== '\n') {
+        startNodeLocalPos++;
+      }
+      pos++;
+    }
+    
+    if (endNodeInfo && endNodeInfo.node !== startNodeInfo.node) {
+      // Error spans multiple nodes
+      pos = endNodeInfo.innerTextStart;
+      while (pos < end && pos < innerText.length) {
+        if (innerText[pos] !== '\n') {
+          endNodeLocalPos++;
+        }
+        pos++;
+      }
+      
+      return {
+        startNode: startNodeInfo.node,
+        startOffset: startNodeLocalPos,
+        endNode: endNodeInfo.node,
+        endOffset: endNodeLocalPos
+      };
+    } else {
+      // Error is within a single node
+      pos = startNodeInfo.innerTextStart;
+      while (pos < end && pos < innerText.length) {
+        if (innerText[pos] !== '\n') {
+          endNodeLocalPos++;
+        }
+        pos++;
+      }
+      
+      return {
+        startNode: startNodeInfo.node,
+        startOffset: startNodeLocalPos,
+        endNode: startNodeInfo.node,
+        endOffset: endNodeLocalPos
+      };
+    }
+  }
+
+  /**
+   * Get error rect for contenteditable elements
+   */
+  private getContentEditableErrorRect(element: HTMLElement, start: number, end: number): DOMRect | null {
+    const mapping = this.mapInnerTextToTextNodes(element, start, end);
+    if (!mapping || !mapping.startNode) {
       return null;
     }
 
     try {
       const range = document.createRange();
       
-      // Calculate local positions within the text nodes
-      // We need to account for \n characters in innerText that don't exist in text nodes
-      let startNodeLocalPos = 0;
-      let endNodeLocalPos = 0;
-      
-      // For start position: count characters from innerTextStart to start, skipping \n
-      let pos = startNodeInfo.innerTextStart;
-      while (pos < start && pos < innerText.length) {
-        if (innerText[pos] !== '\n') {
-          startNodeLocalPos++;
-        }
-        pos++;
-      }
-      
-      if (endNodeInfo && endNodeInfo.node !== startNodeInfo.node) {
+      if (mapping.endNode && mapping.startNode !== mapping.endNode) {
         // Error spans multiple nodes
-        // For end position in end node: count characters from endNodeInfo.innerTextStart to end, skipping \n
-        pos = endNodeInfo.innerTextStart;
-        while (pos < end && pos < innerText.length) {
-          if (innerText[pos] !== '\n') {
-            endNodeLocalPos++;
-          }
-          pos++;
-        }
-        
-        range.setStart(startNodeInfo.node, Math.min(startNodeLocalPos, startNodeInfo.node.textContent!.length));
-        range.setEnd(endNodeInfo.node, Math.min(endNodeLocalPos, endNodeInfo.node.textContent!.length));
+        range.setStart(mapping.startNode, Math.min(mapping.startOffset, mapping.startNode.textContent!.length));
+        range.setEnd(mapping.endNode, Math.min(mapping.endOffset, mapping.endNode.textContent!.length));
       } else {
         // Error is within a single node
-        // For end position: count characters from startNodeInfo.innerTextStart to end, skipping \n
-        pos = startNodeInfo.innerTextStart;
-        while (pos < end && pos < innerText.length) {
-          if (innerText[pos] !== '\n') {
-            endNodeLocalPos++;
-          }
-          pos++;
-        }
-        
-        range.setStart(startNodeInfo.node, startNodeLocalPos);
-        range.setEnd(startNodeInfo.node, Math.min(endNodeLocalPos, startNodeInfo.node.textContent!.length));
+        range.setStart(mapping.startNode, mapping.startOffset);
+        range.setEnd(mapping.startNode, Math.min(mapping.endOffset, mapping.startNode.textContent!.length));
       }
 
       console.log("Range:", range);
@@ -2852,144 +2872,117 @@ class RewordlyContentScript {
         const selection = window.getSelection();
         if (!selection) return;
         
-        // Find all text nodes and their positions
-        const walker = document.createTreeWalker(
-          element,
-          NodeFilter.SHOW_TEXT,
-          null
-        );
+        // Map innerText positions to text node positions
+        const mapping = this.mapInnerTextToTextNodes(element, start, end);
         
-        const textNodes: { node: Text; startIndex: number; endIndex: number }[] = [];
-        let textIndex = 0;
-        
-        let node: Text | null;
-        while ((node = walker.nextNode() as Text | null)) {
-          if (node && node.textContent) {
-            const nodeLength = node.textContent.length;
-            textNodes.push({
-              node,
-              startIndex: textIndex,
-              endIndex: textIndex + nodeLength
-            });
-            textIndex += nodeLength;
-          }
+        if (!mapping || !mapping.startNode) {
+          console.error('Rewordly: Could not map innerText positions to text nodes', { start, end });
+          return;
         }
         
-        // Find the text nodes that contain the error
-        const startNodeInfo = textNodes.find(tn => start >= tn.startIndex && start < tn.endIndex);
-        const endNodeInfo = textNodes.find(tn => end > tn.startIndex && end <= tn.endIndex);
-        
-        if (startNodeInfo) {
+        try {
           const range = document.createRange();
-          const errorLength = end - start;
           
-          try {
-            // Calculate local positions within text nodes
-            const startNodeLocalPos = start - startNodeInfo.startIndex;
-            const startNodeLength = startNodeInfo.node.textContent!.length;
-            
-            // Check if error spans multiple nodes
-            if (endNodeInfo && startNodeInfo.node !== endNodeInfo.node) {
-              // Error spans multiple text nodes - need to handle differently
-              const endNodeLocalPos = end - endNodeInfo.startIndex;
-              
-              // Set range from start node to end node
-              range.setStart(startNodeInfo.node, Math.min(startNodeLocalPos, startNodeLength));
-              range.setEnd(endNodeInfo.node, Math.min(endNodeLocalPos, endNodeInfo.node.textContent!.length));
-            } else {
-              // Error is within a single text node
-              const endPos = startNodeLocalPos + errorLength;
-              
-              // Validate positions
-              if (startNodeLocalPos < 0 || endPos > startNodeLength) {
-                console.error('Rewordly: Invalid error position in text node', {
-                  startNodeLocalPos,
-                  endPos,
-                  nodeLength: startNodeLength,
-                  globalStart: start,
-                  globalEnd: end
-                });
-                return;
-              }
-              
-              range.setStart(startNodeInfo.node, startNodeLocalPos);
-              range.setEnd(startNodeInfo.node, endPos);
+          // Validate positions
+          const startNodeLength = mapping.startNode.textContent!.length;
+          if (mapping.startOffset < 0 || mapping.startOffset > startNodeLength) {
+            console.error('Rewordly: Invalid start offset in text node', {
+              startOffset: mapping.startOffset,
+              nodeLength: startNodeLength,
+              globalStart: start
+            });
+            return;
+          }
+          
+          if (mapping.endNode && mapping.startNode !== mapping.endNode) {
+            // Error spans multiple text nodes
+            const endNodeLength = mapping.endNode.textContent!.length;
+            if (mapping.endOffset < 0 || mapping.endOffset > endNodeLength) {
+              console.error('Rewordly: Invalid end offset in text node', {
+                endOffset: mapping.endOffset,
+                nodeLength: endNodeLength,
+                globalEnd: end
+              });
+              return;
             }
             
-            selection.removeAllRanges();
-            selection.addRange(range);
+            range.setStart(mapping.startNode, Math.min(mapping.startOffset, startNodeLength));
+            range.setEnd(mapping.endNode, Math.min(mapping.endOffset, endNodeLength));
+          } else {
+            // Error is within a single text node
+            const endPos = mapping.endOffset;
             
-            // Replace selected text
-            range.deleteContents();
-            const textNode = document.createTextNode(replacement);
-            range.insertNode(textNode);
-            
-            // Clear selection
-            selection.removeAllRanges();
-            
-            // Trigger multiple events to ensure Draft.js picks it up
-            const events = ['beforeinput', 'input', 'textInput'];
-            events.forEach(eventType => {
-              const event = new Event(eventType, { bubbles: true, cancelable: true });
-              (event as any).data = replacement;
-              element.dispatchEvent(event);
-            });
-            
-            // Calculate length difference for position adjustment
-            const replacementLength = replacement.length;
-            const originalLength = end - start;
-            const lengthDiff = replacementLength - originalLength;
-            
-            // Update stored errors - remove the replaced error and adjust positions
-            const currentErrors = this.grammarErrors.get(element) || [];
-            const updatedErrors = currentErrors
-              .filter(err => !(err.start === start && err.end === end))
-              .map(err => {
-                // If error is after the replaced text, adjust its position
-                if (err.start > end) {
-                  return {
-                    ...err,
-                    start: err.start + lengthDiff,
-                    end: err.end + lengthDiff
-                  };
-                }
-                // If error overlaps with replaced text, it's already removed
-                return err;
+            if (endPos > startNodeLength) {
+              console.error('Rewordly: Invalid end position in text node', {
+                startOffset: mapping.startOffset,
+                endPos,
+                nodeLength: startNodeLength,
+                globalStart: start,
+                globalEnd: end
               });
-            this.grammarErrors.set(element, updatedErrors);
+              return;
+            }
             
-            // Immediately update highlight positions (no delay)
-            this.updateHighlightsPosition(element);
-            
-            // Recheck grammar after a short delay to update remaining errors
-            // (Don't clear all errors - just update them)
-            setTimeout(() => {
-              this.performGrammarCheck(element);
-            }, 500);
-          } catch (err) {
-            console.error('Rewordly: Error replacing text:', err);
-            console.error('Rewordly: Error details:', {
-              start,
-              end,
-              errorLength,
-              startNodeInfo,
-              endNodeInfo,
-              textNodes: textNodes.map(tn => ({
-                start: tn.startIndex,
-                end: tn.endIndex,
-                length: tn.node.textContent?.length
-              }))
-            });
+            range.setStart(mapping.startNode, mapping.startOffset);
+            range.setEnd(mapping.startNode, endPos);
           }
-        } else {
-          console.error('Rewordly: Could not find text node for error position', {
+          
+          selection.removeAllRanges();
+          selection.addRange(range);
+          
+          // Replace selected text
+          range.deleteContents();
+          const textNode = document.createTextNode(replacement);
+          range.insertNode(textNode);
+          
+          // Clear selection
+          selection.removeAllRanges();
+          
+          // Trigger multiple events to ensure Draft.js picks it up
+          const events = ['beforeinput', 'input', 'textInput'];
+          events.forEach(eventType => {
+            const event = new Event(eventType, { bubbles: true, cancelable: true });
+            (event as any).data = replacement;
+            element.dispatchEvent(event);
+          });
+          
+          // Calculate length difference for position adjustment
+          const replacementLength = replacement.length;
+          const originalLength = end - start;
+          const lengthDiff = replacementLength - originalLength;
+          
+          // Update stored errors - remove the replaced error and adjust positions
+          const currentErrors = this.grammarErrors.get(element) || [];
+          const updatedErrors = currentErrors
+            .filter(err => !(err.start === start && err.end === end))
+            .map(err => {
+              // If error is after the replaced text, adjust its position
+              if (err.start > end) {
+                return {
+                  ...err,
+                  start: err.start + lengthDiff,
+                  end: err.end + lengthDiff
+                };
+              }
+              // If error overlaps with replaced text, it's already removed
+              return err;
+            });
+          this.grammarErrors.set(element, updatedErrors);
+          
+          // Immediately update highlight positions (no delay)
+          this.updateHighlightsPosition(element);
+          
+          // Recheck grammar after a short delay to update remaining errors
+          // (Don't clear all errors - just update them)
+          setTimeout(() => {
+            this.performGrammarCheck(element);
+          }, 500);
+        } catch (err) {
+          console.error('Rewordly: Error replacing text:', err);
+          console.error('Rewordly: Error details:', {
             start,
             end,
-            textNodes: textNodes.map(tn => ({
-              start: tn.startIndex,
-              end: tn.endIndex,
-              length: tn.node.textContent?.length
-            }))
+            mapping
           });
         }
       }
