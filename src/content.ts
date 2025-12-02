@@ -2348,27 +2348,36 @@ class RewordlyContentScript {
           const suggestion = (button as HTMLElement).getAttribute('data-suggestion');
           if (!suggestion) return;
 
-          // Get the word from the highlight's data-error attribute (most reliable)
-          // This ensures we use the correct word even after other replacements
+          // Get both word and position from the highlight's data-error attribute
+          // This ensures we replace the exact error that was clicked, not just any matching word
           const highlightErrorData = highlight.getAttribute('data-error');
           let wordToReplace = '';
+          let highlightStart = -1;
+          let highlightEnd = -1;
+          
           if (highlightErrorData) {
             try {
               const highlightError: GrammarError = JSON.parse(highlightErrorData);
               wordToReplace = highlightError.word || '';
+              highlightStart = highlightError.start;
+              highlightEnd = highlightError.end;
             } catch (e) {
               // Error parsing, use currentError as fallback
               wordToReplace = currentError.word || '';
+              highlightStart = currentError.start;
+              highlightEnd = currentError.end;
             }
           } else {
             wordToReplace = currentError.word || '';
+            highlightStart = currentError.start;
+            highlightEnd = currentError.end;
           }
 
           closeTooltip();
           this.closeAllGrammarTooltips();
           
-          // Use word-based replacement - this is more reliable after other replacements
-          this.replaceGrammarErrorByWord(element, wordToReplace, suggestion);
+          // Use position + word-based replacement to ensure we replace the exact error
+          this.replaceGrammarErrorByHighlight(element, wordToReplace, highlightStart, highlightEnd, suggestion);
         });
       });
 
@@ -2822,9 +2831,15 @@ class RewordlyContentScript {
   // }
 
   /**
-   * Replace grammar error by word (more reliable after other replacements)
+   * Replace grammar error by highlight position and word (most reliable - handles duplicate words)
    */
-  private replaceGrammarErrorByWord(element: HTMLElement, wordToReplace: string, replacement: string): void {
+  private replaceGrammarErrorByHighlight(
+    element: HTMLElement, 
+    wordToReplace: string, 
+    highlightStart: number, 
+    highlightEnd: number, 
+    replacement: string
+  ): void {
     if (!wordToReplace) {
       console.error('Rewordly: Cannot replace error - no word provided');
       return;
@@ -2840,18 +2855,38 @@ class RewordlyContentScript {
 
     const currentErrors = this.grammarErrors.get(element) || [];
     
-    // Find the error that matches the word (case-insensitive)
-    const targetError = currentErrors.find(err => {
-      if (err.start >= 0 && err.end <= currentText.length && err.start < err.end) {
-        const errorWord = currentText.substring(err.start, err.end);
-        return errorWord.toLowerCase() === wordToReplace.toLowerCase();
+    // First, try to find error by exact position match (most accurate)
+    let targetError = currentErrors.find(err => 
+      err.start === highlightStart && err.end === highlightEnd
+    );
+    
+    // If exact position match fails (positions may have shifted after other replacements),
+    // find the error that matches both word and is closest to the highlight position
+    if (!targetError) {
+      // Find all errors that match the word
+      const matchingErrors = currentErrors.filter(err => {
+        if (err.start >= 0 && err.end <= currentText.length && err.start < err.end) {
+          const errorWord = currentText.substring(err.start, err.end);
+          return errorWord.toLowerCase() === wordToReplace.toLowerCase();
+        }
+        return false;
+      });
+      
+      if (matchingErrors.length > 0) {
+        // Find the error closest to the highlight position
+        targetError = matchingErrors.reduce((closest, err) => {
+          const closestDistance = Math.abs(closest.start - highlightStart);
+          const errDistance = Math.abs(err.start - highlightStart);
+          return errDistance < closestDistance ? err : closest;
+        });
       }
-      return false;
-    });
+    }
 
     if (!targetError) {
       console.error('Rewordly: Could not find error to replace', { 
-        wordToReplace, 
+        wordToReplace,
+        highlightStart,
+        highlightEnd,
         currentErrors: currentErrors.map(e => ({
           start: e.start,
           end: e.end,
