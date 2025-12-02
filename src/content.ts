@@ -2996,114 +2996,141 @@ class RewordlyContentScript {
     const selection = window.getSelection();
     if (!selection) return;
     
-    // Find the text node at the error position
-    const walker = document.createTreeWalker(
-      element,
-      NodeFilter.SHOW_TEXT,
-      null
-    );
+    // Map innerText positions to text node positions using the same helper
+    const mapping = this.mapInnerTextToTextNodes(element, start, end);
     
-    let textIndex = 0;
-    let targetNode: Text | null = null;
-    let targetStart = 0;
-    
-    let node: Text | null;
-    while ((node = walker.nextNode() as Text | null)) {
-      if (node && node.textContent) {
-        const nodeLength = node.textContent.length;
-        if (start >= textIndex && start < textIndex + nodeLength) {
-          targetNode = node;
-          targetStart = start - textIndex;
-          break;
-        }
-        textIndex += nodeLength;
-      }
+    if (!mapping || !mapping.startNode) {
+      console.error('Rewordly: Could not map innerText positions to text nodes in Draft.js', { start, end });
+      return;
     }
     
-    if (targetNode) {
+    try {
       const range = document.createRange();
-      const errorLength = end - start;
       
-      try {
-        // Set range to the error word
-        range.setStart(targetNode, targetStart);
-        range.setEnd(targetNode, targetStart + errorLength);
-        selection.removeAllRanges();
-        selection.addRange(range);
-        
-        // For Draft.js, we need to simulate user input more carefully
-        // Delete the old text first
-        range.deleteContents();
-        
-        // Insert the new text
-        const textNode = document.createTextNode(replacement);
-        range.insertNode(textNode);
-        
-        // Move cursor after inserted text
-        range.setStartAfter(textNode);
-        range.collapse(true);
-        selection.removeAllRanges();
-        selection.addRange(range);
-        
-        // Trigger multiple events to ensure Draft.js picks it up
-        // Use InputEvent for better compatibility
-        const inputEvent = new InputEvent('input', {
-          bubbles: true,
-          cancelable: true,
-          inputType: 'insertText',
-          data: replacement
+      // Validate positions
+      const startNodeLength = mapping.startNode.textContent!.length;
+      if (mapping.startOffset < 0 || mapping.startOffset > startNodeLength) {
+        console.error('Rewordly: Invalid start offset in Draft.js text node', {
+          startOffset: mapping.startOffset,
+          nodeLength: startNodeLength,
+          globalStart: start
         });
-        element.dispatchEvent(inputEvent);
-        
-        // Also trigger beforeinput
-        const beforeInputEvent = new InputEvent('beforeinput', {
-          bubbles: true,
-          cancelable: true,
-          inputType: 'insertText',
-          data: replacement
-        });
-        element.dispatchEvent(beforeInputEvent);
-        
-        // Clear selection
-        selection.removeAllRanges();
-        
-        // Force focus to ensure Draft.js updates
-        element.focus();
-        
-        // Calculate length difference for position adjustment
-        const replacementLength = replacement.length;
-        const originalLength = end - start;
-        const lengthDiff = replacementLength - originalLength;
-        
-        // Update stored errors - remove the replaced error and adjust positions
-        const currentErrors = this.grammarErrors.get(element) || [];
-        const updatedErrors = currentErrors
-          .filter(err => !(err.start === start && err.end === end))
-          .map(err => {
-            // If error is after the replaced text, adjust its position
-            if (err.start > end) {
-              return {
-                ...err,
-                start: err.start + lengthDiff,
-                end: err.end + lengthDiff
-              };
-            }
-            // If error overlaps with replaced text, it's already removed
-            return err;
-          });
-        this.grammarErrors.set(element, updatedErrors);
-        
-        // Immediately update highlight positions (no delay)
-        this.updateHighlightsPosition(element);
-        
-        // Recheck grammar after a short delay to update remaining errors
-        // (Don't clear all errors - just update them)
-        setTimeout(() => {
-          this.performGrammarCheck(element);
-        }, 500);
-      } catch (err) {
-        console.error('Rewordly: Error replacing text in Draft.js:', err);
+        return;
       }
+      
+      if (mapping.endNode && mapping.startNode !== mapping.endNode) {
+        // Error spans multiple text nodes
+        const endNodeLength = mapping.endNode.textContent!.length;
+        if (mapping.endOffset < 0 || mapping.endOffset > endNodeLength) {
+          console.error('Rewordly: Invalid end offset in Draft.js text node', {
+            endOffset: mapping.endOffset,
+            nodeLength: endNodeLength,
+            globalEnd: end
+          });
+          return;
+        }
+        
+        range.setStart(mapping.startNode, Math.min(mapping.startOffset, startNodeLength));
+        range.setEnd(mapping.endNode, Math.min(mapping.endOffset, endNodeLength));
+      } else {
+        // Error is within a single text node
+        const endPos = mapping.endOffset;
+        
+        if (endPos > startNodeLength) {
+          console.error('Rewordly: Invalid end position in Draft.js text node', {
+            startOffset: mapping.startOffset,
+            endPos,
+            nodeLength: startNodeLength,
+            globalStart: start,
+            globalEnd: end
+          });
+          return;
+        }
+        
+        range.setStart(mapping.startNode, mapping.startOffset);
+        range.setEnd(mapping.startNode, endPos);
+      }
+      
+      selection.removeAllRanges();
+      selection.addRange(range);
+      
+      // For Draft.js, we need to simulate user input more carefully
+      // Delete the old text first
+      range.deleteContents();
+      
+      // Insert the new text
+      const textNode = document.createTextNode(replacement);
+      range.insertNode(textNode);
+      
+      // Move cursor after inserted text
+      range.setStartAfter(textNode);
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      
+      // Trigger multiple events to ensure Draft.js picks it up
+      // Use InputEvent for better compatibility
+      const inputEvent = new InputEvent('input', {
+        bubbles: true,
+        cancelable: true,
+        inputType: 'insertText',
+        data: replacement
+      });
+      element.dispatchEvent(inputEvent);
+      
+      // Also trigger beforeinput
+      const beforeInputEvent = new InputEvent('beforeinput', {
+        bubbles: true,
+        cancelable: true,
+        inputType: 'insertText',
+        data: replacement
+      });
+      element.dispatchEvent(beforeInputEvent);
+      
+      // Clear selection
+      selection.removeAllRanges();
+      
+      // Force focus to ensure Draft.js updates
+      element.focus();
+      
+      // Calculate length difference for position adjustment
+      const replacementLength = replacement.length;
+      const originalLength = end - start;
+      const lengthDiff = replacementLength - originalLength;
+      
+      // Update stored errors - remove the replaced error and adjust positions
+      const currentErrors = this.grammarErrors.get(element) || [];
+      const updatedErrors = currentErrors
+        .filter(err => !(err.start === start && err.end === end))
+        .map(err => {
+          // If error is after the replaced text, adjust its position
+          if (err.start > end) {
+            return {
+              ...err,
+              start: err.start + lengthDiff,
+              end: err.end + lengthDiff
+            };
+          }
+          // If error overlaps with replaced text, it's already removed
+          return err;
+        });
+      this.grammarErrors.set(element, updatedErrors);
+      
+      // Immediately update highlight positions (no delay)
+      this.updateHighlightsPosition(element);
+      
+      // Recheck grammar after a short delay to update remaining errors
+      // (Don't clear all errors - just update them)
+      setTimeout(() => {
+        this.performGrammarCheck(element);
+      }, 500);
+    } catch (err) {
+      console.error('Rewordly: Error replacing text in Draft.js:', err);
+      console.error('Rewordly: Error details:', {
+        start,
+        end,
+        mapping
+      });
     }
   }
 
