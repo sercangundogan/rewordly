@@ -47,6 +47,9 @@ class RewordlyContentScript {
   private grammarSpinner: HTMLDivElement | null = null;
   private editableElements: Set<HTMLElement> = new Set();
   
+  // Track dismissed errors: key = elementId + word + start, value = true
+  private dismissedErrors: Map<string, boolean> = new Map();
+  
   // Grammarly-style highlights container
   private highlightsContainer: HTMLElement | null = null;
   private highlightsShadowRoot: ShadowRoot | null = null;
@@ -1039,6 +1042,25 @@ class RewordlyContentScript {
           end: error.end,
           textSnippet: text.substring(Math.max(0, error.start - 10), Math.min(text.length, error.end + 10))
         });
+        // Word changed, remove from dismissed list if it was dismissed
+        const dismissKey = this.getDismissKey(elementId, error.word, error.start);
+        this.dismissedErrors.delete(dismissKey);
+        return false;
+      }
+      
+      // Check if this error was dismissed
+      const dismissKey = this.getDismissKey(elementId, error.word, error.start);
+      if (this.dismissedErrors.has(dismissKey)) {
+        // Check if the word at this position still matches the dismissed word
+        const currentWord = text.substring(error.start, error.end).toLowerCase().trim();
+        const dismissedWord = error.word.toLowerCase().trim();
+        if (currentWord === dismissedWord) {
+          // Word hasn't changed, keep it dismissed
+          return false;
+        } else {
+          // Word changed, remove from dismissed list
+          this.dismissedErrors.delete(dismissKey);
+        }
       }
       
       return isValid;
@@ -1264,6 +1286,13 @@ class RewordlyContentScript {
       (element as any).__rewordlyId = `rewordly-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     }
     return (element as any).__rewordlyId;
+  }
+
+  /**
+   * Generate a unique key for dismissing an error
+   */
+  private getDismissKey(elementId: string, word: string, start: number): string {
+    return `${elementId}:${word.toLowerCase().trim()}:${start}`;
   }
 
   /**
@@ -2501,6 +2530,7 @@ class RewordlyContentScript {
         <div class="rewordly-grammar-tooltip-content">
           <div class="rewordly-grammar-tooltip-word">${this.escapeHtml(currentError.word)}</div>
           <div class="rewordly-grammar-tooltip-suggestions">${suggestionsHtml}</div>
+          <button class="rewordly-grammar-dismiss" data-error-id="${currentError.id}">Dismiss</button>
         </div>
       `;
 
@@ -2545,6 +2575,40 @@ class RewordlyContentScript {
           this.replaceGrammarErrorByHighlight(element, errorId, suggestion);
         });
       });
+
+      // Attach dismiss button handler
+      const dismissButton = tooltip.querySelector('.rewordly-grammar-dismiss');
+      if (dismissButton) {
+        dismissButton.addEventListener('click', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+
+          // Get error ID from the highlight
+          const errorId = highlight.getAttribute('data-error-id');
+          if (!errorId) {
+            console.error('Rewordly: No error ID found on highlight');
+            return;
+          }
+
+          // Find the error in the stored errors
+          const errors = this.grammarErrors.get(element) || [];
+          const error = errors.find(err => err.id === errorId);
+          
+          if (error) {
+            // Add to dismissed list
+            const elementId = this.getElementId(element);
+            const dismissKey = this.getDismissKey(elementId, error.word, error.start);
+            this.dismissedErrors.set(dismissKey, true);
+            
+            // Remove the highlight
+            highlight.remove();
+            
+            // Close tooltip
+            closeTooltip();
+            this.closeAllGrammarTooltips();
+          }
+        });
+      }
 
       tooltip.addEventListener('mouseleave', () => {
         tooltipTimeout = window.setTimeout(() => {
