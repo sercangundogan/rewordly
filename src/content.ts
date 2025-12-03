@@ -2490,9 +2490,11 @@ class RewordlyContentScript {
       tooltip.className = 'rewordly-grammar-tooltip';
 
       const suggestionsHtml = currentError.suggestions && currentError.suggestions.length > 0
-        ? currentError.suggestions.map((suggestion) => 
-            `<button class="rewordly-grammar-suggestion" data-suggestion="${this.escapeHtml(suggestion)}" data-error-start="${currentError.start}" data-error-end="${currentError.end}">${this.escapeHtml(suggestion)}</button>`
-          ).join('')
+        ? currentError.suggestions.map((suggestion) => {
+            // Format suggestion for display - make whitespace visible
+            const displayText = this.formatSuggestionForDisplay(suggestion, currentError.word);
+            return `<button class="rewordly-grammar-suggestion" data-suggestion="${this.escapeHtml(suggestion)}" data-error-start="${currentError.start}" data-error-end="${currentError.end}">${this.escapeHtml(displayText)}</button>`;
+          }).join('')
         : '<div class="rewordly-grammar-no-suggestions">No suggestions available</div>';
 
       tooltip.innerHTML = `
@@ -2839,6 +2841,33 @@ class RewordlyContentScript {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+  }
+
+  /**
+   * Format suggestion for display - makes whitespace-only suggestions visible
+   */
+  private formatSuggestionForDisplay(suggestion: string, errorWord: string): string {
+    // If suggestion is only whitespace, provide a descriptive message
+    if (/^\s+$/.test(suggestion)) {
+      const suggestionSpaceCount = suggestion.length;
+      
+      // If error word is also whitespace and has more spaces than suggestion
+      if (/^\s+$/.test(errorWord) && errorWord.length > suggestionSpaceCount) {
+        if (suggestionSpaceCount === 1) {
+          return 'Remove extra space';
+        } else {
+          return `Remove extra spaces (keep ${suggestionSpaceCount})`;
+        }
+      }
+      
+      // If suggestion is a single space
+      if (suggestionSpaceCount === 1) {
+        return 'Use single space';
+      } else {
+        return `Use ${suggestionSpaceCount} spaces`;
+      }
+    }
+    return suggestion;
   }
 
   /**
