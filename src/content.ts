@@ -423,6 +423,22 @@ class RewordlyContentScript {
 
     this.editableElements.add(element);
     
+    // Disable browser's native spell check
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+      element.spellcheck = false;
+    } else {
+      element.setAttribute('spellcheck', 'false');
+    }
+    
+    // Disable Gmail's spell check (writingsuggestions)
+    element.setAttribute('writingsuggestions', 'false');
+    
+    // Remove Gmail's spell check markers (aria-invalid spans)
+    this.removeGmailSpellCheckMarkers(element);
+    
+    // Watch for Gmail adding spell check markers and remove them
+    this.setupGmailSpellCheckObserver(element);
+    
     // Add multiple event listeners to catch all input types
     // Use capture phase to catch events before they're stopped
     element.addEventListener('input', this.boundHandleInput, true);
@@ -435,6 +451,74 @@ class RewordlyContentScript {
     if (element.getAttribute('contenteditable') === 'true') {
       element.addEventListener('textInput', this.boundHandleInput, true);
     }
+  }
+
+  /**
+   * Remove Gmail's spell check markers (spans with aria-invalid)
+   */
+  private removeGmailSpellCheckMarkers(element: HTMLElement): void {
+    // Find all spans with aria-invalid attribute (Gmail's spell check markers)
+    const spellCheckSpans = element.querySelectorAll('span[aria-invalid]');
+    spellCheckSpans.forEach((span) => {
+      const parent = span.parentNode;
+      if (parent) {
+        // Replace span with its text content
+        const textNode = document.createTextNode(span.textContent || '');
+        parent.replaceChild(textNode, span);
+        // Normalize adjacent text nodes
+        parent.normalize();
+      }
+    });
+  }
+
+  /**
+   * Set up observer to watch for Gmail adding spell check markers
+   */
+  private setupGmailSpellCheckObserver(element: HTMLElement): void {
+    // Only set up observer once per element
+    if ((element as any).__rewordlyGmailObserver) {
+      return;
+    }
+
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        mutation.addedNodes.forEach((node) => {
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            const el = node as HTMLElement;
+            // Check if it's a spell check span
+            if (el.tagName === 'SPAN' && el.hasAttribute('aria-invalid')) {
+              // Remove the spell check marker
+              const parent = el.parentNode;
+              if (parent) {
+                const textNode = document.createTextNode(el.textContent || '');
+                parent.replaceChild(textNode, el);
+                parent.normalize();
+              }
+            }
+            // Also check children
+            const spellCheckSpans = el.querySelectorAll('span[aria-invalid]');
+            spellCheckSpans.forEach((span) => {
+              const parent = span.parentNode;
+              if (parent) {
+                const textNode = document.createTextNode(span.textContent || '');
+                parent.replaceChild(textNode, span);
+                parent.normalize();
+              }
+            });
+          }
+        });
+      });
+    });
+
+    observer.observe(element, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['aria-invalid', 'class']
+    });
+
+    // Store observer reference for cleanup
+    (element as any).__rewordlyGmailObserver = observer;
   }
 
   /**
