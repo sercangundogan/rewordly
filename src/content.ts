@@ -1276,16 +1276,58 @@ class RewordlyContentScript {
 
         // Adjust positions for multi-word grammar errors
         const adjustedPositions = text ? this.adjustErrorPositionsForMultiWord(text, error) : { start: error.start, end: error.end };
-        const highlightRect = this.getErrorTextRect(element, adjustedPositions.start, adjustedPositions.end);
-        console.log("Highlight rect:", highlightRect);
-        if (highlightRect) {
-          existingHighlight.style.top = `${highlightRect.top}px`;
-          existingHighlight.style.left = `${highlightRect.left}px`;
-          existingHighlight.style.width = `${highlightRect.width}px`;
-          existingHighlight.style.height = `${highlightRect.height}px`;
-          // Update error data in case suggestions changed
-          existingHighlight.setAttribute('data-error', JSON.stringify(error));
-          existingHighlight.setAttribute('data-error-index', index.toString());
+        const highlightRects = this.getErrorTextRects(element, adjustedPositions.start, adjustedPositions.end);
+        console.log("Highlight rects:", highlightRects);
+        
+        // Get all existing highlights for this error
+        if (!this.highlightsContent) return;
+        const errorHighlights = Array.from(this.highlightsContent.querySelectorAll(
+          `[data-element-id="${this.getElementId(element)}"][data-error-id="${error.id}"]`
+        )) as HTMLElement[];
+        
+        if (highlightRects.length > 0) {
+          // Update or create highlights for each line
+          highlightRects.forEach((highlightRect, lineIndex) => {
+            let highlight = errorHighlights.find(h => 
+              h.getAttribute('data-line-index') === lineIndex.toString()
+            );
+            
+            if (!highlight) {
+              // Create new highlight for this line
+              highlight = document.createElement('div');
+              highlight.className = 'rewordly-highlight';
+              highlight.setAttribute('data-rewordly-part', 'highlight');
+              highlight.setAttribute('data-highlight-format', 'underline');
+              highlight.setAttribute('data-highlight-color-name', 'red');
+              highlight.setAttribute('data-element-id', this.getElementId(element));
+              highlight.setAttribute('data-error-index', index.toString());
+              highlight.setAttribute('data-error-id', error.id);
+              highlight.setAttribute('data-line-index', lineIndex.toString());
+              
+              // Add hover listeners (only on first line)
+              if (lineIndex === 0) {
+                this.attachHighlightHoverListener(highlight, error, element);
+              }
+              
+              this.highlightsContent!.appendChild(highlight);
+            }
+            
+            // Update position and size
+            highlight.style.top = `${highlightRect.top}px`;
+            highlight.style.left = `${highlightRect.left}px`;
+            highlight.style.width = `${highlightRect.width}px`;
+            highlight.style.height = `${highlightRect.height}px`;
+            highlight.setAttribute('data-error', JSON.stringify(error));
+            highlight.setAttribute('data-error-index', index.toString());
+          });
+          
+          // Remove extra highlights if rect count decreased
+          errorHighlights.forEach((highlight) => {
+            const lineIndex = parseInt(highlight.getAttribute('data-line-index') || '0', 10);
+            if (lineIndex >= highlightRects.length) {
+              highlight.remove();
+            }
+          });
         } else {
           // Position calculation failed - for Draft.js (Twitter), keep the highlight
           // It will be updated on the next position update after DOM settles
@@ -2193,125 +2235,143 @@ class RewordlyContentScript {
     const highlightStart = adjustedPositions.start;
     const highlightEnd = adjustedPositions.end;
 
-    // Calculate the position of the error text in viewport coordinates
-    const highlightRect = this.getErrorTextRect(element, highlightStart, highlightEnd);
-    if (!highlightRect) {
-      console.log('Rewordly: No highlight rect found for error', error);
+    // Get all rects for multi-line support (one rect per line)
+    const highlightRects = this.getErrorTextRects(element, highlightStart, highlightEnd);
+    if (highlightRects.length === 0) {
+      console.log('Rewordly: No highlight rects found for error', error);
       return;
     }
 
-    console.log('Rewordly: Creating highlight', {
-      rect: {
-        top: highlightRect.top,
-        left: highlightRect.left,
-        width: highlightRect.width,
-        height: highlightRect.height
-      },
+    console.log('Rewordly: Creating highlights', {
+      rectCount: highlightRects.length,
+      rects: highlightRects.map(r => ({
+        top: r.top,
+        left: r.left,
+        width: r.width,
+        height: r.height
+      })),
       error: error.word,
       errorType: error.type,
       element: element.tagName,
       isReddit: window.location.hostname.includes('reddit.com')
     });
 
-    // Create highlight element
-    const highlight = document.createElement('div');
-    highlight.className = 'rewordly-highlight';
-    highlight.setAttribute('data-rewordly-part', 'highlight');
-    highlight.setAttribute('data-highlight-format', 'underline');
-    highlight.setAttribute('data-highlight-color-name', 'red');
-    highlight.setAttribute('data-element-id', this.getElementId(element));
-    highlight.setAttribute('data-error-index', index.toString());
-    highlight.setAttribute('data-error-id', error.id); // Store error ID for quick lookup
-    highlight.setAttribute('data-error', JSON.stringify(error));
-    
-    // Set position and size
-    highlight.style.top = `${highlightRect.top}px`;
-    highlight.style.left = `${highlightRect.left}px`;
-    highlight.style.height = `${highlightRect.height}px`;
-    
-    // Store target width for animation
-    const targetWidth = highlightRect.width;
-    
-    // Initially set width to 0 for animation
-    highlight.style.width = '0px';
-    highlight.style.overflow = 'hidden';
-    highlight.style.opacity = '0';
-    
-    // Add animation class
-    highlight.classList.add('rewordly-highlight-enter');
+    // Create a highlight element for each rect (each line)
+    highlightRects.forEach((highlightRect, lineIndex) => {
+      // Create highlight element
+      const highlight = document.createElement('div');
+      highlight.className = 'rewordly-highlight';
+      highlight.setAttribute('data-rewordly-part', 'highlight');
+      highlight.setAttribute('data-highlight-format', 'underline');
+      highlight.setAttribute('data-highlight-color-name', 'red');
+      highlight.setAttribute('data-element-id', this.getElementId(element));
+      highlight.setAttribute('data-error-index', index.toString());
+      highlight.setAttribute('data-error-id', error.id); // Store error ID for quick lookup
+      highlight.setAttribute('data-line-index', lineIndex.toString()); // Track which line this highlight is for
+      highlight.setAttribute('data-error', JSON.stringify(error));
+      
+      // Set position and size
+      highlight.style.top = `${highlightRect.top}px`;
+      highlight.style.left = `${highlightRect.left}px`;
+      highlight.style.height = `${highlightRect.height}px`;
+      
+      // Store target width for animation
+      const targetWidth = highlightRect.width;
+      
+      // Initially set width to 0 for animation
+      highlight.style.width = '0px';
+      highlight.style.overflow = 'hidden';
+      highlight.style.opacity = '0';
+      
+      // Add animation class
+      highlight.classList.add('rewordly-highlight-enter');
 
-    // Add hover listeners
-    this.attachHighlightHoverListener(highlight, error, element);
-
-    // Append to highlights content (must be in DOM for animation to work)
-    this.highlightsContent.appendChild(highlight);
-    
-    // Force reflow to ensure animation starts
-    void highlight.offsetWidth;
-    
-    // Log highlight creation success
-    const computedStyle = window.getComputedStyle(highlight);
-    console.log('Rewordly: Highlight added to DOM', {
-      top: highlight.style.top,
-      left: highlight.style.left,
-      width: highlight.style.width,
-      height: highlight.style.height,
-      opacity: highlight.style.opacity,
-      zIndex: computedStyle.zIndex,
-      display: computedStyle.display,
-      visibility: computedStyle.visibility,
-      borderBottom: computedStyle.borderBottom,
-      containerZIndex: this.highlightsContainer ? window.getComputedStyle(this.highlightsContainer).zIndex : 'N/A'
-    });
-    
-    // Animate width using requestAnimationFrame for smooth animation
-    const startTime = performance.now();
-    const duration = 300; // 300ms
-    const startWidth = 0;
-    const startOpacity = 0;
-    const endOpacity = 1;
-    
-    const animate = (currentTime: number) => {
-      const elapsed = currentTime - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-      
-      // Ease-in-out function
-      const easeInOut = progress < 0.5
-        ? 2 * progress * progress
-        : 1 - Math.pow(-2 * progress + 2, 2) / 2;
-      
-      const currentWidth = startWidth + (targetWidth - startWidth) * easeInOut;
-      const currentOpacity = startOpacity + (endOpacity - startOpacity) * easeInOut;
-      
-      highlight.style.width = `${currentWidth}px`;
-      highlight.style.opacity = `${currentOpacity}`;
-      
-      if (progress < 1) {
-        requestAnimationFrame(animate);
+      // Add hover listeners (only on first line to avoid duplicate tooltips)
+      if (lineIndex === 0) {
+        this.attachHighlightHoverListener(highlight, error, element);
       } else {
-        // Animation complete
-        highlight.style.width = `${targetWidth}px`;
-        highlight.style.opacity = '1';
-        highlight.style.overflow = 'visible';
-        highlight.classList.remove('rewordly-highlight-enter');
-        
-        // Verify final state
-        const finalRect = highlight.getBoundingClientRect();
-        console.log('Rewordly: Highlight animation complete', {
-          finalRect: { top: finalRect.top, left: finalRect.left, width: finalRect.width, height: finalRect.height },
-          styles: { 
-            width: highlight.style.width, 
-            opacity: highlight.style.opacity,
-            top: highlight.style.top,
-            left: highlight.style.left
-          },
-          inViewport: finalRect.top >= 0 && finalRect.left >= 0 && 
-                     finalRect.top < window.innerHeight && finalRect.left < window.innerWidth
+        // For other lines, add a click listener that focuses the first line's tooltip
+        highlight.addEventListener('click', () => {
+          const firstHighlight = this.highlightsContent?.querySelector(
+            `[data-error-id="${error.id}"][data-line-index="0"]`
+          ) as HTMLElement;
+          if (firstHighlight) {
+            firstHighlight.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+          }
         });
       }
-    };
-    
-    requestAnimationFrame(animate);
+
+      // Append to highlights content (must be in DOM for animation to work)
+      if (!this.highlightsContent) return;
+      this.highlightsContent.appendChild(highlight);
+      
+      // Force reflow to ensure animation starts
+      void highlight.offsetWidth;
+      
+      // Log highlight creation success
+      const computedStyle = window.getComputedStyle(highlight);
+      console.log(`Rewordly: Highlight ${lineIndex} added to DOM`, {
+        top: highlight.style.top,
+        left: highlight.style.left,
+        width: highlight.style.width,
+        height: highlight.style.height,
+        opacity: highlight.style.opacity,
+        zIndex: computedStyle.zIndex,
+        display: computedStyle.display,
+        visibility: computedStyle.visibility,
+        borderBottom: computedStyle.borderBottom,
+        containerZIndex: this.highlightsContainer ? window.getComputedStyle(this.highlightsContainer).zIndex : 'N/A'
+      });
+      
+      // Animate width using requestAnimationFrame for smooth animation
+      const startTime = performance.now();
+      const duration = 300; // 300ms
+      const startWidth = 0;
+      const startOpacity = 0;
+      const endOpacity = 1;
+      
+      const animate = (currentTime: number) => {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        
+        // Ease-in-out function
+        const easeInOut = progress < 0.5
+          ? 2 * progress * progress
+          : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+        
+        const currentWidth = startWidth + (targetWidth - startWidth) * easeInOut;
+        const currentOpacity = startOpacity + (endOpacity - startOpacity) * easeInOut;
+        
+        highlight.style.width = `${currentWidth}px`;
+        highlight.style.opacity = `${currentOpacity}`;
+        
+        if (progress < 1) {
+          requestAnimationFrame(animate);
+        } else {
+          // Animation complete
+          highlight.style.width = `${targetWidth}px`;
+          highlight.style.opacity = '1';
+          highlight.style.overflow = 'visible';
+          highlight.classList.remove('rewordly-highlight-enter');
+          
+          // Verify final state
+          const finalRect = highlight.getBoundingClientRect();
+          console.log(`Rewordly: Highlight ${lineIndex} animation complete`, {
+            finalRect: { top: finalRect.top, left: finalRect.left, width: finalRect.width, height: finalRect.height },
+            styles: { 
+              width: highlight.style.width, 
+              opacity: highlight.style.opacity,
+              top: highlight.style.top,
+              left: highlight.style.left
+            },
+            inViewport: finalRect.top >= 0 && finalRect.left >= 0 && 
+                       finalRect.top < window.innerHeight && finalRect.left < window.innerWidth
+          });
+        }
+      };
+      
+      requestAnimationFrame(animate);
+    });
   }
 
   /**
@@ -2325,23 +2385,36 @@ class RewordlyContentScript {
     return { start: error.start, end: error.end };
   }
 
+  /**
+   * Get single error rect (backward compatibility)
+   * @deprecated Use getErrorTextRects for multi-line support
+   */
   private getErrorTextRect(element: HTMLElement, start: number, end: number): DOMRect | null {
-    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-      return this.getInputTextareaErrorRect(element, start, end);
-    } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
-      console.log("Burası")
-      return this.getContentEditableErrorRect(element, start, end);
-    }
-    return null;
+    const rects = this.getErrorTextRects(element, start, end);
+    // Return first rect for backward compatibility, or null if no rects
+    return rects.length > 0 ? (rects[0] ?? null) : null;
   }
 
   /**
-   * Get error rect for input/textarea elements
+   * Get all rects for error text (supports multi-line highlights)
+   * Returns an array of DOMRects, one for each line the error spans
    */
-  private getInputTextareaErrorRect(element: HTMLInputElement | HTMLTextAreaElement, start: number, end: number): DOMRect | null {
+  private getErrorTextRects(element: HTMLElement, start: number, end: number): DOMRect[] {
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+      return this.getInputTextareaErrorRects(element, start, end);
+    } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
+      return this.getContentEditableErrorRects(element, start, end);
+    }
+    return [];
+  }
+
+  /**
+   * Get error rects for input/textarea elements (supports multi-line)
+   */
+  private getInputTextareaErrorRects(element: HTMLInputElement | HTMLTextAreaElement, start: number, end: number): DOMRect[] {
     const text = element.value;
     if (start >= text.length || end > text.length) {
-      return null;
+      return [];
     }
 
     const elementRect = element.getBoundingClientRect();
@@ -2402,7 +2475,7 @@ class RewordlyContentScript {
     
     if (!textNode || textNode.nodeType !== Node.TEXT_NODE) {
       document.body.removeChild(div);
-      return null;
+      return [];
     }
     
     // Set range to cover the error text
@@ -2412,24 +2485,31 @@ class RewordlyContentScript {
     range.setStart(textNode, startOffset);
     range.setEnd(textNode, endOffset);
     
-    // Get the bounding rect of the error text
-    const errorRect = range.getBoundingClientRect();
+    // Get all client rects (one for each line the error spans)
+    const clientRects = range.getClientRects();
     const divRect = div.getBoundingClientRect();
     
     // Account for scroll
     const scrollLeft = element.scrollLeft || 0;
     const scrollTop = element.scrollTop || 0;
     
-    // Calculate viewport coordinates
-    // Position relative to div, then offset by element position and padding/border
-    const left = elementRect.left + paddingLeft + borderLeft + (errorRect.left - divRect.left) - scrollLeft;
-    const top = elementRect.top + paddingTop + borderTop + (errorRect.top - divRect.top) - scrollTop;
-    const width = errorRect.width;
-    const height = errorRect.height || parseFloat(styles.lineHeight) || parseFloat(styles.fontSize) * 1.2;
+    // Convert each client rect to viewport coordinates
+    const rects: DOMRect[] = [];
+    for (let i = 0; i < clientRects.length; i++) {
+      const clientRect = clientRects[i];
+      if (!clientRect) continue;
+      
+      const left = elementRect.left + paddingLeft + borderLeft + (clientRect.left - divRect.left) - scrollLeft;
+      const top = elementRect.top + paddingTop + borderTop + (clientRect.top - divRect.top) - scrollTop;
+      const width = clientRect.width;
+      const height = clientRect.height || parseFloat(styles.lineHeight) || parseFloat(styles.fontSize) * 1.2;
+      
+      rects.push(new DOMRect(left, top, width, height));
+    }
     
     document.body.removeChild(div);
     
-    return new DOMRect(left, top, width, height);
+    return rects;
   }
 
   /**
@@ -2606,11 +2686,25 @@ class RewordlyContentScript {
   /**
    * Get error rect for contenteditable elements
    */
+  /**
+   * Get single error rect (backward compatibility)
+   * @deprecated Use getContentEditableErrorRects for multi-line support
+   */
   private getContentEditableErrorRect(element: HTMLElement, start: number, end: number): DOMRect | null {
+    const rects = this.getContentEditableErrorRects(element, start, end);
+    // Return first rect for backward compatibility, or null if no rects
+    const firstRect = rects[0];
+    return firstRect ?? null;
+  }
+
+  /**
+   * Get error rects for contenteditable elements (supports multi-line)
+   */
+  private getContentEditableErrorRects(element: HTMLElement, start: number, end: number): DOMRect[] {
     const mapping = this.mapInnerTextToTextNodes(element, start, end);
     if (!mapping || !mapping.startNode) {
       console.log('Rewordly: No mapping found for contenteditable', { start, end });
-      return null;
+      return [];
     }
 
     try {
@@ -2633,24 +2727,29 @@ class RewordlyContentScript {
         rangeText: range.toString()
       });
       
-      const rect = range.getBoundingClientRect();
-      const elementRect = element.getBoundingClientRect();
+      // Get all client rects (one for each line the error spans)
+      const clientRects = range.getClientRects();
+      const rects: DOMRect[] = [];
+      
+      for (let i = 0; i < clientRects.length; i++) {
+        const clientRect = clientRects[i];
+        if (clientRect && clientRect.width > 0 && clientRect.height > 0) {
+          rects.push(new DOMRect(clientRect.left, clientRect.top, clientRect.width, clientRect.height));
+        }
+      }
       
       console.log("Rewordly Rect Details:", {
-        rect: { top: rect.top, left: rect.left, width: rect.width, height: rect.height },
-        elementRect: { top: elementRect.top, left: elementRect.left, width: elementRect.width, height: elementRect.height },
-        isVisible: rect.width > 0 && rect.height > 0,
-        isInViewport: rect.top >= 0 && rect.left >= 0 && rect.top < window.innerHeight && rect.left < window.innerWidth
+        rectCount: rects.length,
+        rects: rects.map(r => ({ top: r.top, left: r.left, width: r.width, height: r.height })),
+        isVisible: rects.length > 0
       });
       
-      if (rect && rect.width > 0 && rect.height > 0) {
-        return rect;
-      }
+      return rects;
     } catch (e) {
-      console.error('Rewordly: Error getting contenteditable error rect:', e);
+      console.error('Rewordly: Error getting contenteditable error rects:', e);
     }
 
-    return null;
+    return [];
   }
 
   /**
@@ -2674,23 +2773,24 @@ class RewordlyContentScript {
     const errors = this.grammarErrors.get(element);
     if (!errors) return;
 
-    const highlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
-    highlights.forEach((highlight) => {
+    // Group highlights by error ID to handle multi-line highlights
+    const highlightsByErrorId = new Map<string, HTMLElement[]>();
+    const allHighlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
+    
+    allHighlights.forEach((highlight) => {
       const highlightErrorId = (highlight as HTMLElement).getAttribute('data-error-id');
       if (!highlightErrorId) return;
-
-      // Find matching error by ID (guaranteed unique match)
-      const error = errors.find(err => err.id === highlightErrorId);
       
-      if (!error) {
-        // Error no longer exists, remove highlight
-        highlight.remove();
-        return;
+      if (!highlightsByErrorId.has(highlightErrorId)) {
+        highlightsByErrorId.set(highlightErrorId, []);
       }
+      highlightsByErrorId.get(highlightErrorId)!.push(highlight as HTMLElement);
+    });
 
-      // Update data-error attribute with current error data (positions may have changed)
-      (highlight as HTMLElement).setAttribute('data-error', JSON.stringify(error));
-
+    // Update each error's highlights
+    errors.forEach((error) => {
+      const errorHighlights = highlightsByErrorId.get(error.id) || [];
+      
       // Get text to adjust positions for multi-word errors
       let text = '';
       if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
@@ -2701,19 +2801,70 @@ class RewordlyContentScript {
 
       // Adjust positions for multi-word grammar errors
       const adjustedPositions = text ? this.adjustErrorPositionsForMultiWord(text, error) : { start: error.start, end: error.end };
-      const highlightRect = this.getErrorTextRect(element, adjustedPositions.start, adjustedPositions.end);
-      if (highlightRect) {
-        (highlight as HTMLElement).style.top = `${highlightRect.top}px`;
-        (highlight as HTMLElement).style.left = `${highlightRect.left}px`;
-        (highlight as HTMLElement).style.width = `${highlightRect.width}px`;
-        (highlight as HTMLElement).style.height = `${highlightRect.height}px`;
-      } else {
-        // Could not calculate position - for Draft.js (Twitter), this is common during DOM updates
-        // Don't remove the highlight immediately, just log a warning
-        // The highlight will be updated on the next position update
-        console.warn('Rewordly: Could not calculate position for error:', error.id, 'at', error.start, '-', error.end);
-        // Optionally hide the highlight temporarily instead of removing it
-        // (highlight as HTMLElement).style.display = 'none';
+      const highlightRects = this.getErrorTextRects(element, adjustedPositions.start, adjustedPositions.end);
+      
+      if (highlightRects.length === 0) {
+        // Could not calculate position - remove all highlights for this error
+        errorHighlights.forEach(highlight => highlight.remove());
+        return;
+      }
+
+      // Update or create highlights for each line
+      highlightRects.forEach((highlightRect, lineIndex) => {
+        let highlight = errorHighlights.find(h => 
+          h.getAttribute('data-line-index') === lineIndex.toString()
+        );
+
+        if (!highlight) {
+          // Need to create a new highlight for this line
+          // Find the error index
+          const errorIndex = errors.findIndex(err => err.id === error.id);
+          if (errorIndex !== -1) {
+            // Create a temporary error object to pass to createHighlight
+            // But we'll create the highlight manually here to avoid duplicate tooltip listeners
+            highlight = document.createElement('div');
+            highlight.className = 'rewordly-highlight';
+            highlight.setAttribute('data-rewordly-part', 'highlight');
+            highlight.setAttribute('data-highlight-format', 'underline');
+            highlight.setAttribute('data-highlight-color-name', 'red');
+            highlight.setAttribute('data-element-id', this.getElementId(element));
+            highlight.setAttribute('data-error-index', errorIndex.toString());
+            highlight.setAttribute('data-error-id', error.id);
+            highlight.setAttribute('data-line-index', lineIndex.toString());
+            highlight.setAttribute('data-error', JSON.stringify(error));
+            
+            // Add hover listeners (only on first line)
+            if (lineIndex === 0) {
+              this.attachHighlightHoverListener(highlight, error, element);
+            }
+            
+            this.highlightsContent!.appendChild(highlight);
+          } else {
+            return; // Skip if error not found
+          }
+        }
+
+        // Update highlight position and size
+        highlight.style.top = `${highlightRect.top}px`;
+        highlight.style.left = `${highlightRect.left}px`;
+        highlight.style.width = `${highlightRect.width}px`;
+        highlight.style.height = `${highlightRect.height}px`;
+        highlight.setAttribute('data-error', JSON.stringify(error));
+      });
+
+      // Remove any extra highlights that are no longer needed (if rect count decreased)
+      errorHighlights.forEach((highlight) => {
+        const lineIndex = parseInt(highlight.getAttribute('data-line-index') || '0', 10);
+        if (lineIndex >= highlightRects.length) {
+          highlight.remove();
+        }
+      });
+    });
+
+    // Remove highlights for errors that no longer exist
+    highlightsByErrorId.forEach((highlights, errorId) => {
+      if (!errors.find(err => err.id === errorId)) {
+        highlights.forEach(highlight => highlight.remove());
       }
     });
   }
