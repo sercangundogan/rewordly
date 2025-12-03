@@ -49,6 +49,9 @@ class RewordlyContentScript {
   // Track dismissed errors: key = elementId + word + start, value = true
   private dismissedErrors: Map<string, boolean> = new Map();
   
+  // Track active tooltips by error ID to prevent duplicates
+  private activeTooltips: Map<string, HTMLElement> = new Map();
+  
   // Grammarly-style highlights container
   private highlightsContainer: HTMLElement | null = null;
   private highlightsShadowRoot: ShadowRoot | null = null;
@@ -1304,10 +1307,8 @@ class RewordlyContentScript {
               highlight.setAttribute('data-error-id', error.id);
               highlight.setAttribute('data-line-index', lineIndex.toString());
               
-              // Add hover listeners (only on first line)
-              if (lineIndex === 0) {
-                this.attachHighlightHoverListener(highlight, error, element);
-              }
+              // Add hover listeners to all lines
+              this.attachHighlightHoverListener(highlight, error, element);
               
               this.highlightsContent!.appendChild(highlight);
             }
@@ -2286,20 +2287,8 @@ class RewordlyContentScript {
       // Add animation class
       highlight.classList.add('rewordly-highlight-enter');
 
-      // Add hover listeners (only on first line to avoid duplicate tooltips)
-      if (lineIndex === 0) {
-        this.attachHighlightHoverListener(highlight, error, element);
-      } else {
-        // For other lines, add a click listener that focuses the first line's tooltip
-        highlight.addEventListener('click', () => {
-          const firstHighlight = this.highlightsContent?.querySelector(
-            `[data-error-id="${error.id}"][data-line-index="0"]`
-          ) as HTMLElement;
-          if (firstHighlight) {
-            firstHighlight.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
-          }
-        });
-      }
+      // Add hover listeners to all lines - tooltip will be shared by error ID
+      this.attachHighlightHoverListener(highlight, error, element);
 
       // Append to highlights content (must be in DOM for animation to work)
       if (!this.highlightsContent) return;
@@ -2833,10 +2822,8 @@ class RewordlyContentScript {
             highlight.setAttribute('data-line-index', lineIndex.toString());
             highlight.setAttribute('data-error', JSON.stringify(error));
             
-            // Add hover listeners (only on first line)
-            if (lineIndex === 0) {
+              // Add hover listeners to all lines
               this.attachHighlightHoverListener(highlight, error, element);
-            }
             
             this.highlightsContent!.appendChild(highlight);
           } else {
@@ -2873,7 +2860,6 @@ class RewordlyContentScript {
    * Attach hover listener to highlight
    */
   private attachHighlightHoverListener(highlight: HTMLElement, error: GrammarError, element: HTMLElement): void {
-    let currentTooltip: HTMLElement | null = null;
     let tooltipTimeout: number | null = null;
 
     const closeTooltip = () => {
@@ -2881,13 +2867,16 @@ class RewordlyContentScript {
         clearTimeout(tooltipTimeout);
         tooltipTimeout = null;
       }
-      if (currentTooltip) {
-        currentTooltip.remove();
-        currentTooltip = null;
+      // Close tooltip for this error ID if it exists
+      const existingTooltip = this.activeTooltips.get(error.id);
+      if (existingTooltip) {
+        existingTooltip.remove();
+        this.activeTooltips.delete(error.id);
       }
     };
 
     highlight.addEventListener('mouseenter', () => {
+      // Close any existing tooltip for this error ID
       closeTooltip();
 
       // Get current errors
@@ -2935,7 +2924,8 @@ class RewordlyContentScript {
       tooltip.style.top = `${adjustedTop}px`;
       tooltip.style.left = `${adjustedLeft}px`;
 
-      currentTooltip = tooltip;
+      // Store tooltip by error ID to prevent duplicates
+      this.activeTooltips.set(error.id, tooltip);
 
       // Attach click handlers
       const suggestionButtons = tooltip.querySelectorAll('.rewordly-grammar-suggestion');
@@ -2999,7 +2989,15 @@ class RewordlyContentScript {
 
       tooltip.addEventListener('mouseleave', () => {
         tooltipTimeout = window.setTimeout(() => {
-          if (currentTooltip === tooltip && !highlight.matches(':hover')) {
+          // Check if any highlight for this error is still hovered
+          const allHighlightsForError = this.highlightsContent?.querySelectorAll(
+            `[data-error-id="${error.id}"]`
+          ) || [];
+          const isAnyHighlightHovered = Array.from(allHighlightsForError).some(h => 
+            (h as HTMLElement).matches(':hover')
+          );
+          
+          if (!isAnyHighlightHovered && !tooltip.matches(':hover')) {
             closeTooltip();
           }
         }, 100);
@@ -3008,7 +3006,16 @@ class RewordlyContentScript {
 
     highlight.addEventListener('mouseleave', () => {
       tooltipTimeout = window.setTimeout(() => {
-        if (currentTooltip && !currentTooltip.matches(':hover') && !highlight.matches(':hover')) {
+        // Check if any highlight for this error is still hovered
+        const allHighlightsForError = this.highlightsContent?.querySelectorAll(
+          `[data-error-id="${error.id}"]`
+        ) || [];
+        const isAnyHighlightHovered = Array.from(allHighlightsForError).some(h => 
+          (h as HTMLElement).matches(':hover')
+        );
+        
+        const tooltip = this.activeTooltips.get(error.id);
+        if (tooltip && !tooltip.matches(':hover') && !isAnyHighlightHovered) {
           closeTooltip();
         }
       }, 100);
@@ -3232,6 +3239,8 @@ class RewordlyContentScript {
     allTooltips.forEach(tooltip => {
       tooltip.remove();
     });
+    // Clear the active tooltips map
+    this.activeTooltips.clear();
   }
 
   /**
