@@ -451,6 +451,98 @@ class RewordlyContentScript {
     if (element.getAttribute('contenteditable') === 'true') {
       element.addEventListener('textInput', this.boundHandleInput, true);
     }
+    
+    // Check if element already has text and perform grammar check
+    // Wait for element to be visible and rendered (especially for dynamic content like Google)
+    this.checkAndPerformGrammarCheckForExistingText(element);
+  }
+  
+  /**
+   * Check if element has existing text and perform grammar check when element is visible
+   */
+  private checkAndPerformGrammarCheckForExistingText(element: HTMLElement): void {
+    if (!this.config.enabled || !this.config.highlightsEnabled) {
+      return;
+    }
+    
+    // Check if element has text
+    let hasText = false;
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+      hasText = element.value.trim().length >= 3;
+    } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
+      hasText = (element.innerText || element.textContent || '').trim().length >= 3;
+    }
+    
+    if (!hasText || !this.isEditableElement(element)) {
+      return;
+    }
+    
+    // Check if element is visible
+    const isVisible = this.isElementVisible(element);
+    
+    if (isVisible) {
+      // Element is visible, perform grammar check immediately
+      setTimeout(() => {
+        if (this.isEditableElement(element)) {
+          this.performGrammarCheck(element);
+        }
+      }, 300); // Small delay to ensure element is fully rendered
+    } else {
+      // Element is not visible yet, wait for it to become visible
+      // Use IntersectionObserver to detect when element becomes visible
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && entry.intersectionRatio > 0) {
+            // Element is now visible, perform grammar check
+            setTimeout(() => {
+              if (this.isEditableElement(element)) {
+                this.performGrammarCheck(element);
+              }
+            }, 300);
+            observer.disconnect();
+          }
+        });
+      }, {
+        threshold: 0.1, // Trigger when at least 10% of element is visible
+        rootMargin: '50px' // Start checking slightly before element enters viewport
+      });
+      
+      observer.observe(element);
+      
+      // Also try after a delay in case IntersectionObserver doesn't work
+      setTimeout(() => {
+        if (this.isElementVisible(element) && this.isEditableElement(element)) {
+          this.performGrammarCheck(element);
+        }
+        observer.disconnect();
+      }, 2000); // Fallback: try after 2 seconds
+    }
+  }
+  
+  /**
+   * Check if element is visible in viewport
+   */
+  private isElementVisible(element: HTMLElement): boolean {
+    if (!element) return false;
+    
+    const rect = element.getBoundingClientRect();
+    const style = window.getComputedStyle(element);
+    
+    // Check if element has display: none or visibility: hidden
+    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+      return false;
+    }
+    
+    // Check if element has dimensions
+    if (rect.width === 0 && rect.height === 0) {
+      return false;
+    }
+    
+    // Check if element is in viewport (at least partially)
+    const isInViewport = rect.top < window.innerHeight && rect.bottom > 0 && 
+                         rect.left < window.innerWidth && rect.right > 0;
+    
+    return isInViewport;
   }
 
   /**
@@ -664,6 +756,7 @@ class RewordlyContentScript {
     }
     
     // Hide grammar errors/overlay when focus is lost (but don't delete)
+    // However, if element has text, keep highlights visible even without focus
     if (element && this.isEditableElement(element)) {
       // Small delay to allow for focus transfer (e.g., clicking on overlay)
       setTimeout(() => {
@@ -674,7 +767,18 @@ class RewordlyContentScript {
         
         // Check if element still doesn't have focus
         if (document.activeElement !== element) {
-          this.hideGrammarOverlay(element);
+          // Check if element has text - if it does, keep highlights visible
+          let hasText = false;
+          if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+            hasText = element.value.trim().length > 0;
+          } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
+            hasText = (element.innerText || element.textContent || '').trim().length > 0;
+          }
+          
+          // Only hide highlights if element has no text
+          if (!hasText) {
+            this.hideGrammarOverlay(element);
+          }
         }
       }, 100);
     }
@@ -1196,6 +1300,20 @@ class RewordlyContentScript {
           existingHighlight.setAttribute('data-error', JSON.stringify(error));
           existingHighlight.setAttribute('data-error-index', index.toString());
         }
+        
+        // If element has text, ensure highlight is visible (even if not focused)
+        let hasText = false;
+        if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+          hasText = element.value.trim().length > 0;
+        } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
+          hasText = (element.innerText || element.textContent || '').trim().length > 0;
+        }
+        
+        if (hasText) {
+          // Make sure highlight is visible
+          existingHighlight.style.display = '';
+          existingHighlight.removeAttribute('data-hidden-by-blur');
+        }
       } else {
         // New error or error position changed, create new highlight
         this.createHighlight(element, error, index);
@@ -1209,6 +1327,23 @@ class RewordlyContentScript {
         highlight.remove();
       }
     });
+
+    // If element has text, ensure all highlights are visible (even if not focused)
+    let hasText = false;
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+      hasText = element.value.trim().length > 0;
+    } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
+      hasText = (element.innerText || element.textContent || '').trim().length > 0;
+    }
+    
+    if (hasText && this.highlightsContent) {
+      const elementId = this.getElementId(element);
+      const allHighlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
+      allHighlights.forEach(highlight => {
+        (highlight as HTMLElement).style.display = '';
+        (highlight as HTMLElement).removeAttribute('data-hidden-by-blur');
+      });
+    }
 
     // Update highlights on scroll/resize
     this.updateHighlightsPosition(element);
