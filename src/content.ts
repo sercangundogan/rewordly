@@ -8,12 +8,17 @@ interface RewordlyConfig {
   enabled: boolean;
 }
 
+/**
+ * Grammar error with unique ID for reliable tracking.
+ * The ID persists across position updates, enabling correct handling of duplicate words.
+ */
 interface GrammarError {
-  start: number;
-  end: number;
-  word: string;
-  suggestions: string[];
-  type: 'grammar' | 'spelling';
+  id: string; // Unique identifier for this error instance (persists across replacements)
+  start: number; // Start position in text (may be updated after other replacements)
+  end: number; // End position in text (may be updated after other replacements)
+  word: string; // The error word/phrase
+  suggestions: string[]; // Correction suggestions
+  type: 'grammar' | 'spelling'; // Error type
 }
 
 interface GrammarCheckResponse {
@@ -52,8 +57,18 @@ class RewordlyContentScript {
   private boundHandleFocus = this.handleFocus.bind(this);
   private boundHandleBlur = this.handleBlur.bind(this);
 
+  // Error ID counter for generating unique IDs
+  private errorIdCounter = 0;
+
   constructor() {
     this.init();
+  }
+
+  /**
+   * Generate a unique ID for an error
+   */
+  private generateErrorId(): string {
+    return `error-${Date.now()}-${this.errorIdCounter++}`;
   }
 
   private async init(): Promise<void> {
@@ -647,6 +662,7 @@ class RewordlyContentScript {
       const start = text.indexOf(' goes ', goesIndex);
       if (start !== -1) {
         errors.push({
+          id: this.generateErrorId(),
           start: start + 1,
           end: start + 5,
           word: 'goes',
@@ -664,6 +680,7 @@ class RewordlyContentScript {
       if (buyedIndex === -1) break;
       
       errors.push({
+        id: this.generateErrorId(),
         start: buyedIndex,
         end: buyedIndex + 5,
         word: 'buyed',
@@ -691,6 +708,7 @@ class RewordlyContentScript {
           const start = text.indexOf(' have ', haveIndex);
           if (start !== -1) {
             errors.push({
+              id: this.generateErrorId(),
               start: start + 1,
               end: start + 5,
               word: 'have',
@@ -719,6 +737,7 @@ class RewordlyContentScript {
           const start = text.indexOf(' was ', wasIndex);
           if (start !== -1) {
             errors.push({
+              id: this.generateErrorId(),
               start: start + 1,
               end: start + 4,
               word: 'was',
@@ -747,6 +766,7 @@ class RewordlyContentScript {
           const start = text.indexOf(' do ', doIndex);
           if (start !== -1) {
             errors.push({
+              id: this.generateErrorId(),
               start: start + 1,
               end: start + 3,
               word: 'do',
@@ -775,6 +795,7 @@ class RewordlyContentScript {
           const start = text.indexOf(' are ', areIndex);
           if (start !== -1) {
             errors.push({
+              id: this.generateErrorId(),
               start: start + 1,
               end: start + 4,
               word: 'are',
@@ -887,8 +908,16 @@ class RewordlyContentScript {
    * Display grammar errors on an element using Grammarly-style highlights
    */
   private displayGrammarErrors(element: HTMLElement, errors: GrammarError[]): void {
+    // Ensure all errors have unique IDs (assign if missing from API response)
+    const errorsWithIds = errors.map(error => {
+      if (!error.id) {
+        return { ...error, id: this.generateErrorId() };
+      }
+      return error;
+    });
+
     // Store errors (empty array if no errors)
-    this.grammarErrors.set(element, errors);
+    this.grammarErrors.set(element, errorsWithIds);
 
     // Ensure highlights container exists
     if (!this.highlightsContainer || !this.highlightsShadowRoot || !this.highlightsContent) {
@@ -899,18 +928,19 @@ class RewordlyContentScript {
       }
     }
 
-    // Get existing highlights to compare by error position (not index)
+    // Get existing highlights to compare by error ID (most reliable)
     const elementId = this.getElementId(element);
     const existingHighlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
-    const existingErrorMap = new Map<string, HTMLElement>(); // Key: "start-end"
+    const existingErrorMap = new Map<string, HTMLElement>(); // Key: error ID
     
     existingHighlights.forEach((highlight) => {
       const errorData = (highlight as HTMLElement).getAttribute('data-error');
       if (errorData) {
         try {
           const error: GrammarError = JSON.parse(errorData);
-          const errorKey = `${error.start}-${error.end}`;
-          existingErrorMap.set(errorKey, highlight as HTMLElement);
+          if (error.id) {
+            existingErrorMap.set(error.id, highlight as HTMLElement);
+          }
         } catch (e) {
           // Error parsing, skip
         }
@@ -918,7 +948,7 @@ class RewordlyContentScript {
     });
 
     // If no errors, remove all highlights for this element
-    if (errors.length === 0) {
+    if (errorsWithIds.length === 0) {
       existingErrorMap.forEach((highlight) => {
         highlight.remove();
       });
@@ -934,7 +964,7 @@ class RewordlyContentScript {
     }
 
     // Filter out errors that are no longer valid (text changed, error position out of bounds)
-    const validErrors = errors.filter(error => {
+    const validErrors = errorsWithIds.filter(error => {
       if (error.start < 0 || error.end > text.length || error.start >= error.end) {
         return false;
       }
@@ -951,8 +981,7 @@ class RewordlyContentScript {
 
     // Update or create highlights for each valid error
     validErrors.forEach((error, index) => {
-      const errorKey = `${error.start}-${error.end}`;
-      const existingHighlight = existingErrorMap.get(errorKey);
+      const existingHighlight = existingErrorMap.get(error.id);
       
       if (existingHighlight) {
         // Same error position, just update position (text might have changed)
@@ -977,9 +1006,9 @@ class RewordlyContentScript {
     });
 
     // Remove highlights that no longer exist (errors that were fixed or removed)
-    const currentErrorKeys = new Set(validErrors.map(err => `${err.start}-${err.end}`));
-    existingErrorMap.forEach((highlight, errorKey) => {
-      if (!currentErrorKeys.has(errorKey)) {
+    const currentErrorIds = new Set(validErrors.map(err => err.id));
+    existingErrorMap.forEach((highlight, errorId) => {
+      if (!currentErrorIds.has(errorId)) {
         highlight.remove();
       }
     });
@@ -1810,6 +1839,7 @@ class RewordlyContentScript {
     highlight.setAttribute('data-highlight-color-name', 'red');
     highlight.setAttribute('data-element-id', this.getElementId(element));
     highlight.setAttribute('data-error-index', index.toString());
+    highlight.setAttribute('data-error-id', error.id); // Store error ID for quick lookup
     highlight.setAttribute('data-error', JSON.stringify(error));
     
     // Set position and size
@@ -2213,36 +2243,30 @@ class RewordlyContentScript {
 
     const highlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
     highlights.forEach((highlight) => {
-      const errorData = (highlight as HTMLElement).getAttribute('data-error');
-      if (!errorData) return;
+      const highlightErrorId = (highlight as HTMLElement).getAttribute('data-error-id');
+      if (!highlightErrorId) return;
 
-      try {
-        const storedError: GrammarError = JSON.parse(errorData);
-        // Find matching error by start/end position (not by index)
-        // First try exact match
-        let error = errors.find(err => err.start === storedError.start && err.end === storedError.end);
-        
-        // If not found, the stored error might have old position data
-        // In this case, we should use the stored error's position to find the rect
-        // But ideally, data-error should have been updated by replaceGrammarError
-        if (!error) {
-          // Use stored error position as fallback (might be outdated but better than nothing)
-          error = storedError;
-        } else {
-          // Update data-error attribute with current error data (in case suggestions changed)
-          (highlight as HTMLElement).setAttribute('data-error', JSON.stringify(error));
-        }
+      // Find matching error by ID (guaranteed unique match)
+      const error = errors.find(err => err.id === highlightErrorId);
+      
+      if (!error) {
+        // Error no longer exists, remove highlight
+        highlight.remove();
+        return;
+      }
 
-        const highlightRect = this.getErrorTextRect(element, error.start, error.end);
-        if (highlightRect) {
-          (highlight as HTMLElement).style.top = `${highlightRect.top}px`;
-          (highlight as HTMLElement).style.left = `${highlightRect.left}px`;
-          (highlight as HTMLElement).style.width = `${highlightRect.width}px`;
-          (highlight as HTMLElement).style.height = `${highlightRect.height}px`;
-        }
-      } catch (e) {
-        // Error parsing, skip
-        console.error('Rewordly: Error parsing error data in highlight:', e);
+      // Update data-error attribute with current error data (positions may have changed)
+      (highlight as HTMLElement).setAttribute('data-error', JSON.stringify(error));
+
+      const highlightRect = this.getErrorTextRect(element, error.start, error.end);
+      if (highlightRect) {
+        (highlight as HTMLElement).style.top = `${highlightRect.top}px`;
+        (highlight as HTMLElement).style.left = `${highlightRect.left}px`;
+        (highlight as HTMLElement).style.width = `${highlightRect.width}px`;
+        (highlight as HTMLElement).style.height = `${highlightRect.height}px`;
+      } else {
+        // Could not calculate position, remove highlight
+        highlight.remove();
       }
     });
   }
@@ -2268,39 +2292,13 @@ class RewordlyContentScript {
     highlight.addEventListener('mouseenter', () => {
       closeTooltip();
 
-      // Get current errors - these have the most up-to-date positions
+      // Get current errors
       const currentErrors = this.grammarErrors.get(element) || [];
       
-      // Find the current error that matches this highlight
-      // Try to match by the stored error's position first
-      let currentError = currentErrors.find(err => err.start === error.start && err.end === error.end);
+      // Find the current error by ID (guaranteed to find the exact error)
+      let currentError = currentErrors.find(err => err.id === error.id);
       
-      // If no exact match, try to find by matching the word
-      // This handles the case where positions were updated but highlight's data-error wasn't
-      if (!currentError) {
-        // Get current text
-        let text = '';
-        if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-          text = element.value;
-        } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
-          text = element.innerText || element.textContent || '';
-        }
-        
-        // Try to find error by word match at stored position
-        if (error.start >= 0 && error.end <= text.length && error.start < error.end) {
-          const wordAtStoredPosition = text.substring(error.start, error.end);
-          currentError = currentErrors.find(err => {
-            if (err.start >= 0 && err.end <= text.length && err.start < err.end) {
-              const errorWord = text.substring(err.start, err.end);
-              return errorWord.toLowerCase() === wordAtStoredPosition.toLowerCase() &&
-                     errorWord.toLowerCase() === error.word.toLowerCase();
-            }
-            return false;
-          });
-        }
-      }
-      
-      // If still no match, use the stored error (fallback)
+      // If error not found (shouldn't happen), use the stored error as fallback
       if (!currentError) {
         currentError = error;
       }
@@ -2348,36 +2346,19 @@ class RewordlyContentScript {
           const suggestion = (button as HTMLElement).getAttribute('data-suggestion');
           if (!suggestion) return;
 
-          // Get both word and position from the highlight's data-error attribute
-          // This ensures we replace the exact error that was clicked, not just any matching word
-          const highlightErrorData = highlight.getAttribute('data-error');
-          let wordToReplace = '';
-          let highlightStart = -1;
-          let highlightEnd = -1;
+          // Get error ID from the highlight - this uniquely identifies the exact error
+          const errorId = highlight.getAttribute('data-error-id');
           
-          if (highlightErrorData) {
-            try {
-              const highlightError: GrammarError = JSON.parse(highlightErrorData);
-              wordToReplace = highlightError.word || '';
-              highlightStart = highlightError.start;
-              highlightEnd = highlightError.end;
-            } catch (e) {
-              // Error parsing, use currentError as fallback
-              wordToReplace = currentError.word || '';
-              highlightStart = currentError.start;
-              highlightEnd = currentError.end;
-            }
-          } else {
-            wordToReplace = currentError.word || '';
-            highlightStart = currentError.start;
-            highlightEnd = currentError.end;
+          if (!errorId) {
+            console.error('Rewordly: No error ID found on highlight');
+            return;
           }
 
           closeTooltip();
           this.closeAllGrammarTooltips();
           
-          // Use position + word-based replacement to ensure we replace the exact error
-          this.replaceGrammarErrorByHighlight(element, wordToReplace, highlightStart, highlightEnd, suggestion);
+          // Use ID-based replacement to ensure we replace the exact error (handles duplicates perfectly)
+          this.replaceGrammarErrorByHighlight(element, errorId, suggestion);
         });
       });
 
@@ -2831,129 +2812,61 @@ class RewordlyContentScript {
   // }
 
   /**
-   * Replace grammar error by highlight position and word (most reliable - handles duplicate words)
+   * Replace grammar error by error ID (most reliable - handles duplicate words perfectly)
    */
   private replaceGrammarErrorByHighlight(
     element: HTMLElement, 
-    wordToReplace: string, 
-    highlightStart: number, 
-    highlightEnd: number, 
+    errorId: string,
     replacement: string
   ): void {
-    if (!wordToReplace) {
-      console.error('Rewordly: Cannot replace error - no word provided');
+    if (!errorId) {
+      console.error('Rewordly: Cannot replace error - no error ID provided');
       return;
-    }
-
-    // Get current text and errors
-    let currentText = '';
-    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-      currentText = element.value;
-    } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
-      currentText = element.innerText || element.textContent || '';
     }
 
     const currentErrors = this.grammarErrors.get(element) || [];
     
-    // First, try to find error by exact position match (most accurate)
-    let targetError = currentErrors.find(err => 
-      err.start === highlightStart && err.end === highlightEnd
-    );
-    
-    // If exact position match fails (positions may have shifted after other replacements),
-    // find the error that matches both word and is closest to the highlight position
-    if (!targetError) {
-      // Find all errors that match the word
-      const matchingErrors = currentErrors.filter(err => {
-        if (err.start >= 0 && err.end <= currentText.length && err.start < err.end) {
-          const errorWord = currentText.substring(err.start, err.end);
-          return errorWord.toLowerCase() === wordToReplace.toLowerCase();
-        }
-        return false;
-      });
-      
-      if (matchingErrors.length > 0) {
-        // Find the error closest to the highlight position
-        targetError = matchingErrors.reduce((closest, err) => {
-          const closestDistance = Math.abs(closest.start - highlightStart);
-          const errDistance = Math.abs(err.start - highlightStart);
-          return errDistance < closestDistance ? err : closest;
-        });
-      }
-    }
+    // Find error by unique ID - this is guaranteed to find the exact error clicked
+    const targetError = currentErrors.find(err => err.id === errorId);
 
     if (!targetError) {
       console.error('Rewordly: Could not find error to replace', { 
-        wordToReplace,
-        highlightStart,
-        highlightEnd,
+        errorId,
         currentErrors: currentErrors.map(e => ({
+          id: e.id,
           start: e.start,
           end: e.end,
-          word: e.word,
-          textAtPosition: e.start >= 0 && e.end <= currentText.length 
-            ? currentText.substring(e.start, e.end) 
-            : 'out of bounds'
+          word: e.word
         }))
       });
       return;
     }
 
-    // Use the found error's positions
-    this.replaceGrammarError(element, targetError.start, targetError.end, replacement);
+    // Use the found error to replace
+    this.replaceGrammarError(element, targetError.id, replacement);
   }
 
   /**
-   * Replace grammar error with suggestion
+   * Replace grammar error with suggestion using error ID
    */
-  private replaceGrammarError(element: HTMLElement, start: number, end: number, replacement: string): void {
+  private replaceGrammarError(element: HTMLElement, errorId: string, replacement: string): void {
     // Close all tooltips before replacement
     this.closeAllGrammarTooltips();
     
-    // Get current errors - these have the most up-to-date positions
+    // Get current errors
     const currentErrors = this.grammarErrors.get(element) || [];
     
-    // Find the error that matches the given start/end positions
-    // The positions might be outdated (from highlight's data-error), so we need to find the matching error
-    // First try exact match
-    let targetError = currentErrors.find(err => err.start === start && err.end === end);
+    // Find the error by its unique ID
+    const targetError = currentErrors.find(err => err.id === errorId);
     
-    // If no exact match, try to find by matching the word at that position
-    // This handles the case where positions were updated but highlight's data-error wasn't
     if (!targetError) {
-      // Get current text to find the word at the given position
-      let text = '';
-      if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-        text = element.value;
-      } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
-        text = element.innerText || element.textContent || '';
-      }
-      
-      // If position is out of bounds, try to find error by word match
-      if (start >= 0 && end <= text.length && start < end) {
-        const wordAtPosition = text.substring(start, end);
-        // Find error that matches this word (case-insensitive)
-        targetError = currentErrors.find(err => {
-          if (err.start >= 0 && err.end <= text.length && err.start < err.end) {
-            const errorWord = text.substring(err.start, err.end);
-            return errorWord.toLowerCase() === wordAtPosition.toLowerCase();
-          }
-          return false;
-        });
-      }
+      console.error('Rewordly: Could not find error to replace', { errorId, currentErrors });
+      return;
     }
     
-    // If still no match, use the provided start/end as-is (fallback)
-    // But log a warning
-    if (!targetError) {
-      console.warn('Rewordly: Could not find matching error for replacement', { start, end, currentErrors });
-      // Use provided positions as fallback
-      targetError = { start, end, word: '', suggestions: [], type: 'grammar' };
-    }
-    
-    // Use the actual error positions from currentErrors (most up-to-date)
-    let actualStart = targetError.start;
-    let actualEnd = targetError.end;
+    // Use the error's positions (they are always up-to-date)
+    const actualStart = targetError.start;
+    const actualEnd = targetError.end;
     
     // Validate positions against current text length
     let currentText = '';
@@ -2963,138 +2876,31 @@ class RewordlyContentScript {
       currentText = element.innerText || element.textContent || '';
     }
     
-    // If positions are out of bounds, try to find the error by word in current text
+    // Validate positions
     if (actualStart < 0 || actualEnd > currentText.length || actualStart >= actualEnd) {
-      console.warn('Rewordly: Error positions out of bounds, trying to find by word', { 
+      console.error('Rewordly: Invalid error positions', { 
         actualStart, 
         actualEnd, 
         textLength: currentText.length,
-        targetError 
+        errorId: targetError.id
       });
-      
-      // Try to get word from highlight's data-error attribute (more reliable)
-      let wordToFind = targetError.word?.toLowerCase() || '';
-      if (!wordToFind && this.highlightsContent) {
-        const elementId = this.getElementId(element);
-        const highlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
-        for (const highlight of highlights) {
-          const errorData = (highlight as HTMLElement).getAttribute('data-error');
-          if (errorData) {
-            try {
-              const highlightError: GrammarError = JSON.parse(errorData);
-              // Check if this highlight matches the original start/end positions
-              if (highlightError.start === start && highlightError.end === end) {
-                wordToFind = highlightError.word?.toLowerCase() || '';
-                if (wordToFind) break;
-              }
-            } catch (e) {
-              // Error parsing, skip
-            }
-          }
-        }
-      }
-      
-      if (wordToFind) {
-        // We have a word to find, search for it in current errors
-        const foundError = currentErrors.find(err => {
-          if (err.start >= 0 && err.end <= currentText.length && err.start < err.end) {
-            const errorWord = currentText.substring(err.start, err.end);
-            return errorWord.toLowerCase() === wordToFind;
-          }
-          return false;
-        });
-        
-        if (foundError) {
-          actualStart = foundError.start;
-          actualEnd = foundError.end;
-          console.log('Rewordly: Found error by word match', { actualStart, actualEnd });
-        } else {
-          console.error('Rewordly: Could not find error by word match', { 
-            wordToFind,
-            currentErrors: currentErrors.map(err => ({
-              start: err.start,
-              end: err.end,
-              word: err.word,
-              textAtPosition: err.start >= 0 && err.end <= currentText.length 
-                ? currentText.substring(err.start, err.end) 
-                : 'out of bounds'
-            }))
-          });
-          return; // Cannot proceed without finding the error
-        }
-      } else {
-        // No word available, try to find error by position proximity
-        const foundError = currentErrors.find(err => {
-          if (err.start >= 0 && err.end <= currentText.length && err.start < err.end) {
-            // Check if this error is near the original position (within reasonable range)
-            const positionDiff = Math.abs(err.start - start);
-            return positionDiff <= 10; // Allow up to 10 characters difference
-          }
-          return false;
-        });
-        
-        if (foundError) {
-          actualStart = foundError.start;
-          actualEnd = foundError.end;
-          console.log('Rewordly: Found error by position proximity', { actualStart, actualEnd });
-        } else {
-          // Last resort: try to find any error that hasn't been replaced yet
-          if (currentErrors.length > 0) {
-            // Use the first valid error as fallback
-            const firstValidError = currentErrors.find(err => 
-              err.start >= 0 && err.end <= currentText.length && err.start < err.end
-            );
-            if (firstValidError) {
-              actualStart = firstValidError.start;
-              actualEnd = firstValidError.end;
-              console.log('Rewordly: Using first valid error as fallback', { actualStart, actualEnd });
-            } else {
-              console.error('Rewordly: Could not find valid error positions', { 
-                originalStart: start, 
-                originalEnd: end,
-                actualStart, 
-                actualEnd, 
-                textLength: currentText.length,
-                currentErrors 
-              });
-              return; // Cannot proceed with invalid positions
-            }
-          } else {
-            console.error('Rewordly: No errors available to replace', { 
-              originalStart: start, 
-              originalEnd: end,
-              actualStart, 
-              actualEnd, 
-              textLength: currentText.length
-            });
-            return; // No errors to replace
-          }
-        }
-      }
+      return;
     }
     
-    // Remove only the replaced error's highlight (not all highlights)
+    // Remove only the replaced error's highlight (not all highlights) - match by ID
     if (this.highlightsContent) {
       const elementId = this.getElementId(element);
       const highlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
       highlights.forEach((highlight) => {
-        const errorData = (highlight as HTMLElement).getAttribute('data-error');
-        if (errorData) {
-          try {
-            const error: GrammarError = JSON.parse(errorData);
-            // Match by actual positions (most up-to-date)
-            if (error.start === actualStart && error.end === actualEnd) {
-              highlight.remove();
-            }
-          } catch (e) {
-            // Error parsing, skip
-          }
+        const highlightErrorId = (highlight as HTMLElement).getAttribute('data-error-id');
+        if (highlightErrorId === errorId) {
+          highlight.remove();
         }
       });
     }
     
-    // Update stored errors - remove the replaced error using actual positions
-    const updatedErrors = currentErrors.filter(err => !(err.start === actualStart && err.end === actualEnd));
+    // Update stored errors - remove the replaced error by ID
+    const updatedErrors = currentErrors.filter(err => err.id !== errorId);
     this.grammarErrors.set(element, updatedErrors);
     
     if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
@@ -3122,46 +2928,25 @@ class RewordlyContentScript {
       });
       this.grammarErrors.set(element, updatedErrorsAfterReplace);
       
-      // Update all highlight data-error attributes with new positions from updatedErrorsAfterReplace
+      // Update all highlight data-error attributes with new positions - match by ID
       // This ensures all highlights have the most up-to-date error data
       if (this.highlightsContent) {
         const elementId = this.getElementId(element);
         const highlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
         highlights.forEach((highlight) => {
-          const errorData = (highlight as HTMLElement).getAttribute('data-error');
-          if (!errorData) return;
+          const highlightErrorId = (highlight as HTMLElement).getAttribute('data-error-id');
+          if (!highlightErrorId) return;
           
-          try {
-            const storedError: GrammarError = JSON.parse(errorData);
-            // Find the updated error that matches this stored error
-            // First try position-based matching (more accurate)
-            let updatedError = updatedErrorsAfterReplace.find(err => {
-              // If error was after the replaced text, it was shifted
-              if (storedError.start > actualEnd) {
-                return err.start === storedError.start + lengthDiff && 
-                       err.end === storedError.end + lengthDiff;
-              }
-              // If error was before the replaced text, position didn't change
-              return err.start === storedError.start && err.end === storedError.end;
-            });
-            
-            // If position-based matching failed, try word-based matching (fallback)
-            if (!updatedError) {
-              updatedError = updatedErrorsAfterReplace.find(err => {
-                return err.word.toLowerCase() === storedError.word.toLowerCase();
-              });
-            }
-            
-            if (updatedError) {
-              // Update data-error attribute with new position
-              (highlight as HTMLElement).setAttribute('data-error', JSON.stringify(updatedError));
-            } else {
-              // If no match found, this highlight is for an error that no longer exists
-              // Remove it (shouldn't happen, but just in case)
-              highlight.remove();
-            }
-          } catch (e) {
-            // Error parsing, skip
+          // Find the updated error by ID (guaranteed unique match)
+          const updatedError = updatedErrorsAfterReplace.find(err => err.id === highlightErrorId);
+          
+          if (updatedError) {
+            // Update data-error attribute with new positions (ID remains the same)
+            (highlight as HTMLElement).setAttribute('data-error', JSON.stringify(updatedError));
+          } else {
+            // This error was removed, highlight should already be removed
+            // But remove it here as safety measure
+            highlight.remove();
           }
         });
       }
@@ -3187,34 +2972,14 @@ class RewordlyContentScript {
         // We need to simulate user typing to trigger Draft.js onChange
         this.replaceTextInDraftJS(element, actualStart, actualEnd, replacement);
         
-        // Remove only the replaced error's highlight (not all highlights)
-        if (this.highlightsContent) {
-          const elementId = this.getElementId(element);
-          const highlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
-          highlights.forEach((highlight) => {
-            const errorData = (highlight as HTMLElement).getAttribute('data-error');
-            if (errorData) {
-              try {
-                const error: GrammarError = JSON.parse(errorData);
-                // Match by actual positions (most up-to-date)
-                if (error.start === actualStart && error.end === actualEnd) {
-                  highlight.remove();
-                }
-              } catch (e) {
-                // Error parsing, skip
-              }
-            }
-          });
-        }
-        
         // Calculate length difference for position adjustment
         const replacementLength = replacement.length;
         const originalLength = actualEnd - actualStart;
         const lengthDiff = replacementLength - originalLength;
         
-        // Update stored errors - remove the replaced error and adjust positions
+        // Update stored errors - adjust positions but keep IDs intact
         const updatedErrorsAfterReplace = updatedErrors.map(err => {
-          // If error is after the replaced text, adjust its position
+          // If error is after the replaced text, adjust its position (keep ID!)
           if (err.start > actualEnd) {
             return {
               ...err,
@@ -3227,32 +2992,23 @@ class RewordlyContentScript {
         });
         this.grammarErrors.set(element, updatedErrorsAfterReplace);
         
-        // Update all highlight data-error attributes with new positions from updatedErrorsAfterReplace
+        // Update all highlight data-error attributes with new positions - match by ID
         if (this.highlightsContent) {
           const elementId = this.getElementId(element);
           const highlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
           highlights.forEach((highlight) => {
-            const errorData = (highlight as HTMLElement).getAttribute('data-error');
-            if (!errorData) return;
+            const highlightErrorId = (highlight as HTMLElement).getAttribute('data-error-id');
+            if (!highlightErrorId) return;
             
-            try {
-              const storedError: GrammarError = JSON.parse(errorData);
-              // Find the updated error that matches this stored error
-              // Match by word (case-insensitive) - this is more reliable than position matching
-              const updatedError = updatedErrorsAfterReplace.find(err => {
-                return err.word.toLowerCase() === storedError.word.toLowerCase();
-              });
-              
-              if (updatedError) {
-                // Update data-error attribute with new position
-                (highlight as HTMLElement).setAttribute('data-error', JSON.stringify(updatedError));
-              } else {
-                // If no match found, this highlight is for an error that no longer exists
-                // Remove it (shouldn't happen, but just in case)
-                highlight.remove();
-              }
-            } catch (e) {
-              // Error parsing, skip
+            // Find the updated error by ID
+            const updatedError = updatedErrorsAfterReplace.find(err => err.id === highlightErrorId);
+            
+            if (updatedError) {
+              // Update data-error attribute with new positions (ID remains the same)
+              (highlight as HTMLElement).setAttribute('data-error', JSON.stringify(updatedError));
+            } else {
+              // This error was removed
+              highlight.remove();
             }
           });
         }
@@ -3362,9 +3118,9 @@ class RewordlyContentScript {
           const originalLength = actualEnd - actualStart;
           const lengthDiff = replacementLength - originalLength;
           
-          // Update stored errors - remove the replaced error and adjust positions
+          // Update stored errors - adjust positions but keep IDs intact
           const updatedErrorsAfterReplace = updatedErrors.map(err => {
-            // If error is after the replaced text, adjust its position
+            // If error is after the replaced text, adjust its position (keep ID!)
             if (err.start > actualEnd) {
               return {
                 ...err,
@@ -3377,32 +3133,23 @@ class RewordlyContentScript {
           });
           this.grammarErrors.set(element, updatedErrorsAfterReplace);
           
-          // Update all highlight data-error attributes with new positions from updatedErrorsAfterReplace
+          // Update all highlight data-error attributes with new positions - match by ID
           if (this.highlightsContent) {
             const elementId = this.getElementId(element);
             const highlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
             highlights.forEach((highlight) => {
-              const errorData = (highlight as HTMLElement).getAttribute('data-error');
-              if (!errorData) return;
+              const highlightErrorId = (highlight as HTMLElement).getAttribute('data-error-id');
+              if (!highlightErrorId) return;
               
-              try {
-                const storedError: GrammarError = JSON.parse(errorData);
-                // Find the updated error that matches this stored error
-                // Match by word (case-insensitive) - this is more reliable than position matching
-                const updatedError = updatedErrorsAfterReplace.find(err => {
-                  return err.word.toLowerCase() === storedError.word.toLowerCase();
-                });
-                
-                if (updatedError) {
-                  // Update data-error attribute with new position
-                  (highlight as HTMLElement).setAttribute('data-error', JSON.stringify(updatedError));
-                } else {
-                  // If no match found, this highlight is for an error that no longer exists
-                  // Remove it (shouldn't happen, but just in case)
-                  highlight.remove();
-                }
-              } catch (e) {
-                // Error parsing, skip
+              // Find the updated error by ID
+              const updatedError = updatedErrorsAfterReplace.find(err => err.id === highlightErrorId);
+              
+              if (updatedError) {
+                // Update data-error attribute with new positions (ID remains the same)
+                (highlight as HTMLElement).setAttribute('data-error', JSON.stringify(updatedError));
+              } else {
+                // This error was removed
+                highlight.remove();
               }
             });
           }
@@ -3537,52 +3284,40 @@ class RewordlyContentScript {
       const originalLength = end - start;
       const lengthDiff = replacementLength - originalLength;
       
-      // Update stored errors - remove the replaced error and adjust positions
+      // Get the already-filtered errors (error was removed in replaceGrammarError)
       const currentErrors = this.grammarErrors.get(element) || [];
-      const updatedErrors = currentErrors
-        .filter(err => !(err.start === start && err.end === end))
-        .map(err => {
-          // If error is after the replaced text, adjust its position
-          if (err.start > end) {
-            return {
-              ...err,
-              start: err.start + lengthDiff,
-              end: err.end + lengthDiff
-            };
-          }
-          // If error overlaps with replaced text, it's already removed
-          return err;
-        });
+      
+      // Adjust positions for errors that come after the replacement
+      const updatedErrors = currentErrors.map(err => {
+        // If error is after the replaced text, adjust its position (keep ID!)
+        if (err.start > end) {
+          return {
+            ...err,
+            start: err.start + lengthDiff,
+            end: err.end + lengthDiff
+          };
+        }
+        return err;
+      });
       this.grammarErrors.set(element, updatedErrors);
       
-      // Update highlight data-error attributes with new positions
+      // Update highlight data-error attributes with new positions - match by ID
       if (this.highlightsContent) {
         const elementId = this.getElementId(element);
         const highlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
         highlights.forEach((highlight) => {
-          const errorData = (highlight as HTMLElement).getAttribute('data-error');
-          if (!errorData) return;
+          const highlightErrorId = (highlight as HTMLElement).getAttribute('data-error-id');
+          if (!highlightErrorId) return;
           
-          try {
-            const storedError: GrammarError = JSON.parse(errorData);
-            // Find the updated error that matches this stored error
-            // Match by original position before update
-            const updatedError = updatedErrors.find(err => {
-              // If error was after the replaced text, it was shifted
-              if (storedError.start > end) {
-                return err.start === storedError.start + lengthDiff && 
-                       err.end === storedError.end + lengthDiff;
-              }
-              // If error was before the replaced text, position didn't change
-              return err.start === storedError.start && err.end === storedError.end;
-            });
-            
-            if (updatedError) {
-              // Update data-error attribute with new position
-              (highlight as HTMLElement).setAttribute('data-error', JSON.stringify(updatedError));
-            }
-          } catch (e) {
-            // Error parsing, skip
+          // Find the updated error by ID
+          const updatedError = updatedErrors.find(err => err.id === highlightErrorId);
+          
+          if (updatedError) {
+            // Update data-error attribute with new positions (ID remains the same)
+            (highlight as HTMLElement).setAttribute('data-error', JSON.stringify(updatedError));
+          } else {
+            // This error was removed
+            highlight.remove();
           }
         });
       }
