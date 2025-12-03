@@ -1054,8 +1054,21 @@ class RewordlyContentScript {
     this.grammarErrors.set(element, validErrors);
 
     // Update or create highlights for each valid error
+    console.log('Rewordly: Processing validErrors', { 
+      count: validErrors.length, 
+      existingCount: existingErrorMap.size,
+      highlightsContentExists: !!this.highlightsContent 
+    });
+    
     validErrors.forEach((error, index) => {
       const existingHighlight = existingErrorMap.get(error.id);
+      
+      console.log('Rewordly: Processing error', { 
+        index, 
+        errorId: error.id, 
+        hasExisting: !!existingHighlight,
+        word: error.word 
+      });
       
       if (existingHighlight) {
         // Same error position, just update position (text might have changed)
@@ -1909,7 +1922,16 @@ class RewordlyContentScript {
    * Create a single highlight for an error
    */
   private createHighlight(element: HTMLElement, error: GrammarError, index: number): void {
-    if (!this.highlightsContent) return;
+    console.log('Rewordly: createHighlight CALLED', { 
+      errorWord: error.word, 
+      index,
+      highlightsContentExists: !!this.highlightsContent 
+    });
+    
+    if (!this.highlightsContent) {
+      console.log('Rewordly: createHighlight RETURNING - no highlightsContent');
+      return;
+    }
 
     // Get text from element
     let text = '';
