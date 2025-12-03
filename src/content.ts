@@ -44,7 +44,6 @@ class RewordlyContentScript {
   // Real-time grammar checking
   private grammarCheckTimeout: number | null = null;
   private grammarErrors: Map<HTMLElement, GrammarError[]> = new Map();
-  private grammarSpinner: HTMLDivElement | null = null;
   private editableElements: Set<HTMLElement> = new Set();
   
   // Track dismissed errors: key = elementId + word + start, value = true
@@ -95,9 +94,6 @@ class RewordlyContentScript {
     
     // Create modal (initially hidden)
     this.createModal();
-    
-    // Create grammar spinner
-    this.createGrammarSpinner();
     
     // Create Grammarly-style highlights container
     this.createHighlightsContainer();
@@ -674,8 +670,6 @@ class RewordlyContentScript {
     }
 
     // Don't clear existing errors - keep overlays visible while user is typing
-    // Only hide spinner if it was showing
-    this.hideGrammarSpinner();
 
     // Only perform grammar check if highlights are enabled
     if (this.config.highlightsEnabled) {
@@ -731,9 +725,6 @@ class RewordlyContentScript {
       clearTimeout(this.grammarCheckTimeout);
       this.grammarCheckTimeout = null;
     }
-    
-    // Hide spinner
-    this.hideGrammarSpinner();
     
     // Hide AI button when focus is lost (with delay to allow button click)
     // Check if the blur is caused by clicking the button
@@ -816,21 +807,14 @@ class RewordlyContentScript {
     (element as any).__rewordlyTextSource = textSource;
     (element as any).__rewordlyText = text;
 
-    // Show spinner
-    this.showGrammarSpinner(element);
-
     try {
       // Call real API
       const response = await this.checkGrammarAPI(text);
-      
-      // Hide spinner
-      this.hideGrammarSpinner();
       
       // Display errors (or clear if no errors)
       this.displayGrammarErrors(element, response.errors);
     } catch (error) {
       console.error('Rewordly: Grammar check error:', error);
-      this.hideGrammarSpinner();
       // Fallback to mock if API fails (for development)
       try {
         const mockResponse = this.mockGrammarCheck(text);
@@ -2848,107 +2832,6 @@ class RewordlyContentScript {
   }
 
   /**
-   * Create grammar spinner
-   */
-  private createGrammarSpinner(): void {
-    this.grammarSpinner = document.createElement('div');
-    this.grammarSpinner.className = 'rewordly-grammar-spinner';
-    this.grammarSpinner.innerHTML = `
-      <div class="rewordly-grammar-spinner-icon"></div>
-      <span class="rewordly-grammar-spinner-text">Checking grammar...</span>
-    `;
-    this.grammarSpinner.style.cssText = `
-      position: fixed !important;
-      display: none !important;
-      align-items: center !important;
-      gap: 8px !important;
-      background: white !important;
-      padding: 8px 12px !important;
-      border-radius: 6px !important;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
-      z-index: 2147483646 !important;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
-      font-size: 12px !important;
-      color: #374151 !important;
-      visibility: hidden !important;
-      opacity: 0 !important;
-      pointer-events: none !important;
-    `;
-    document.body.appendChild(this.grammarSpinner);
-  }
-
-  /**
-   * Show grammar spinner near the cursor position
-   */
-  private showGrammarSpinner(element: HTMLElement): void {
-    if (!this.grammarSpinner) {
-      return;
-    }
-    
-    let caretRect: DOMRect | null = null;
-    
-    // Get cursor position based on element type
-    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-      caretRect = this.getInputTextareaSelectionRect(element);
-    } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
-      caretRect = this.getContentEditableCaretRect(element);
-    }
-    
-    // Fallback to element position if caret position not available
-    if (!caretRect || caretRect.width === 0 && caretRect.height === 0) {
-      const rect = element.getBoundingClientRect();
-      caretRect = new DOMRect(
-        rect.left,
-        rect.top,
-        0,
-        rect.height
-      );
-    }
-    
-    // Position spinner at bottom-right of cursor
-    // Note: getBoundingClientRect() returns viewport coordinates, no need to add scroll offset for fixed positioning
-    const spinnerWidth = 150; // Approximate spinner width
-    const spinnerHeight = 40; // Approximate spinner height
-    const offsetX = 10; // Offset from cursor
-    const offsetY = 5; // Offset from cursor
-    
-    // Use viewport coordinates directly (getBoundingClientRect already gives viewport coords)
-    let left = caretRect.right + offsetX;
-    let top = caretRect.bottom + offsetY;
-    
-    // Check if spinner would go off screen, adjust if needed
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    
-    // If spinner would go off right edge, position to left of cursor
-    if (left + spinnerWidth > viewportWidth) {
-      left = caretRect.left - spinnerWidth - offsetX;
-    }
-    
-    // If spinner would go off bottom edge, position above cursor
-    if (top + spinnerHeight > viewportHeight) {
-      top = caretRect.top - spinnerHeight - offsetY;
-    }
-    
-    // Ensure spinner is always visible within viewport
-    left = Math.max(10, Math.min(left, viewportWidth - spinnerWidth - 10));
-    top = Math.max(10, Math.min(top, viewportHeight - spinnerHeight - 10));
-    
-    // Set position using fixed positioning (no scroll offset needed)
-    this.grammarSpinner.style.setProperty('position', 'fixed', 'important');
-    this.grammarSpinner.style.setProperty('top', `${top}px`, 'important');
-    this.grammarSpinner.style.setProperty('left', `${left}px`, 'important');
-    this.grammarSpinner.style.setProperty('display', 'flex', 'important');
-    this.grammarSpinner.style.setProperty('visibility', 'visible', 'important');
-    this.grammarSpinner.style.setProperty('opacity', '1', 'important');
-    this.grammarSpinner.style.setProperty('pointer-events', 'none', 'important');
-    this.grammarSpinner.style.setProperty('z-index', '2147483646', 'important');
-    
-    // Force a reflow to ensure styles are applied
-    void this.grammarSpinner.offsetHeight;
-  }
-
-  /**
    * Get caret position for contenteditable elements
    */
   private getContentEditableCaretRect(element: HTMLElement): DOMRect | null {
@@ -3103,17 +2986,6 @@ class RewordlyContentScript {
         0,
         elementRect.height || 20
       );
-    }
-  }
-
-  /**
-   * Hide grammar spinner
-   */
-  private hideGrammarSpinner(): void {
-    if (this.grammarSpinner) {
-      this.grammarSpinner.style.setProperty('display', 'none', 'important');
-      this.grammarSpinner.style.setProperty('visibility', 'hidden', 'important');
-      this.grammarSpinner.style.setProperty('opacity', '0', 'important');
     }
   }
 
