@@ -224,6 +224,45 @@
       font-size: 16px;
     }
     
+    .contact-section {
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid #e5e7eb;
+    }
+    
+    .contact-text {
+      text-align: center;
+      font-size: 14px;
+      color: #6b7280;
+      margin: 0 0 12px 0;
+      font-weight: 500;
+    }
+    
+    .contact-link {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 12px 16px;
+      background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+      color: white;
+      text-decoration: none;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 14px;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+    }
+    
+    .contact-link:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(59, 130, 246, 0.4);
+    }
+    
+    .contact-icon {
+      margin-right: 8px;
+      font-size: 16px;
+    }
+    
     .status {
       margin-top: 16px;
       padding: 12px 16px;
@@ -352,10 +391,6 @@
     </div>
     
     <div class="content">
-      <div id="api-key-status">
-        <!-- API status will be dynamically updated -->
-      </div>
-      
       <div class="toggle-section">
         <div class="toggle-container">
           <span class="toggle-label">Enable Extension</span>
@@ -363,10 +398,26 @@
         </div>
       </div>
       
+      <div class="toggle-section">
+        <div class="toggle-container">
+          <span class="toggle-label">Real-time Grammar Check</span>
+          <button class="toggle" id="highlightsToggle" type="button" aria-label="Toggle real-time grammar check"></button>
+        </div>
+        <p style="margin: 8px 0 0 0; font-size: 13px; color: #6b7280;">Show grammar and spelling errors as you type</p>
+      </div>
+      
       <a href="https://coff.ee/sercangundogan" target="_blank" class="coffee-link">
         <span class="coffee-icon">☕</span>
         Buy me a coffee
       </a>
+      
+      <div class="contact-section">
+        <p class="contact-text">Have feedback or questions?</p>
+        <a href="mailto:sercangundogan35@gmail.com" class="contact-link">
+          <span class="contact-icon">✉️</span>
+          Contact Us
+        </a>
+      </div>
     </div>
     
     <div class="footer">

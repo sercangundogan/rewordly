@@ -5,14 +5,17 @@
 
 interface RewordlySettings {
   enabled: boolean;
+  highlightsEnabled: boolean;
 }
 
 class RewordlyPopup {
   private settings: RewordlySettings = {
-    enabled: true
+    enabled: true,
+    highlightsEnabled: true
   };
 
   private enabledToggle: HTMLButtonElement | null = null;
+  private highlightsToggle: HTMLButtonElement | null = null;
 
   constructor() {
     this.init();
@@ -21,6 +24,7 @@ class RewordlyPopup {
   private async init(): Promise<void> {
     // Initialize UI elements
     this.enabledToggle = document.getElementById('enabledToggle') as HTMLButtonElement;
+    this.highlightsToggle = document.getElementById('highlightsToggle') as HTMLButtonElement;
     
     // Load settings
     await this.loadSettings();
@@ -31,8 +35,9 @@ class RewordlyPopup {
 
   private async loadSettings(): Promise<void> {
     try {
-      const result = await chrome.storage.sync.get(['rewordlyEnabled']);
+      const result = await chrome.storage.sync.get(['rewordlyEnabled', 'rewordlyHighlightsEnabled']);
       this.settings.enabled = result['rewordlyEnabled'] !== false;
+      this.settings.highlightsEnabled = result['rewordlyHighlightsEnabled'] !== false;
       
       this.updateUI();
     } catch (error) {
@@ -41,9 +46,13 @@ class RewordlyPopup {
   }
 
   private setupEventListeners(): void {
-    // Toggle switch
+    // Toggle switches
     if (this.enabledToggle) {
       this.enabledToggle.addEventListener('click', this.toggleEnabled.bind(this));
+    }
+    
+    if (this.highlightsToggle) {
+      this.highlightsToggle.addEventListener('click', this.toggleHighlights.bind(this));
     }
   }
 
@@ -56,20 +65,12 @@ class RewordlyPopup {
       }
     }
     
-    // Update API status
-    const apiStatus = document.getElementById('api-key-status');
-    if (apiStatus) {
-      apiStatus.innerHTML = `
-        <div class="status-card">
-          <div class="status-header">
-            <div class="status-icon"></div>
-            <div class="status-title">API Ready</div>
-          </div>
-          <p class="status-description">
-            Rewordly API is ready to use. No API key required.
-          </p>
-        </div>
-      `;
+    if (this.highlightsToggle) {
+      if (this.settings.highlightsEnabled) {
+        this.highlightsToggle.classList.add('active');
+      } else {
+        this.highlightsToggle.classList.remove('active');
+      }
     }
   }
 
@@ -88,10 +89,26 @@ class RewordlyPopup {
     await this.saveSettings();
   }
 
+  private async toggleHighlights(): Promise<void> {
+    this.settings.highlightsEnabled = !this.settings.highlightsEnabled;
+    
+    if (this.highlightsToggle) {
+      if (this.settings.highlightsEnabled) {
+        this.highlightsToggle.classList.add('active');
+      } else {
+        this.highlightsToggle.classList.remove('active');
+      }
+    }
+
+    // Auto-save settings
+    await this.saveSettings();
+  }
+
   private async saveSettings(): Promise<void> {
     try {
       await chrome.storage.sync.set({
-        rewordlyEnabled: this.settings.enabled
+        rewordlyEnabled: this.settings.enabled,
+        rewordlyHighlightsEnabled: this.settings.highlightsEnabled
       });
 
       this.showSuccessMessage();
