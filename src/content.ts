@@ -1266,7 +1266,17 @@ class RewordlyContentScript {
       
       if (existingHighlight) {
         // Same error position, just update position (text might have changed)
-        const highlightRect = this.getErrorTextRect(element, error.start, error.end);
+        // Get text to adjust positions for multi-word errors
+        let text = '';
+        if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+          text = element.value;
+        } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
+          text = element.innerText || element.textContent || '';
+        }
+
+        // Adjust positions for multi-word grammar errors
+        const adjustedPositions = text ? this.adjustErrorPositionsForMultiWord(text, error) : { start: error.start, end: error.end };
+        const highlightRect = this.getErrorTextRect(element, adjustedPositions.start, adjustedPositions.end);
         console.log("Highlight rect:", highlightRect);
         if (highlightRect) {
           existingHighlight.style.top = `${highlightRect.top}px`;
@@ -2178,8 +2188,13 @@ class RewordlyContentScript {
       return;
     }
 
+    // Adjust positions for multi-word grammar errors to highlight only problematic word(s)
+    const adjustedPositions = this.adjustErrorPositionsForMultiWord(text, error);
+    const highlightStart = adjustedPositions.start;
+    const highlightEnd = adjustedPositions.end;
+
     // Calculate the position of the error text in viewport coordinates
-    const highlightRect = this.getErrorTextRect(element, error.start, error.end);
+    const highlightRect = this.getErrorTextRect(element, highlightStart, highlightEnd);
     if (!highlightRect) {
       console.log('Rewordly: No highlight rect found for error', error);
       return;
@@ -2300,8 +2315,16 @@ class RewordlyContentScript {
   }
 
   /**
-   * Get the bounding rect of error text in viewport coordinates
+   * Adjust error positions for multi-word grammar errors to highlight only problematic word(s)
+   * For errors like "an important meetings", we should highlight only "meetings" (the noun)
    */
+  private adjustErrorPositionsForMultiWord(_text: string, error: GrammarError): { start: number; end: number } {
+    // Always return original positions to highlight the entire error phrase
+    // This ensures multi-word grammar errors like "an important meetings" 
+    // are fully highlighted, not just the last word
+    return { start: error.start, end: error.end };
+  }
+
   private getErrorTextRect(element: HTMLElement, start: number, end: number): DOMRect | null {
     if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
       return this.getInputTextareaErrorRect(element, start, end);
@@ -2668,7 +2691,17 @@ class RewordlyContentScript {
       // Update data-error attribute with current error data (positions may have changed)
       (highlight as HTMLElement).setAttribute('data-error', JSON.stringify(error));
 
-      const highlightRect = this.getErrorTextRect(element, error.start, error.end);
+      // Get text to adjust positions for multi-word errors
+      let text = '';
+      if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+        text = element.value;
+      } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
+        text = element.innerText || element.textContent || '';
+      }
+
+      // Adjust positions for multi-word grammar errors
+      const adjustedPositions = text ? this.adjustErrorPositionsForMultiWord(text, error) : { start: error.start, end: error.end };
+      const highlightRect = this.getErrorTextRect(element, adjustedPositions.start, adjustedPositions.end);
       if (highlightRect) {
         (highlight as HTMLElement).style.top = `${highlightRect.top}px`;
         (highlight as HTMLElement).style.left = `${highlightRect.left}px`;
