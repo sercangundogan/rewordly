@@ -2507,15 +2507,6 @@ class RewordlyContentScript {
     return { start: error.start, end: error.end };
   }
 
-  /**
-   * Get single error rect (backward compatibility)
-   * @deprecated Use getErrorTextRects for multi-line support
-   */
-  private getErrorTextRect(element: HTMLElement, start: number, end: number): DOMRect | null {
-    const rects = this.getErrorTextRects(element, start, end);
-    // Return first rect for backward compatibility, or null if no rects
-    return rects.length > 0 ? (rects[0] ?? null) : null;
-  }
 
   /**
    * Get all rects for error text (supports multi-line highlights)
@@ -2808,16 +2799,6 @@ class RewordlyContentScript {
   /**
    * Get error rect for contenteditable elements
    */
-  /**
-   * Get single error rect (backward compatibility)
-   * @deprecated Use getContentEditableErrorRects for multi-line support
-   */
-  private getContentEditableErrorRect(element: HTMLElement, start: number, end: number): DOMRect | null {
-    const rects = this.getContentEditableErrorRects(element, start, end);
-    // Return first rect for backward compatibility, or null if no rects
-    const firstRect = rects[0];
-    return firstRect ?? null;
-  }
 
   /**
    * Get error rects for contenteditable elements (supports multi-line)
@@ -3155,163 +3136,6 @@ class RewordlyContentScript {
     });
   }
 
-  /**
-   * Get caret position for contenteditable elements
-   */
-  private getContentEditableCaretRect(element: HTMLElement): DOMRect | null {
-    try {
-      const selection = window.getSelection();
-      if (!selection || selection.rangeCount === 0) {
-        return null;
-      }
-      
-      const range = selection.getRangeAt(0);
-      
-      // Check if range is within our element
-      if (!element.contains(range.commonAncestorContainer)) {
-        return null;
-      }
-      
-      // If range is collapsed (cursor position), use it directly
-      if (range.collapsed) {
-        // Try multiple methods to get caret position
-        
-        // Method 1: Use getClientRects() for collapsed range
-        const clientRects = range.getClientRects();
-        if (clientRects && clientRects.length > 0) {
-          const rect = clientRects[0];
-          if (rect && (rect.width > 0 || rect.height > 0)) {
-            return new DOMRect(
-              rect.left,
-              rect.top,
-              0,
-              rect.height || 20
-            );
-          }
-        }
-        
-        // Method 2: Create a temporary span to get exact caret position
-        const span = document.createElement('span');
-        span.style.cssText = 'position: absolute; visibility: hidden; white-space: pre; pointer-events: none;';
-        span.textContent = '\u200b'; // Zero-width space
-        
-        try {
-          // Clone range to avoid modifying the original
-          const clonedRange = range.cloneRange();
-          clonedRange.insertNode(span);
-          
-          const spanRect = span.getBoundingClientRect();
-          
-          // Calculate caret position relative to viewport
-          const caretX = spanRect.left;
-          const caretY = spanRect.top;
-          const caretHeight = spanRect.height || parseFloat(window.getComputedStyle(element).lineHeight) || 20;
-          
-          // Remove the temporary span
-          span.remove();
-          
-          // If we got valid coordinates
-          if (caretX > 0 && caretY > 0) {
-            return new DOMRect(
-              caretX,
-              caretY,
-              0,
-              caretHeight
-            );
-          }
-        } catch (e) {
-        }
-        
-        // Method 3: Use getBoundingClientRect on range
-        try {
-          const rangeRect = range.getBoundingClientRect();
-          if (rangeRect && (rangeRect.width > 0 || rangeRect.height > 0)) {
-            return new DOMRect(
-              rangeRect.left,
-              rangeRect.top,
-              0,
-              rangeRect.height || 20
-            );
-          }
-        } catch (e) {
-        }
-        
-        // Method 4: Fallback - use focus node position
-        const focusNode = selection.focusNode;
-        if (focusNode) {
-          let node: Node = focusNode;
-          if (node.nodeType === Node.TEXT_NODE && node.parentElement) {
-            node = node.parentElement;
-          }
-          
-          if (node.nodeType === Node.ELEMENT_NODE) {
-            const nodeRect = (node as Element).getBoundingClientRect();
-            return new DOMRect(
-              nodeRect.left,
-              nodeRect.top,
-              0,
-              nodeRect.height || 20
-            );
-          }
-        }
-        
-        // Final fallback - use element position
-        const elementRect = element.getBoundingClientRect();
-        return new DOMRect(
-          elementRect.left,
-          elementRect.top,
-          0,
-          elementRect.height || 20
-        );
-      } else {
-        // If there's a selection, use the end of selection
-        const endRange = range.cloneRange();
-        endRange.collapse(false); // Collapse to end
-        
-        const endRects = endRange.getClientRects();
-        if (endRects && endRects.length > 0) {
-          const endRect = endRects[endRects.length - 1];
-          if (endRect) {
-            return new DOMRect(
-              endRect.right,
-              endRect.top,
-              0,
-              endRect.height || 20
-            );
-          }
-        }
-        
-        const endRect = endRange.getBoundingClientRect();
-        if (endRect) {
-          return new DOMRect(
-            endRect.right,
-            endRect.top,
-            0,
-            endRect.height || 20
-          );
-        }
-        
-        // Final fallback for selection - use element position
-        const elementRect = element.getBoundingClientRect();
-        return new DOMRect(
-          elementRect.right,
-          elementRect.top,
-          0,
-          elementRect.height || 20
-        );
-      }
-    } catch (e) {
-      console.error('Rewordly: Error getting contenteditable caret position:', e);
-      // Fallback to element position
-      const elementRect = element.getBoundingClientRect();
-      return new DOMRect(
-        elementRect.left,
-        elementRect.top,
-        0,
-        elementRect.height || 20
-      );
-    }
-  }
 
   /**
    * Escape HTML to prevent XSS
@@ -4063,6 +3887,20 @@ class RewordlyContentScript {
             this.hideAllGrammarHighlights();
           }
         });
+      } else if (request.type === 'CONTEXT_MENU_CLICKED') {
+        // Handle context menu clicks - open modal and process text
+        const selectedText = request.selectedText || '';
+        
+        if (!selectedText || selectedText.trim().length < 3) {
+          console.warn('Rewordly: Selected text is too short');
+          return;
+        }
+        
+        if (request.action === 'rewrite') {
+          this.handleContextMenuRewrite(selectedText);
+        } else if (request.action === 'grammar') {
+          this.handleContextMenuGrammar(selectedText);
+        }
       }
     });
   }
@@ -4673,6 +4511,54 @@ class RewordlyContentScript {
     return;
   }
 
+  /**
+   * Handle rewrite action from context menu
+   */
+  private async handleContextMenuRewrite(selectedText: string): Promise<void> {
+    if (!selectedText || selectedText.trim().length < 3) {
+      return;
+    }
+
+    this.currentOperation = 'rewrite';
+    this.selectedText = selectedText;
+    this.showModal();
+    this.isProcessing = true;
+
+    try {
+      const rewrittenText = await this.rewriteText(selectedText);
+      this.displayRewrittenText(rewrittenText);
+    } catch (error) {
+      console.error('Rewordly: Error rewriting text:', error);
+      this.showError('Failed to rewrite text. Please try again.');
+    } finally {
+      this.isProcessing = false;
+    }
+  }
+
+  /**
+   * Handle grammar check action from context menu
+   */
+  private async handleContextMenuGrammar(selectedText: string): Promise<void> {
+    if (!selectedText || selectedText.trim().length < 3) {
+      return;
+    }
+
+    this.currentOperation = 'grammar';
+    this.selectedText = selectedText;
+    this.showModal();
+    this.isProcessing = true;
+
+    try {
+      const correctedText = await this.grammarText(selectedText);
+      this.displayRewrittenText(correctedText);
+    } catch (error) {
+      console.error('Rewordly: Error checking grammar:', error);
+      this.showError('Failed to check grammar. Please try again.');
+    } finally {
+      this.isProcessing = false;
+    }
+  }
+
   private async rewriteText(text: string): Promise<string> {
     const response = await fetch('https://rewordly-web.vercel.app/api/rewrite', {
       method: 'POST',
@@ -4695,13 +4581,14 @@ class RewordlyContentScript {
   // @ts-ignore - Kept for compatibility, no longer used
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private async grammarText(_text: string): Promise<string> {
-    const response = await fetch('https://rewordly-web.vercel.app/api/grammar', {
+    const response = await fetch('http://localhost:3000/api/grammar', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        text: _text
+        text: _text,
+        mode: "ai"
       })
     });
 

@@ -5,6 +5,28 @@
 
 // Handle extension installation and updates
 chrome.runtime.onInstalled.addListener(async (details) => {
+  // Create context menu items
+  chrome.contextMenus.create({
+    id: 'rewordly-menu',
+    title: 'Rewordly',
+    contexts: ['selection'] // Only show when text is selected
+  });
+
+  // Create sub-menu items
+  chrome.contextMenus.create({
+    id: 'rewordly-rewrite',
+    parentId: 'rewordly-menu',
+    title: 'Rewrite Text',
+    contexts: ['selection']
+  });
+
+  chrome.contextMenus.create({
+    id: 'rewordly-grammar',
+    parentId: 'rewordly-menu',
+    title: 'Check Grammar',
+    contexts: ['selection']
+  });
+
   const manifest = chrome.runtime.getManifest();
   const currentVersion = manifest.version;
 
@@ -39,6 +61,57 @@ chrome.runtime.onInstalled.addListener(async (details) => {
       
       console.log(`Rewordly updated from ${details.previousVersion} to ${currentVersion}`);
     }
+  }
+});
+
+// Handle context menu clicks
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  // Log in service worker console
+  console.log('Rewordly: Context menu clicked!', {
+    menuItemId: info.menuItemId,
+    selectedText: info.selectionText,
+    tabId: tab?.id,
+    tabUrl: tab?.url
+  });
+
+  if (info.menuItemId === 'rewordly-rewrite') {
+    console.log('✅ Rewordly: Rewrite option clicked!', {
+      selectedText: info.selectionText,
+      tabId: tab?.id
+    });
+    
+    // Also log in page console via content script
+    if (tab?.id) {
+      try {
+        await chrome.tabs.sendMessage(tab.id, {
+          type: 'CONTEXT_MENU_CLICKED',
+          action: 'rewrite',
+          selectedText: info.selectionText
+        });
+      } catch (error) {
+        console.error('Rewordly: Could not send message to content script:', error);
+      }
+    }
+  } else if (info.menuItemId === 'rewordly-grammar') {
+    console.log('✅ Rewordly: Grammar check option clicked!', {
+      selectedText: info.selectionText,
+      tabId: tab?.id
+    });
+    
+    // Also log in page console via content script
+    if (tab?.id) {
+      try {
+        await chrome.tabs.sendMessage(tab.id, {
+          type: 'CONTEXT_MENU_CLICKED',
+          action: 'grammar',
+          selectedText: info.selectionText
+        });
+      } catch (error) {
+        console.error('Rewordly: Could not send message to content script:', error);
+      }
+    }
+  } else {
+    console.log('⚠️ Rewordly: Unknown menu item clicked:', info.menuItemId);
   }
 });
 
