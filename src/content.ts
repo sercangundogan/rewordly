@@ -52,6 +52,10 @@ class RewordlyContentScript {
   // Track active tooltips by error ID to prevent duplicates
   private activeTooltips: Map<string, HTMLElement> = new Map();
   
+  // Ignore list for elements that should not have grammar checking
+  // Stores element IDs (from getElementId) that should be ignored
+  private ignoredElementIds: Set<string> = new Set();
+  
   // Grammarly-style highlights container
   private highlightsContainer: HTMLElement | null = null;
   private highlightsShadowRoot: ShadowRoot | null = null;
@@ -422,6 +426,14 @@ class RewordlyContentScript {
 
     this.editableElements.add(element);
     
+    // Check if this element should be ignored (e.g., Gmail's "To" field)
+    if (this.shouldIgnoreElement(element)) {
+      const elementId = this.getElementId(element);
+      this.ignoredElementIds.add(elementId);
+      console.log('Rewordly: Element added to ignore list', { elementId, element: element.tagName });
+      return; // Don't attach grammar checking to ignored elements
+    }
+    
     // Disable browser's native spell check
     if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
       element.spellcheck = false;
@@ -782,6 +794,12 @@ class RewordlyContentScript {
    * Perform grammar check on an element
    */
   private async performGrammarCheck(element: HTMLElement): Promise<void> {
+    // Check if element is in ignore list
+    if (this.isElementIgnored(element)) {
+      console.log('Rewordly: Skipping grammar check for ignored element');
+      return;
+    }
+    
     // Don't perform grammar check if we're currently performing a replace operation
     // This prevents race conditions where API returns old errors while we're updating positions
     if (this.isPerformingReplace) {
@@ -1542,6 +1560,107 @@ class RewordlyContentScript {
       (element as any).__rewordlyId = `rewordly-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     }
     return (element as any).__rewordlyId;
+  }
+
+  /**
+   * Check if an element should be ignored for grammar checking
+   * Returns true if the element matches ignore patterns (e.g., Gmail's "To" field)
+   */
+  private shouldIgnoreElement(element: HTMLElement): boolean {
+    // Check if element is Gmail's "To" field
+    // Gmail's "To" field has specific structure:
+    // - Container with class "aoD hl" (the main container)
+    // - Input with name="to" attribute
+    // - Contenteditable div with class "oL aDm az9" containing span with class "aQ2"
+    
+    // Check for Gmail's "To" field container
+    const gmailToContainer = element.closest('.aoD.hl');
+    if (gmailToContainer) {
+      // Check if this is the actual input/editable element within the "To" field
+      const hasToName = element.closest('[name="to"]') !== null;
+      const hasToClasses = element.classList.contains('oL') && 
+                          element.classList.contains('aDm') && 
+                          element.classList.contains('az9');
+      const hasToSpan = element.querySelector('.aQ2') !== null || 
+                       element.closest('.aQ2') !== null ||
+                       (element.parentElement && element.parentElement.querySelector('.aQ2') !== null);
+      
+      if (hasToName || hasToClasses || hasToSpan) {
+        return true;
+      }
+    }
+    
+    // Check if element is inside a Gmail "To" field input
+    if (element.closest('[name="to"]') !== null) {
+      return true;
+    }
+    
+    // Check if element is the Gmail "To" field input itself
+    if (element.getAttribute('name') === 'to' || 
+        (element instanceof HTMLInputElement && element.name === 'to')) {
+      return true;
+    }
+    
+    // Check if element contains or is inside the Gmail "To" field span
+    if (element.classList.contains('aQ2') || 
+        element.closest('.aQ2') !== null ||
+        element.querySelector('.aQ2') !== null) {
+      // Make sure it's actually the "To" field, not just any element with aQ2 class
+      const toContainer = element.closest('.aoD.hl');
+      if (toContainer) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
+  /**
+   * Check if an element is in the ignore list
+   */
+  private isElementIgnored(element: HTMLElement): boolean {
+    const elementId = this.getElementId(element);
+    
+    // Check if element ID is in ignore list
+    if (this.ignoredElementIds.has(elementId)) {
+      return true;
+    }
+    
+    // Also check if element should be ignored based on patterns
+    // (in case element was added to DOM after initial check)
+    if (this.shouldIgnoreElement(element)) {
+      this.ignoredElementIds.add(elementId);
+      return true;
+    }
+    
+    return false;
+  }
+
+  /**
+   * Add an element to the ignore list (for future user customization)
+   */
+  public addElementToIgnoreList(element: HTMLElement): void {
+    const elementId = this.getElementId(element);
+    this.ignoredElementIds.add(elementId);
+    console.log('Rewordly: Element manually added to ignore list', { elementId });
+    
+    // Clear any existing highlights for this element
+    this.clearElementHighlights(element);
+    this.grammarErrors.delete(element);
+  }
+
+  /**
+   * Remove an element from the ignore list (for future user customization)
+   */
+  public removeElementFromIgnoreList(element: HTMLElement): void {
+    const elementId = this.getElementId(element);
+    this.ignoredElementIds.delete(elementId);
+    console.log('Rewordly: Element removed from ignore list', { elementId });
+    
+    // Re-attach to element if it's still editable
+    if (this.isEditableElement(element)) {
+      this.attachToEditableElement(element);
+    }
   }
 
   /**
