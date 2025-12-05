@@ -25,6 +25,10 @@ interface GrammarError {
 interface GrammarCheckResponse {
   errors: GrammarError[];
   corrected: string;
+  detectedLanguage?: {
+    code: string;
+    name: string;
+  };
 }
 
 class RewordlyContentScript {
@@ -832,6 +836,14 @@ class RewordlyContentScript {
       // Call real API
       const response = await this.checkGrammarAPI(text);
       
+      // Check if detected language is English
+      if (response.detectedLanguage && !response.detectedLanguage.code.toLowerCase().startsWith('en')) {
+        // Language is not English, clear all highlights and skip grammar check
+        console.log(`Rewordly: Detected language is ${response.detectedLanguage.name} (${response.detectedLanguage.code}), skipping grammar check`);
+        this.displayGrammarErrors(element, []);
+        return;
+      }
+      
       // Display errors (or clear if no errors)
       this.displayGrammarErrors(element, response.errors);
     } catch (error) {
@@ -839,6 +851,7 @@ class RewordlyContentScript {
       // Fallback to mock if API fails (for development)
       try {
         const mockResponse = this.mockGrammarCheck(text);
+        // Mock always assumes English, so we can proceed
         this.displayGrammarErrors(element, mockResponse.errors);
       } catch (mockError) {
         console.error('Rewordly: Mock grammar check also failed:', mockError);
@@ -880,6 +893,7 @@ class RewordlyContentScript {
       return {
         errors: errors,
         corrected: data.corrected || text,
+        detectedLanguage: data.detectedLanguage,
       };
     } catch (error) {
       console.error('Rewordly: API request failed:', error);
