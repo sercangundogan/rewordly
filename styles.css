@@ -1098,6 +1098,7 @@
   color: #374151 !important;
   transition: all 0.2s ease !important;
   font-family: inherit !important;
+  line-height: 20px !important;
 }
 
 .rewordly-grammar-suggestion:hover {

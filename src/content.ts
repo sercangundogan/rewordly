@@ -92,6 +92,31 @@ class RewordlyContentScript {
   }
 
   private async init(): Promise<void> {
+    // Define custom element for highlights container to prevent Reddit's CSS from hiding it
+    // Reddit uses :not(:defined) to hide undefined custom elements
+    if (typeof customElements !== 'undefined' && customElements && !customElements.get('rewordly-highlights')) {
+      customElements.define('rewordly-highlights', class extends HTMLElement {
+        constructor() {
+          super();
+        }
+      });
+    }
+    
+    // Add global style to override Reddit's CSS that hides undefined custom elements
+    // Reddit uses :not(:defined) to hide custom elements, so we need to explicitly show ours
+    if (window.location.hostname.includes('reddit.com')) {
+      const styleId = 'rewordly-reddit-override';
+      if (!document.getElementById(styleId)) {
+        const style = document.createElement('style');
+        style.id = styleId;
+        style.textContent = `
+          rewordly-highlights {
+            visibility: visible !important;
+          }
+        `;
+        document.head.appendChild(style);
+      }
+    }
     
     // Load configuration from storage
     await this.loadConfig();
@@ -2277,6 +2302,7 @@ class RewordlyContentScript {
       pointer-events: none !important;
       z-index: ${zIndex} !important;
       overflow: visible !important;
+      visibility: visible !important;
     `;
     
     console.log('Rewordly: Creating highlights container with z-index:', zIndex, 'for site:', window.location.hostname);
