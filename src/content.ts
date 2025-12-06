@@ -7,6 +7,7 @@
 interface RewordlyConfig {
   enabled: boolean;
   highlightsEnabled: boolean;
+  rewriteEnabled: boolean;
 }
 
 /**
@@ -34,7 +35,8 @@ interface GrammarCheckResponse {
 class RewordlyContentScript {
   private config: RewordlyConfig = {
     enabled: true,
-    highlightsEnabled: true
+    highlightsEnabled: true,
+    rewriteEnabled: true
   };
   
   private floatingButton: HTMLDivElement | null = null;
@@ -121,11 +123,12 @@ class RewordlyContentScript {
 
   private async loadConfig(): Promise<void> {
     try {
-      const result = await chrome.storage.sync.get(['rewordlyEnabled', 'rewordlyHighlightsEnabled']);
+      const result = await chrome.storage.sync.get(['rewordlyEnabled', 'rewordlyHighlightsEnabled', 'rewordlyRewriteEnabled']);
       
       // Use environment variables as defaults if not set in storage
       this.config.enabled = result['rewordlyEnabled'] !== false;
       this.config.highlightsEnabled = result['rewordlyHighlightsEnabled'] !== false;
+      this.config.rewriteEnabled = result['rewordlyRewriteEnabled'] !== false;
 
     } catch (error) {
       console.error('Failed to load Rewordly config:', error);
@@ -654,8 +657,8 @@ class RewordlyContentScript {
       return;
     }
 
-    // Show AI button if element has focus and has text
-    if (document.activeElement === element) {
+    // Show AI button if element has focus and has text, and rewrite is enabled
+    if (document.activeElement === element && this.config.rewriteEnabled) {
       let hasText = false;
       if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
         hasText = element.value.trim().length > 0;
@@ -722,8 +725,8 @@ class RewordlyContentScript {
       hasText = (element.innerText || element.textContent || '').trim().length > 0;
     }
     
-    // Show AI button if element has text
-    if (hasText) {
+    // Show AI button if element has text and rewrite is enabled
+    if (hasText && this.config.rewriteEnabled) {
       this.showAIFloatingButton(element);
     }
     
@@ -3882,6 +3885,11 @@ class RewordlyContentScript {
             this.hideModal();
           }
           
+          // Hide button if rewrite is disabled
+          if (!this.config.rewriteEnabled) {
+            this.hideFloatingButton();
+          }
+          
           // Hide all highlights if highlights are disabled
           if (!this.config.highlightsEnabled) {
             this.hideAllGrammarHighlights();
@@ -4063,7 +4071,7 @@ class RewordlyContentScript {
    * Show AI floating button at bottom-right of editable element
    */
   private showAIFloatingButton(element: HTMLElement): void {
-    if (!this.floatingButton) {
+    if (!this.floatingButton || !this.config.rewriteEnabled) {
       return;
     }
 

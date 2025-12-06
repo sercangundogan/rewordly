@@ -6,16 +6,19 @@
 interface RewordlySettings {
   enabled: boolean;
   highlightsEnabled: boolean;
+  rewriteEnabled: boolean;
 }
 
 class RewordlyPopup {
   private settings: RewordlySettings = {
     enabled: true,
-    highlightsEnabled: true
+    highlightsEnabled: true,
+    rewriteEnabled: true
   };
 
   private enabledToggle: HTMLButtonElement | null = null;
   private highlightsToggle: HTMLButtonElement | null = null;
+  private rewriteToggle: HTMLButtonElement | null = null;
 
   constructor() {
     this.init();
@@ -25,6 +28,7 @@ class RewordlyPopup {
     // Initialize UI elements
     this.enabledToggle = document.getElementById('enabledToggle') as HTMLButtonElement;
     this.highlightsToggle = document.getElementById('highlightsToggle') as HTMLButtonElement;
+    this.rewriteToggle = document.getElementById('rewriteToggle') as HTMLButtonElement;
     
     // Load settings
     await this.loadSettings();
@@ -35,9 +39,10 @@ class RewordlyPopup {
 
   private async loadSettings(): Promise<void> {
     try {
-      const result = await chrome.storage.sync.get(['rewordlyEnabled', 'rewordlyHighlightsEnabled']);
+      const result = await chrome.storage.sync.get(['rewordlyEnabled', 'rewordlyHighlightsEnabled', 'rewordlyRewriteEnabled']);
       this.settings.enabled = result['rewordlyEnabled'] !== false;
       this.settings.highlightsEnabled = result['rewordlyHighlightsEnabled'] !== false;
+      this.settings.rewriteEnabled = result['rewordlyRewriteEnabled'] !== false;
       
       this.updateUI();
     } catch (error) {
@@ -53,6 +58,10 @@ class RewordlyPopup {
     
     if (this.highlightsToggle) {
       this.highlightsToggle.addEventListener('click', this.toggleHighlights.bind(this));
+    }
+    
+    if (this.rewriteToggle) {
+      this.rewriteToggle.addEventListener('click', this.toggleRewrite.bind(this));
     }
   }
 
@@ -70,6 +79,14 @@ class RewordlyPopup {
         this.highlightsToggle.classList.add('active');
       } else {
         this.highlightsToggle.classList.remove('active');
+      }
+    }
+    
+    if (this.rewriteToggle) {
+      if (this.settings.rewriteEnabled) {
+        this.rewriteToggle.classList.add('active');
+      } else {
+        this.rewriteToggle.classList.remove('active');
       }
     }
   }
@@ -104,11 +121,27 @@ class RewordlyPopup {
     await this.saveSettings();
   }
 
+  private async toggleRewrite(): Promise<void> {
+    this.settings.rewriteEnabled = !this.settings.rewriteEnabled;
+    
+    if (this.rewriteToggle) {
+      if (this.settings.rewriteEnabled) {
+        this.rewriteToggle.classList.add('active');
+      } else {
+        this.rewriteToggle.classList.remove('active');
+      }
+    }
+
+    // Auto-save settings
+    await this.saveSettings();
+  }
+
   private async saveSettings(): Promise<void> {
     try {
       await chrome.storage.sync.set({
         rewordlyEnabled: this.settings.enabled,
-        rewordlyHighlightsEnabled: this.settings.highlightsEnabled
+        rewordlyHighlightsEnabled: this.settings.highlightsEnabled,
+        rewordlyRewriteEnabled: this.settings.rewriteEnabled
       });
 
       this.showSuccessMessage();
