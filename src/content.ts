@@ -781,17 +781,17 @@ class RewordlyContentScript {
         // Check if element still doesn't have focus
         if (document.activeElement !== element) {
           // Check if element has text - if it does, keep highlights visible
-          let hasText = false;
-          if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-            hasText = element.value.trim().length > 0;
-          } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
-            hasText = (element.innerText || element.textContent || '').trim().length > 0;
-          }
+          // let hasText = false;
+          // if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+          //   hasText = element.value.trim().length > 0;
+          // } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
+          //   hasText = (element.innerText || element.textContent || '').trim().length > 0;
+          // }
           
           // Only hide highlights if element has no text
-          if (!hasText) {
+          // if (!hasText) {
             this.hideGrammarOverlay(element);
-          }
+          // }
         }
       }, 100);
     }
