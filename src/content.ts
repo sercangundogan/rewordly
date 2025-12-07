@@ -49,6 +49,7 @@ class RewordlyContentScript {
   
   // Real-time grammar checking
   private grammarCheckTimeout: number | null = null;
+  private highlightPositionUpdateTimeout: number | null = null;
   private grammarErrors: Map<HTMLElement, GrammarError[]> = new Map();
   private editableElements: Set<HTMLElement> = new Set();
   
@@ -718,6 +719,23 @@ class RewordlyContentScript {
 
     // Don't clear existing errors - keep overlays visible while user is typing
 
+    // Update highlight positions when text changes (if highlights exist)
+    if (this.config.highlightsEnabled && this.grammarErrors.has(element)) {
+      // Clear previous position update timeout
+      if (this.highlightPositionUpdateTimeout !== null) {
+        clearTimeout(this.highlightPositionUpdateTimeout);
+      }
+      
+      // Update positions after DOM updates (using double requestAnimationFrame to ensure DOM is fully updated)
+      this.highlightPositionUpdateTimeout = window.setTimeout(() => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            this.updateHighlightsPosition(element);
+          });
+        });
+      }, 0);
+    }
+
     // Only perform grammar check if highlights are enabled
     if (this.config.highlightsEnabled) {
       // Set new timeout for grammar check (1 second after typing stops)
@@ -771,6 +789,12 @@ class RewordlyContentScript {
     if (this.grammarCheckTimeout !== null) {
       clearTimeout(this.grammarCheckTimeout);
       this.grammarCheckTimeout = null;
+    }
+    
+    // Clear highlight position update timeout
+    if (this.highlightPositionUpdateTimeout !== null) {
+      clearTimeout(this.highlightPositionUpdateTimeout);
+      this.highlightPositionUpdateTimeout = null;
     }
     
     // Hide AI button when focus is lost (with delay to allow button click)
