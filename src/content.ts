@@ -2635,13 +2635,44 @@ class RewordlyContentScript {
     const scrollLeft = element.scrollLeft || 0;
     const scrollTop = element.scrollTop || 0;
     
+    // For Reddit, measure the actual text start position to account for container offsets
+    // This fixes the issue where highlights appear offset to the right
+    const isReddit = window.location.hostname.includes('reddit.com');
+    let textStartOffset = 0;
+    
+    if (isReddit && text.length > 0) {
+      // Measure the first character's position in the mirror div
+      // The mirror div should have the same text layout as the textarea
+      const firstCharRange = document.createRange();
+      const firstCharTextNode = div.firstChild;
+      if (firstCharTextNode && firstCharTextNode.nodeType === Node.TEXT_NODE && firstCharTextNode.textContent!.length > 0) {
+        firstCharRange.setStart(firstCharTextNode, 0);
+        firstCharRange.setEnd(firstCharTextNode, 1);
+        const firstCharRect = firstCharRange.getBoundingClientRect();
+        
+        // The first character in the mirror div should start at divRect.left (accounting for padding)
+        // But in Reddit's textarea, there might be an additional offset
+        // We calculate where the first char actually is relative to the div
+        const firstCharRelativeLeft = firstCharRect.left - divRect.left;
+        
+        // The expected position should be 0 (or very close) since we copied all styles
+        // If there's a difference, it means Reddit has additional container offsets
+        // We'll use this to adjust the highlight positions
+        if (firstCharRelativeLeft > 0.1) { // Only apply if there's a noticeable offset (>0.1px)
+          textStartOffset = firstCharRelativeLeft;
+        }
+      }
+    }
+    
     // Convert each client rect to viewport coordinates
     const rects: DOMRect[] = [];
     for (let i = 0; i < clientRects.length; i++) {
       const clientRect = clientRects[i];
       if (!clientRect) continue;
       
-      const left = elementRect.left + paddingLeft + borderLeft + (clientRect.left - divRect.left) - scrollLeft;
+      // Calculate left position: element position + padding/border + relative position in mirror div - scroll - text start offset
+      // The textStartOffset corrects for Reddit's container-specific positioning
+      const left = elementRect.left + paddingLeft + borderLeft + (clientRect.left - divRect.left) - scrollLeft - textStartOffset;
       const top = elementRect.top + paddingTop + borderTop + (clientRect.top - divRect.top) - scrollTop;
       const width = clientRect.width;
       const height = clientRect.height || parseFloat(styles.lineHeight) || parseFloat(styles.fontSize) * 1.2;
