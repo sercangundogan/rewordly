@@ -3514,11 +3514,70 @@ class RewordlyContentScript {
       // Don't recheck grammar here - we've already updated error positions manually
       // Grammar check will happen automatically when user types (via handleInput)
     } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
-      // For contenteditable - check if it's Draft.js (Twitter)
+      // For contenteditable - check if it's Lexical (Reddit) or Draft.js (Twitter)
+      const isLexical = element.getAttribute('data-lexical-editor') === 'true' ||
+                        element.closest('[data-lexical-editor="true"]') !== null;
       const isDraftJS = element.classList.contains('public-DraftEditor-content') || 
                         element.closest('.DraftEditor-root') !== null;
       
-      if (isDraftJS) {
+      if (isLexical) {
+        // For Lexical editors (Reddit), use Lexical-specific replacement
+        this.isPerformingReplace = true;
+        
+        try {
+          this.replaceTextInLexical(element, actualStart, actualEnd, replacement);
+          
+          // Calculate length difference for position adjustment
+          const replacementLength = replacement.length;
+          const originalLength = actualEnd - actualStart;
+          const lengthDiff = replacementLength - originalLength;
+          
+          // Update stored errors - adjust positions but keep IDs intact
+          const updatedErrorsAfterReplace = updatedErrors.map(err => {
+            // If error is after the replaced text, adjust its position (keep ID!)
+            if (err.start > actualEnd) {
+              return {
+                ...err,
+                start: err.start + lengthDiff,
+                end: err.end + lengthDiff
+              };
+            }
+            // If error overlaps with replaced text, it's already removed
+            return err;
+          });
+          this.grammarErrors.set(element, updatedErrorsAfterReplace);
+          
+          // Update all highlight data-error attributes with new positions - match by ID
+          if (this.highlightsContent) {
+            const elementId = this.getElementId(element);
+            const highlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
+            highlights.forEach((highlight) => {
+              const highlightErrorId = (highlight as HTMLElement).getAttribute('data-error-id');
+              if (!highlightErrorId) return;
+              
+              // Find the updated error by ID
+              const updatedError = updatedErrorsAfterReplace.find(err => err.id === highlightErrorId);
+              
+              if (updatedError) {
+                // Update data-error attribute with new positions (ID remains the same)
+                (highlight as HTMLElement).setAttribute('data-error', JSON.stringify(updatedError));
+              } else {
+                // This error was removed
+                highlight.remove();
+              }
+            });
+          }
+          
+          // Wait for Lexical to update its DOM before repositioning highlights
+          setTimeout(() => {
+            this.updateHighlightsPosition(element);
+            this.isPerformingReplace = false;
+          }, 100);
+        } catch (err) {
+          console.error('Rewordly: Error replacing text in Lexical:', err);
+          this.isPerformingReplace = false;
+        }
+      } else if (isDraftJS) {
         // Set flag to prevent blur handler from hiding highlights during replace
         this.isPerformingReplace = true;
         
@@ -3857,6 +3916,134 @@ class RewordlyContentScript {
       // updates that can cause highlights to disappear.
     } catch (err) {
       console.error('Rewordly: Error replacing text in Draft.js:', err);
+      console.error('Rewordly: Error details:', {
+        start,
+        end,
+        mapping
+      });
+    }
+  }
+
+  /**
+   * Replace text in Lexical editor (Reddit)
+   * Uses execCommand to ensure Lexical's internal state is properly updated
+   */
+  private replaceTextInLexical(element: HTMLElement, start: number, end: number, replacement: string): void {
+    const selection = window.getSelection();
+    if (!selection) {
+      console.error('Rewordly: No selection available for Lexical replacement');
+      return;
+    }
+    
+    // Map innerText positions to text node positions
+    const mapping = this.mapInnerTextToTextNodes(element, start, end);
+    
+    if (!mapping || !mapping.startNode) {
+      console.error('Rewordly: Could not map innerText positions to text nodes in Lexical', { start, end });
+      return;
+    }
+    
+    try {
+      // Focus the element first to ensure Lexical is ready
+      element.focus();
+      
+      // Create range for the text to replace
+      const range = document.createRange();
+      
+      // Validate positions
+      const startNodeLength = mapping.startNode.textContent!.length;
+      if (mapping.startOffset < 0 || mapping.startOffset > startNodeLength) {
+        console.error('Rewordly: Invalid start offset in Lexical text node', {
+          startOffset: mapping.startOffset,
+          nodeLength: startNodeLength,
+          globalStart: start
+        });
+        return;
+      }
+      
+      if (mapping.endNode && mapping.startNode !== mapping.endNode) {
+        // Error spans multiple text nodes
+        const endNodeLength = mapping.endNode.textContent!.length;
+        if (mapping.endOffset < 0 || mapping.endOffset > endNodeLength) {
+          console.error('Rewordly: Invalid end offset in Lexical text node', {
+            endOffset: mapping.endOffset,
+            nodeLength: endNodeLength,
+            globalEnd: end
+          });
+          return;
+        }
+        
+        range.setStart(mapping.startNode, Math.min(mapping.startOffset, startNodeLength));
+        range.setEnd(mapping.endNode, Math.min(mapping.endOffset, endNodeLength));
+      } else {
+        // Error is within a single text node
+        const endPos = mapping.endOffset;
+        
+        if (endPos > startNodeLength) {
+          console.error('Rewordly: Invalid end position in Lexical text node', {
+            startOffset: mapping.startOffset,
+            endPos,
+            nodeLength: startNodeLength,
+            globalStart: start,
+            globalEnd: end
+          });
+          return;
+        }
+        
+        range.setStart(mapping.startNode, mapping.startOffset);
+        range.setEnd(mapping.startNode, endPos);
+      }
+      
+      // Set selection to the range
+      selection.removeAllRanges();
+      selection.addRange(range);
+      
+      // Use execCommand to replace text - this ensures Lexical's internal state is updated correctly
+      // Lexical listens to execCommand and updates its internal state accordingly
+      const success = document.execCommand('insertText', false, replacement);
+      
+      if (!success) {
+        // Fallback: try using beforeinput/input events
+        console.warn('Rewordly: execCommand failed, trying fallback method for Lexical');
+        
+        // Delete the selected content first
+        range.deleteContents();
+        
+        // Insert the replacement text
+        const textNode = document.createTextNode(replacement);
+        range.insertNode(textNode);
+        
+        // Move cursor after the inserted text
+        range.setStartAfter(textNode);
+        range.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        
+        // Trigger Lexical events
+        const beforeInputEvent = new InputEvent('beforeinput', {
+          bubbles: true,
+          cancelable: true,
+          inputType: 'insertText',
+          data: replacement
+        });
+        (beforeInputEvent as any).__rewordlyProgrammatic = true;
+        element.dispatchEvent(beforeInputEvent);
+        
+        const inputEvent = new InputEvent('input', {
+          bubbles: true,
+          cancelable: false,
+          inputType: 'insertText',
+          data: replacement
+        });
+        (inputEvent as any).__rewordlyProgrammatic = true;
+        element.dispatchEvent(inputEvent);
+      }
+      
+      // Clear selection
+      selection.removeAllRanges();
+      
+    } catch (err) {
+      console.error('Rewordly: Error replacing text in Lexical:', err);
       console.error('Rewordly: Error details:', {
         start,
         end,
