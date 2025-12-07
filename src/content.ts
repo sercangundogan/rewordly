@@ -2995,6 +2995,10 @@ class RewordlyContentScript {
             highlight.setAttribute('data-error-id', error.id);
             highlight.setAttribute('data-line-index', lineIndex.toString());
             highlight.setAttribute('data-error', JSON.stringify(error));
+            // Ensure new highlight is visible
+            highlight.style.display = '';
+            highlight.removeAttribute('data-hidden-by-blur');
+            highlight.removeAttribute('data-hidden-by-modal');
             
               // Add hover listeners to all lines
               this.attachHighlightHoverListener(highlight, error, element);
@@ -3010,6 +3014,10 @@ class RewordlyContentScript {
         highlight.style.left = `${highlightRect.left}px`;
         highlight.style.width = `${highlightRect.width}px`;
         highlight.style.height = `${highlightRect.height}px`;
+        // Ensure highlight is visible (may have been hidden by blur/modal)
+        highlight.style.display = '';
+        highlight.removeAttribute('data-hidden-by-blur');
+        highlight.removeAttribute('data-hidden-by-modal');
         highlight.setAttribute('data-error', JSON.stringify(error));
       });
 
@@ -3536,6 +3544,13 @@ class RewordlyContentScript {
       // Clear the replace flag after highlights are updated
       this.isPerformingReplace = false;
       
+      // Restore focus and set cursor position after replacement
+      // Calculate new cursor position (after the replaced text)
+      const newCursorPosition = actualStart + replacement.length;
+      element.focus();
+      // Set cursor position to the end of the replacement
+      element.setSelectionRange(newCursorPosition, newCursorPosition);
+      
       // Trigger input event (this will reset timeout but won't clear errors)
       const inputEvent = new Event('input', { bubbles: true });
       // Mark as programmatic to prevent handleInput from processing it
@@ -3603,6 +3618,25 @@ class RewordlyContentScript {
           setTimeout(() => {
             this.updateHighlightsPosition(element);
             this.isPerformingReplace = false;
+            
+            // Restore focus and set cursor position after replacement
+            element.focus();
+            // For contenteditable, set cursor position using Selection API
+            const selection = window.getSelection();
+            if (selection) {
+              const newCursorPosition = actualStart + replacement.length;
+              
+              // Map cursor position to text node
+              const cursorMapping = this.mapInnerTextToTextNodes(element, newCursorPosition, newCursorPosition);
+              if (cursorMapping && cursorMapping.startNode) {
+                const cursorRange = document.createRange();
+                const offset = Math.min(cursorMapping.startOffset, cursorMapping.startNode.textContent!.length);
+                cursorRange.setStart(cursorMapping.startNode, offset);
+                cursorRange.collapse(true);
+                selection.removeAllRanges();
+                selection.addRange(cursorRange);
+              }
+            }
           }, 100);
         } catch (err) {
           console.error('Rewordly: Error replacing text in Lexical:', err);
@@ -3663,6 +3697,25 @@ class RewordlyContentScript {
           this.updateHighlightsPosition(element);
           // Clear the replace flag after highlights are updated
           this.isPerformingReplace = false;
+          
+          // Restore focus and set cursor position after replacement
+          element.focus();
+          // For contenteditable, set cursor position using Selection API
+          const selection = window.getSelection();
+          if (selection) {
+            const newCursorPosition = actualStart + replacement.length;
+            
+            // Map cursor position to text node
+            const cursorMapping = this.mapInnerTextToTextNodes(element, newCursorPosition, newCursorPosition);
+            if (cursorMapping && cursorMapping.startNode) {
+              const cursorRange = document.createRange();
+              const offset = Math.min(cursorMapping.startOffset, cursorMapping.startNode.textContent!.length);
+              cursorRange.setStart(cursorMapping.startNode, offset);
+              cursorRange.collapse(true);
+              selection.removeAllRanges();
+              selection.addRange(cursorRange);
+            }
+          }
         }, 150);
       } else {
         // For regular contenteditable
@@ -3816,6 +3869,20 @@ class RewordlyContentScript {
           
           // Clear the replace flag after highlights are updated
           this.isPerformingReplace = false;
+          
+          // Restore focus and set cursor position after replacement
+          element.focus();
+          // Set cursor position to the end of the replacement
+          const newCursorPosition = actualStart + replacement.length;
+          const cursorMapping = this.mapInnerTextToTextNodes(element, newCursorPosition, newCursorPosition);
+          if (cursorMapping && cursorMapping.startNode) {
+            const cursorRange = document.createRange();
+            const offset = Math.min(cursorMapping.startOffset, cursorMapping.startNode.textContent!.length);
+            cursorRange.setStart(cursorMapping.startNode, offset);
+            cursorRange.collapse(true);
+            selection.removeAllRanges();
+            selection.addRange(cursorRange);
+          }
           
           // Don't recheck grammar here - we've already updated error positions manually
           // Grammar check will happen automatically when user types (via handleInput)
