@@ -80,6 +80,9 @@ class RewordlyContentScript {
 
   // Track if we're currently performing a replace operation (to prevent blur from hiding highlights)
   private isPerformingReplace = false;
+  
+  // Track scheduled blur handlers to cancel them if needed
+  private scheduledBlurHandlers = new Map<HTMLElement, NodeJS.Timeout>();
 
   constructor() {
     this.init();
@@ -795,6 +798,14 @@ class RewordlyContentScript {
       return;
     }
     
+    // Cancel any scheduled blur handlers for this element when focus is restored
+    // This prevents highlights from being hidden after replace operations
+    const existingBlurTimeout = this.scheduledBlurHandlers.get(element);
+    if (existingBlurTimeout) {
+      clearTimeout(existingBlurTimeout);
+      this.scheduledBlurHandlers.delete(element);
+    }
+    
     // Check if element has text
     let hasText = false;
     if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
@@ -855,8 +866,18 @@ class RewordlyContentScript {
     // Hide grammar errors/overlay when focus is lost (but don't delete)
     // However, if element has text, keep highlights visible even without focus
     if (element && this.isEditableElement(element)) {
+      // Cancel any existing scheduled blur handler for this element
+      const existingTimeout = this.scheduledBlurHandlers.get(element);
+      if (existingTimeout) {
+        clearTimeout(existingTimeout);
+        this.scheduledBlurHandlers.delete(element);
+      }
+      
       // Small delay to allow for focus transfer (e.g., clicking on overlay)
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
+        // Remove from map when executed
+        this.scheduledBlurHandlers.delete(element);
+        
         // Don't hide if we're performing a replace operation (prevents highlights from being hidden during replace)
         if (this.isPerformingReplace) {
           return;
@@ -878,6 +899,9 @@ class RewordlyContentScript {
           // }
         }
       }, 100);
+      
+      // Store timeout ID so we can cancel it if needed
+      this.scheduledBlurHandlers.set(element, timeoutId);
     }
   }
 
@@ -3597,24 +3621,43 @@ class RewordlyContentScript {
         });
       }
       
-      // Immediately update highlight positions (no delay)
-      this.updateHighlightsPosition(element);
+      // Update highlight positions after DOM has updated (for proper text wrapping calculation)
+      // Use requestAnimationFrame to ensure text wrapping is recalculated after replace
+      requestAnimationFrame(() => {
+        this.updateHighlightsPosition(element);
+      });
       
-      // Clear the replace flag after highlights are updated
-      this.isPerformingReplace = false;
+      // Cancel any scheduled blur handlers for this element
+      const existingBlurTimeout = this.scheduledBlurHandlers.get(element);
+      if (existingBlurTimeout) {
+        clearTimeout(existingBlurTimeout);
+        this.scheduledBlurHandlers.delete(element);
+      }
       
       // Restore focus and set cursor position after replacement
       // Calculate new cursor position (after the replaced text)
       const newCursorPosition = actualStart + replacement.length;
-      element.focus();
-      // Set cursor position to the end of the replacement
-      element.setSelectionRange(newCursorPosition, newCursorPosition);
       
-      // Trigger input event (this will reset timeout but won't clear errors)
-      const inputEvent = new Event('input', { bubbles: true });
-      // Mark as programmatic to prevent handleInput from processing it
-      (inputEvent as any).__rewordlyProgrammatic = true;
-      element.dispatchEvent(inputEvent);
+      // Use requestAnimationFrame to ensure DOM is ready before focusing
+      requestAnimationFrame(() => {
+        // Keep flag true during focus restore to prevent blur handler from hiding highlights
+        this.isPerformingReplace = true;
+        
+        element.focus();
+        // Set cursor position to the end of the replacement
+        element.setSelectionRange(newCursorPosition, newCursorPosition);
+        
+        // Clear the replace flag after a short delay to ensure focus is stable
+        setTimeout(() => {
+          this.isPerformingReplace = false;
+        }, 150);
+        
+        // Trigger input event (this will reset timeout but won't clear errors)
+        const inputEvent = new Event('input', { bubbles: true });
+        // Mark as programmatic to prevent handleInput from processing it
+        (inputEvent as any).__rewordlyProgrammatic = true;
+        element.dispatchEvent(inputEvent);
+      });
       
       // Don't recheck grammar here - we've already updated error positions manually
       // Grammar check will happen automatically when user types (via handleInput)
@@ -3676,26 +3719,43 @@ class RewordlyContentScript {
           // Wait for Lexical to update its DOM before repositioning highlights
           setTimeout(() => {
             this.updateHighlightsPosition(element);
-            this.isPerformingReplace = false;
+            
+            // Cancel any scheduled blur handlers for this element
+            const existingBlurTimeout = this.scheduledBlurHandlers.get(element);
+            if (existingBlurTimeout) {
+              clearTimeout(existingBlurTimeout);
+              this.scheduledBlurHandlers.delete(element);
+            }
             
             // Restore focus and set cursor position after replacement
-            element.focus();
-            // For contenteditable, set cursor position using Selection API
-            const selection = window.getSelection();
-            if (selection) {
-              const newCursorPosition = actualStart + replacement.length;
+            // Use requestAnimationFrame to ensure DOM is ready before focusing
+            requestAnimationFrame(() => {
+              // Keep flag true during focus restore to prevent blur handler from hiding highlights
+              this.isPerformingReplace = true;
               
-              // Map cursor position to text node
-              const cursorMapping = this.mapInnerTextToTextNodes(element, newCursorPosition, newCursorPosition);
-              if (cursorMapping && cursorMapping.startNode) {
-                const cursorRange = document.createRange();
-                const offset = Math.min(cursorMapping.startOffset, cursorMapping.startNode.textContent!.length);
-                cursorRange.setStart(cursorMapping.startNode, offset);
-                cursorRange.collapse(true);
-                selection.removeAllRanges();
-                selection.addRange(cursorRange);
+              element.focus();
+              // For contenteditable, set cursor position using Selection API
+              const selection = window.getSelection();
+              if (selection) {
+                const newCursorPosition = actualStart + replacement.length;
+                
+                // Map cursor position to text node
+                const cursorMapping = this.mapInnerTextToTextNodes(element, newCursorPosition, newCursorPosition);
+                if (cursorMapping && cursorMapping.startNode) {
+                  const cursorRange = document.createRange();
+                  const offset = Math.min(cursorMapping.startOffset, cursorMapping.startNode.textContent!.length);
+                  cursorRange.setStart(cursorMapping.startNode, offset);
+                  cursorRange.collapse(true);
+                  selection.removeAllRanges();
+                  selection.addRange(cursorRange);
+                }
               }
-            }
+              
+              // Clear the replace flag after a short delay to ensure focus is stable
+              setTimeout(() => {
+                this.isPerformingReplace = false;
+              }, 150);
+            });
           }, 100);
         } catch (err) {
           console.error('Rewordly: Error replacing text in Lexical:', err);
@@ -3754,27 +3814,43 @@ class RewordlyContentScript {
         // Draft.js updates its DOM asynchronously, so we need to wait longer
         setTimeout(() => {
           this.updateHighlightsPosition(element);
-          // Clear the replace flag after highlights are updated
-          this.isPerformingReplace = false;
+          
+          // Cancel any scheduled blur handlers for this element
+          const existingBlurTimeout = this.scheduledBlurHandlers.get(element);
+          if (existingBlurTimeout) {
+            clearTimeout(existingBlurTimeout);
+            this.scheduledBlurHandlers.delete(element);
+          }
           
           // Restore focus and set cursor position after replacement
-          element.focus();
-          // For contenteditable, set cursor position using Selection API
-          const selection = window.getSelection();
-          if (selection) {
-            const newCursorPosition = actualStart + replacement.length;
+          // Use requestAnimationFrame to ensure DOM is ready before focusing
+          requestAnimationFrame(() => {
+            // Keep flag true during focus restore to prevent blur handler from hiding highlights
+            this.isPerformingReplace = true;
             
-            // Map cursor position to text node
-            const cursorMapping = this.mapInnerTextToTextNodes(element, newCursorPosition, newCursorPosition);
-            if (cursorMapping && cursorMapping.startNode) {
-              const cursorRange = document.createRange();
-              const offset = Math.min(cursorMapping.startOffset, cursorMapping.startNode.textContent!.length);
-              cursorRange.setStart(cursorMapping.startNode, offset);
-              cursorRange.collapse(true);
-              selection.removeAllRanges();
-              selection.addRange(cursorRange);
+            element.focus();
+            // For contenteditable, set cursor position using Selection API
+            const selection = window.getSelection();
+            if (selection) {
+              const newCursorPosition = actualStart + replacement.length;
+              
+              // Map cursor position to text node
+              const cursorMapping = this.mapInnerTextToTextNodes(element, newCursorPosition, newCursorPosition);
+              if (cursorMapping && cursorMapping.startNode) {
+                const cursorRange = document.createRange();
+                const offset = Math.min(cursorMapping.startOffset, cursorMapping.startNode.textContent!.length);
+                cursorRange.setStart(cursorMapping.startNode, offset);
+                cursorRange.collapse(true);
+                selection.removeAllRanges();
+                selection.addRange(cursorRange);
+              }
             }
-          }
+            
+            // Clear the replace flag after a short delay to ensure focus is stable
+            setTimeout(() => {
+              this.isPerformingReplace = false;
+            }, 150);
+          });
         }, 150);
       } else {
         // For regular contenteditable
@@ -3923,25 +3999,43 @@ class RewordlyContentScript {
             });
           }
           
-          // Immediately update highlight positions (no delay)
-          this.updateHighlightsPosition(element);
+          // Update highlight positions after DOM has updated (for proper text wrapping calculation)
+          // Use requestAnimationFrame to ensure text wrapping is recalculated after replace
+          requestAnimationFrame(() => {
+            this.updateHighlightsPosition(element);
+          });
           
-          // Clear the replace flag after highlights are updated
-          this.isPerformingReplace = false;
+          // Cancel any scheduled blur handlers for this element
+          const existingBlurTimeout = this.scheduledBlurHandlers.get(element);
+          if (existingBlurTimeout) {
+            clearTimeout(existingBlurTimeout);
+            this.scheduledBlurHandlers.delete(element);
+          }
           
           // Restore focus and set cursor position after replacement
-          element.focus();
-          // Set cursor position to the end of the replacement
-          const newCursorPosition = actualStart + replacement.length;
-          const cursorMapping = this.mapInnerTextToTextNodes(element, newCursorPosition, newCursorPosition);
-          if (cursorMapping && cursorMapping.startNode) {
-            const cursorRange = document.createRange();
-            const offset = Math.min(cursorMapping.startOffset, cursorMapping.startNode.textContent!.length);
-            cursorRange.setStart(cursorMapping.startNode, offset);
-            cursorRange.collapse(true);
-            selection.removeAllRanges();
-            selection.addRange(cursorRange);
-          }
+          // Use requestAnimationFrame to ensure DOM is ready before focusing
+          requestAnimationFrame(() => {
+            // Keep flag true during focus restore to prevent blur handler from hiding highlights
+            this.isPerformingReplace = true;
+            
+            element.focus();
+            // Set cursor position to the end of the replacement
+            const newCursorPosition = actualStart + replacement.length;
+            const cursorMapping = this.mapInnerTextToTextNodes(element, newCursorPosition, newCursorPosition);
+            if (cursorMapping && cursorMapping.startNode) {
+              const cursorRange = document.createRange();
+              const offset = Math.min(cursorMapping.startOffset, cursorMapping.startNode.textContent!.length);
+              cursorRange.setStart(cursorMapping.startNode, offset);
+              cursorRange.collapse(true);
+              selection.removeAllRanges();
+              selection.addRange(cursorRange);
+            }
+            
+            // Clear the replace flag after a short delay to ensure focus is stable
+            setTimeout(() => {
+              this.isPerformingReplace = false;
+            }, 150);
+          });
           
           // Don't recheck grammar here - we've already updated error positions manually
           // Grammar check will happen automatically when user types (via handleInput)
