@@ -92,7 +92,42 @@ class RewordlyContentScript {
     return `error-${Date.now()}-${this.errorIdCounter++}`;
   }
 
+  /**
+   * Check if the current page is disabled
+   */
+  private async isPageDisabled(): Promise<boolean> {
+    try {
+      const result = await chrome.storage.sync.get(['rewordlyDisabledPages']);
+      const disabledPages: string[] = result['rewordlyDisabledPages'] || [];
+      
+      const currentUrl = window.location.href;
+      const currentOrigin = window.location.origin;
+      
+      // Check if exact URL or origin is disabled
+      return disabledPages.some(disabledUrl => {
+        // Exact URL match
+        if (disabledUrl === currentUrl) {
+          return true;
+        }
+        // Origin match (for disabling entire domain)
+        if (disabledUrl === currentOrigin) {
+          return true;
+        }
+        return false;
+      });
+    } catch (error) {
+      console.error('Failed to check if page is disabled:', error);
+      return false;
+    }
+  }
+
   private async init(): Promise<void> {
+    // Check if this page is disabled - if so, don't initialize at all
+    const pageDisabled = await this.isPageDisabled();
+    if (pageDisabled) {
+      console.log('Rewordly is disabled on this page');
+      return;
+    }
     // Define custom element for highlights container to prevent Reddit's CSS from hiding it
     // Reddit uses :not(:defined) to hide undefined custom elements
     if (typeof customElements !== 'undefined' && customElements && !customElements.get('rewordly-highlights')) {
