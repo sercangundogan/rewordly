@@ -733,6 +733,18 @@ class RewordlyContentScript {
       return;
     }
 
+    // Ignore input events during replace operations
+    // This prevents grammar check from running after programmatic text replacement
+    // (e.g., when execCommand('insertText') triggers input events in Lexical/Reddit)
+    if (this.isPerformingReplace) {
+      // Clear any pending grammar check timeout
+      if (this.grammarCheckTimeout !== null) {
+        clearTimeout(this.grammarCheckTimeout);
+        this.grammarCheckTimeout = null;
+      }
+      return;
+    }
+
     // Show AI button if element has focus and has text, and rewrite is enabled
     if (document.activeElement === element && this.config.rewriteEnabled) {
       let hasText = false;
@@ -1991,9 +2003,6 @@ class RewordlyContentScript {
     
     // Generate dismiss key using word + context (not position)
     const dismissKey = this.getDismissKey(elementId, error, text);
-
-    console.log("Get dismiss key:", dismissKey);
-    console.log("Dismissed errors:", this.dismissedErrors);
     
     if (!this.dismissedErrors.has(dismissKey)) {
       return false;
@@ -2697,7 +2706,6 @@ class RewordlyContentScript {
 
     // Don't create highlight if error is dismissed
     if (this.isErrorDismissed(element, error)) {
-      console.log('Rewordly: Skipping highlight creation - error is dismissed', { errorWord: error.word });
       return;
     }
 
@@ -3381,19 +3389,28 @@ class RewordlyContentScript {
           const suggestion = (button as HTMLElement).getAttribute('data-suggestion');
           if (!suggestion) return;
 
-          // Get error ID from the highlight - this uniquely identifies the exact error
+          // Get error data directly from highlight - this is the most reliable source
+          const errorData = highlight.getAttribute('data-error');
           const errorId = highlight.getAttribute('data-error-id');
           
-          if (!errorId) {
-            console.error('Rewordly: No error ID found on highlight');
+          if (!errorId || !errorData) {
+            console.error('Rewordly: No error data found on highlight', { errorId, hasErrorData: !!errorData });
+            return;
+          }
+
+          let targetError: GrammarError;
+          try {
+            targetError = JSON.parse(errorData);
+          } catch (e) {
+            console.error('Rewordly: Failed to parse error data from highlight', e);
             return;
           }
 
           closeTooltip();
           this.closeAllGrammarTooltips();
           
-          // Use ID-based replacement to ensure we replace the exact error (handles duplicates perfectly)
-          this.replaceGrammarErrorByHighlight(element, errorId, suggestion);
+          // Use the error directly from highlight - no need to search in maps
+          this.replaceGrammarError(element, targetError, suggestion);
         });
       });
 
@@ -3429,7 +3446,6 @@ class RewordlyContentScript {
             }
             
             const dismissKey = this.getDismissKey(elementId, error, text);
-            console.log("Dismiss key:", dismissKey);
             this.dismissedErrors.set(dismissKey, true);
             
             // Remove error from grammarErrors map to prevent it from reappearing
@@ -3728,59 +3744,35 @@ class RewordlyContentScript {
   /**
    * Replace grammar error by error ID (most reliable - handles duplicate words perfectly)
    */
-  private replaceGrammarErrorByHighlight(
-    element: HTMLElement, 
-    errorId: string,
-    replacement: string
-  ): void {
-    if (!errorId) {
-      console.error('Rewordly: Cannot replace error - no error ID provided');
-      return;
-    }
-
-    const currentErrors = this.grammarErrors.get(element) || [];
-    
-    // Find error by unique ID - this is guaranteed to find the exact error clicked
-    const targetError = currentErrors.find(err => err.id === errorId);
-
-    if (!targetError) {
-      console.error('Rewordly: Could not find error to replace', { 
-        errorId,
-        currentErrors: currentErrors.map(e => ({
-          id: e.id,
-          start: e.start,
-          end: e.end,
-          word: e.word
-        }))
-      });
-      return;
-    }
-
-    // Use the found error to replace
-    this.replaceGrammarError(element, targetError.id, replacement);
-  }
 
   /**
-   * Replace grammar error with suggestion using error ID
+   * Replace grammar error with suggestion
+   * @param element - The element containing the error
+   * @param targetError - The error to replace (from highlight's data-error attribute)
+   * @param replacement - The replacement text
    */
-  private replaceGrammarError(element: HTMLElement, errorId: string, replacement: string): void {
+  private replaceGrammarError(
+    element: HTMLElement, 
+    targetError: GrammarError, 
+    replacement: string
+  ): void {
+    if (!targetError || !targetError.id) {
+      console.error('Rewordly: Invalid error provided', targetError);
+      return;
+    }
+
+    const errorId = targetError.id;
+    
     // Close all tooltips before replacement
     this.closeAllGrammarTooltips();
     
-    // Get current errors
+    // Get current errors for position updates
     const currentErrors = this.grammarErrors.get(element) || [];
     
-    // Find the error by its unique ID
-    const targetError = currentErrors.find(err => err.id === errorId);
-    
-    if (!targetError) {
-      console.error('Rewordly: Could not find error to replace', { errorId, currentErrors });
-      return;
-    }
-    
-    // Use the error's positions (they are always up-to-date)
-    const actualStart = targetError.start;
-    const actualEnd = targetError.end;
+    // Use the error's positions (they are always up-to-date if from grammarErrors,
+    // but might be outdated if from highlight - we'll validate below)
+    let actualStart = targetError.start;
+    let actualEnd = targetError.end;
     
     // Validate positions against current text length
     let currentText = '';
@@ -3792,16 +3784,49 @@ class RewordlyContentScript {
     
     // Validate positions
     if (actualStart < 0 || actualEnd > currentText.length || actualStart >= actualEnd) {
-      console.error('Rewordly: Invalid error positions', { 
-        actualStart, 
-        actualEnd, 
-        textLength: currentText.length,
-        errorId: targetError.id
-      });
-      return;
+      // If positions are invalid, try to find the word in current text as fallback
+      if (targetError.word) {
+        // Try to find the word near the original position (within 50 chars)
+        const searchStart = Math.max(0, Math.min(actualStart, currentText.length - 1));
+        const wordIndex = currentText.indexOf(targetError.word, Math.max(0, searchStart - 50));
+        if (wordIndex !== -1) {
+          actualStart = wordIndex;
+          actualEnd = wordIndex + targetError.word.length;
+          console.warn('Rewordly: Recalculated error positions (original positions were invalid)', {
+            errorId,
+            oldStart: targetError.start,
+            oldEnd: targetError.end,
+            newStart: actualStart,
+            newEnd: actualEnd,
+            word: targetError.word
+          });
+        } else {
+          console.error('Rewordly: Invalid error positions and word not found in text', { 
+            actualStart, 
+            actualEnd, 
+            textLength: currentText.length,
+            errorId: targetError.id,
+            word: targetError.word
+          });
+          return;
+        }
+      } else {
+        console.error('Rewordly: Invalid error positions and no word to search for', { 
+          actualStart, 
+          actualEnd, 
+          textLength: currentText.length,
+          errorId: targetError.id
+        });
+        return;
+      }
     }
     
+    // Update stored errors - remove the replaced error by ID
+    const updatedErrors = currentErrors.filter(err => err.id !== errorId);
+    this.grammarErrors.set(element, updatedErrors);
+    
     // Remove only the replaced error's highlight (not all highlights) - match by ID
+    // Do this AFTER updating grammarErrors to ensure consistency
     if (this.highlightsContent) {
       const elementId = this.getElementId(element);
       const highlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
@@ -3812,10 +3837,6 @@ class RewordlyContentScript {
         }
       });
     }
-    
-    // Update stored errors - remove the replaced error by ID
-    const updatedErrors = currentErrors.filter(err => err.id !== errorId);
-    this.grammarErrors.set(element, updatedErrors);
     
     if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
       // For input/textarea
@@ -3847,6 +3868,7 @@ class RewordlyContentScript {
       
       // Update all highlight data-error attributes with new positions - match by ID
       // This ensures all highlights have the most up-to-date error data
+      // IMPORTANT: Do this BEFORE updateHighlightsPosition to ensure highlights have correct data
       if (this.highlightsContent) {
         const elementId = this.getElementId(element);
         const highlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
@@ -3870,6 +3892,7 @@ class RewordlyContentScript {
       
       // Update highlight positions after DOM has updated (for proper text wrapping calculation)
       // Use requestAnimationFrame to ensure text wrapping is recalculated after replace
+      // This will also update data-error attributes again, ensuring consistency
       requestAnimationFrame(() => {
         this.updateHighlightsPosition(element);
       });
@@ -3916,11 +3939,13 @@ class RewordlyContentScript {
                         element.closest('.DraftEditor-root') !== null;
       
       if (isLexical) {
-        // For Lexical editors (Reddit), use Lexical-specific replacement
+        // For Lexical editors (Reddit), use execCommand to maintain editor state
+        // This simulates user typing, which Lexical handles correctly
         this.isPerformingReplace = true;
         
         try {
-          this.replaceTextInLexical(element, actualStart, actualEnd, replacement);
+          // Use execCommand('insertText') which is safest for Lexical
+          this.replaceTextInContentEditable(element, actualStart, actualEnd, replacement, true);
           
           // Calculate length difference for position adjustment
           const replacementLength = replacement.length;
@@ -3964,6 +3989,7 @@ class RewordlyContentScript {
           }
           
           // Wait for Lexical to update its DOM before repositioning highlights
+          // Also keep flag true longer to catch any input events triggered by execCommand
           setTimeout(() => {
             this.updateHighlightsPosition(element);
             
@@ -3981,27 +4007,12 @@ class RewordlyContentScript {
               this.isPerformingReplace = true;
               
               element.focus();
-              // For contenteditable, set cursor position using Selection API
-              const selection = window.getSelection();
-              if (selection) {
-                const newCursorPosition = actualStart + replacement.length;
-                
-                // Map cursor position to text node
-                const cursorMapping = this.mapInnerTextToTextNodes(element, newCursorPosition, newCursorPosition);
-                if (cursorMapping && cursorMapping.startNode) {
-                  const cursorRange = document.createRange();
-                  const offset = Math.min(cursorMapping.startOffset, cursorMapping.startNode.textContent!.length);
-                  cursorRange.setStart(cursorMapping.startNode, offset);
-                  cursorRange.collapse(true);
-                  selection.removeAllRanges();
-                  selection.addRange(cursorRange);
-                }
-              }
               
-              // Clear the replace flag after a short delay to ensure focus is stable
+              // Keep flag true longer (300ms) to catch input events triggered by execCommand
+              // Lexical may trigger input events asynchronously after execCommand
               setTimeout(() => {
                 this.isPerformingReplace = false;
-              }, 150);
+              }, 300);
             });
           }, 100);
         } catch (err) {
@@ -4642,7 +4653,13 @@ class RewordlyContentScript {
    * Replace text in Lexical editor (Reddit)
    * Uses execCommand to ensure Lexical's internal state is properly updated
    */
-  private replaceTextInLexical(element: HTMLElement, start: number, end: number, replacement: string): void {
+  private replaceTextInContentEditable(
+    element: HTMLElement, 
+    start: number, 
+    end: number, 
+    replacement: string, 
+    useExecCommand: boolean = false
+  ): void {
     const selection = window.getSelection();
     if (!selection) {
       console.error('Rewordly: No selection available for Lexical replacement');
@@ -4712,45 +4729,59 @@ class RewordlyContentScript {
       selection.removeAllRanges();
       selection.addRange(range);
       
-      // Use execCommand to replace text - this ensures Lexical's internal state is updated correctly
-      // Lexical listens to execCommand and updates its internal state accordingly
-      const success = document.execCommand('insertText', false, replacement);
-      
-      if (!success) {
-        // Fallback: try using beforeinput/input events
-        console.warn('Rewordly: execCommand failed, trying fallback method for Lexical');
+      if (useExecCommand) {
+        // Use execCommand to replace text - this ensures Lexical's internal state is updated correctly
+        // Lexical listens to execCommand and updates its internal state accordingly
+        const success = document.execCommand('insertText', false, replacement);
         
-        // Delete the selected content first
+        if (!success) {
+          // Fallback: try using beforeinput/input events
+          console.warn('Rewordly: execCommand failed, trying fallback method');
+          
+          // Delete the selected content first
+          range.deleteContents();
+          
+          // Insert the replacement text
+          const textNode = document.createTextNode(replacement);
+          range.insertNode(textNode);
+          
+          // Move cursor after the inserted text
+          range.setStartAfter(textNode);
+          range.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(range);
+          
+          // Trigger input events to notify editor
+          const beforeInputEvent = new InputEvent('beforeinput', {
+            bubbles: true,
+            cancelable: true,
+            inputType: 'insertText',
+            data: replacement
+          });
+          (beforeInputEvent as any).__rewordlyProgrammatic = true;
+          element.dispatchEvent(beforeInputEvent);
+          
+          const inputEvent = new InputEvent('input', {
+            bubbles: true,
+            cancelable: false,
+            inputType: 'insertText',
+            data: replacement
+          });
+          (inputEvent as any).__rewordlyProgrammatic = true;
+          element.dispatchEvent(inputEvent);
+        }
+      } else {
+        // Standard replacement for simple contenteditable (Gmail, etc.)
         range.deleteContents();
+        range.insertNode(document.createTextNode(replacement));
         
-        // Insert the replacement text
-        const textNode = document.createTextNode(replacement);
-        range.insertNode(textNode);
+        // Normalize to merge adjacent text nodes
+        element.normalize();
         
-        // Move cursor after the inserted text
-        range.setStartAfter(textNode);
-        range.collapse(true);
+        // Move cursor to end of replacement
+        range.collapse(false);
         selection.removeAllRanges();
         selection.addRange(range);
-        
-        // Trigger Lexical events
-        const beforeInputEvent = new InputEvent('beforeinput', {
-          bubbles: true,
-          cancelable: true,
-          inputType: 'insertText',
-          data: replacement
-        });
-        (beforeInputEvent as any).__rewordlyProgrammatic = true;
-        element.dispatchEvent(beforeInputEvent);
-        
-        const inputEvent = new InputEvent('input', {
-          bubbles: true,
-          cancelable: false,
-          inputType: 'insertText',
-          data: replacement
-        });
-        (inputEvent as any).__rewordlyProgrammatic = true;
-        element.dispatchEvent(inputEvent);
       }
       
       // Clear selection
