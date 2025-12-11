@@ -3398,6 +3398,9 @@ class RewordlyContentScript {
     highlight.addEventListener('mouseenter', () => {
       // Close any existing tooltip for this error ID
       closeTooltip();
+      
+      // Close all other tooltips when opening a new one
+      this.closeAllGrammarTooltips();
 
       // Get current errors
       const currentErrors = this.grammarErrors.get(element) || [];
@@ -3414,32 +3417,96 @@ class RewordlyContentScript {
       const tooltip = document.createElement('div');
       tooltip.className = 'rewordly-grammar-tooltip';
 
-      const suggestionsHtml = currentError.suggestions && currentError.suggestions.length > 0
-        ? currentError.suggestions.map((suggestion) => {
+      // Limit initial suggestions display (show first 5, rest with "see more")
+      const INITIAL_SUGGESTIONS_LIMIT = 5;
+      const allSuggestions = currentError.suggestions || [];
+      const hasMoreSuggestions = allSuggestions.length > INITIAL_SUGGESTIONS_LIMIT;
+      const initialSuggestions = hasMoreSuggestions 
+        ? allSuggestions.slice(0, INITIAL_SUGGESTIONS_LIMIT)
+        : allSuggestions;
+      const remainingSuggestions = hasMoreSuggestions 
+        ? allSuggestions.slice(INITIAL_SUGGESTIONS_LIMIT)
+        : [];
+
+      const initialSuggestionsHtml = initialSuggestions.length > 0
+        ? initialSuggestions.map((suggestion, index) => {
             // Format suggestion for display - make whitespace visible
             const displayText = this.formatSuggestionForDisplay(suggestion, currentError.word);
-            return `<button class="rewordly-grammar-suggestion" data-suggestion="${this.escapeHtml(suggestion)}" data-error-start="${currentError.start}" data-error-end="${currentError.end}">${this.escapeHtml(displayText)}</button>`;
+            return `<button class="rewordly-grammar-suggestion" data-suggestion="${this.escapeHtml(suggestion)}" data-error-start="${currentError.start}" data-error-end="${currentError.end}" data-suggestion-index="${index}">${this.escapeHtml(displayText)}</button>`;
           }).join('')
         : '<div class="rewordly-grammar-no-suggestions">No suggestions available</div>';
+
+      const remainingSuggestionsHtml = remainingSuggestions.length > 0
+        ? remainingSuggestions.map((suggestion, index) => {
+            const displayText = this.formatSuggestionForDisplay(suggestion, currentError.word);
+            return `<button class="rewordly-grammar-suggestion rewordly-grammar-suggestion-hidden" data-suggestion="${this.escapeHtml(suggestion)}" data-error-start="${currentError.start}" data-error-end="${currentError.end}" data-suggestion-index="${initialSuggestions.length + index}">${this.escapeHtml(displayText)}</button>`;
+          }).join('')
+        : '';
+
+      const seeMoreButtonHtml = hasMoreSuggestions
+        ? `<button class="rewordly-grammar-see-more" data-error-id="${currentError.id}">See more (${remainingSuggestions.length})</button>`
+        : '';
 
       tooltip.innerHTML = `
         <div class="rewordly-grammar-tooltip-content">
           <div class="rewordly-grammar-tooltip-word">${this.escapeHtml(currentError.word)}</div>
-          <div class="rewordly-grammar-tooltip-suggestions">${suggestionsHtml}</div>
+          <div class="rewordly-grammar-tooltip-suggestions">
+            ${initialSuggestionsHtml}
+            ${remainingSuggestionsHtml}
+          </div>
+          ${seeMoreButtonHtml}
           <button class="rewordly-grammar-dismiss" data-error-id="${currentError.id}">Dismiss</button>
         </div>
       `;
 
       document.body.appendChild(tooltip);
 
-      // Position tooltip
+      // Calculate available screen space for max-height
       const highlightRect = highlight.getBoundingClientRect();
+      const viewportHeight = window.innerHeight;
+      const viewportWidth = window.innerWidth;
+      
+      // Calculate space above and below the highlight
+      const spaceAbove = highlightRect.top;
+      const spaceBelow = viewportHeight - highlightRect.bottom;
+      
+      // Use the larger space, but leave some margin (at least 16px from edges)
+      const maxAvailableHeight = Math.max(spaceAbove, spaceBelow) - 32; // 16px margin top + 16px margin bottom
+      
+      // Set a reasonable minimum and maximum
+      const MIN_TOOLTIP_HEIGHT = 100;
+      const MAX_TOOLTIP_HEIGHT = 400;
+      const calculatedMaxHeight = Math.max(MIN_TOOLTIP_HEIGHT, Math.min(MAX_TOOLTIP_HEIGHT, maxAvailableHeight));
+      
+      // Apply max-height to suggestions container
+      const suggestionsContainer = tooltip.querySelector('.rewordly-grammar-tooltip-suggestions') as HTMLElement;
+      if (suggestionsContainer) {
+        suggestionsContainer.style.maxHeight = `${calculatedMaxHeight}px`;
+        suggestionsContainer.style.overflowY = 'auto';
+        suggestionsContainer.style.overflowX = 'hidden';
+      }
+
+      // Position tooltip
       const tooltipRect = tooltip.getBoundingClientRect();
       const tooltipTop = highlightRect.top - tooltipRect.height - 8;
       const tooltipLeft = highlightRect.left + (highlightRect.width / 2) - (tooltipRect.width / 2);
 
-      const adjustedLeft = Math.max(8, Math.min(tooltipLeft, window.innerWidth - tooltipRect.width - 8));
-      const adjustedTop = tooltipTop < 8 ? highlightRect.bottom + 8 : tooltipTop;
+      // Ensure tooltip doesn't go outside screen bounds horizontally
+      const adjustedLeft = Math.max(8, Math.min(tooltipLeft, viewportWidth - tooltipRect.width - 8));
+      
+      // Ensure tooltip doesn't go outside screen bounds vertically
+      let adjustedTop = tooltipTop;
+      if (tooltipTop < 8) {
+        // Not enough space above, try below
+        adjustedTop = highlightRect.bottom + 8;
+        // If still doesn't fit below, adjust to fit within viewport
+        if (adjustedTop + tooltipRect.height > viewportHeight - 8) {
+          adjustedTop = Math.max(8, viewportHeight - tooltipRect.height - 8);
+        }
+      } else if (adjustedTop + tooltipRect.height > viewportHeight - 8) {
+        // Doesn't fit below, adjust to fit within viewport
+        adjustedTop = Math.max(8, viewportHeight - tooltipRect.height - 8);
+      }
 
       tooltip.style.top = `${adjustedTop}px`;
       tooltip.style.left = `${adjustedLeft}px`;
@@ -3481,6 +3548,45 @@ class RewordlyContentScript {
           this.replaceGrammarError(element, targetError, suggestion);
         });
       });
+
+      // Attach "see more" button handler
+      const seeMoreButton = tooltip.querySelector('.rewordly-grammar-see-more');
+      if (seeMoreButton) {
+        seeMoreButton.addEventListener('click', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+
+          // Show all hidden suggestions
+          const hiddenSuggestions = tooltip.querySelectorAll('.rewordly-grammar-suggestion-hidden');
+          hiddenSuggestions.forEach(suggestion => {
+            suggestion.classList.remove('rewordly-grammar-suggestion-hidden');
+          });
+
+          // Hide the "see more" button
+          seeMoreButton.remove();
+
+          // Recalculate tooltip position after showing all suggestions
+          const updatedTooltipRect = tooltip.getBoundingClientRect();
+          const updatedHighlightRect = highlight.getBoundingClientRect();
+          const updatedTooltipTop = updatedHighlightRect.top - updatedTooltipRect.height - 8;
+          const updatedTooltipLeft = updatedHighlightRect.left + (updatedHighlightRect.width / 2) - (updatedTooltipRect.width / 2);
+
+          const updatedAdjustedLeft = Math.max(8, Math.min(updatedTooltipLeft, window.innerWidth - updatedTooltipRect.width - 8));
+          let updatedAdjustedTop = updatedTooltipTop;
+          
+          if (updatedTooltipTop < 8) {
+            updatedAdjustedTop = updatedHighlightRect.bottom + 8;
+            if (updatedAdjustedTop + updatedTooltipRect.height > window.innerHeight - 8) {
+              updatedAdjustedTop = Math.max(8, window.innerHeight - updatedTooltipRect.height - 8);
+            }
+          } else if (updatedAdjustedTop + updatedTooltipRect.height > window.innerHeight - 8) {
+            updatedAdjustedTop = Math.max(8, window.innerHeight - updatedTooltipRect.height - 8);
+          }
+
+          tooltip.style.top = `${updatedAdjustedTop}px`;
+          tooltip.style.left = `${updatedAdjustedLeft}px`;
+        });
+      }
 
       // Attach dismiss button handler
       const dismissButton = tooltip.querySelector('.rewordly-grammar-dismiss');

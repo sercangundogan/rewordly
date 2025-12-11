@@ -1158,6 +1158,28 @@
   display: flex !important;
   flex-direction: column !important;
   gap: 4px !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  scrollbar-width: thin !important;
+  scrollbar-color: #cbd5e1 #f1f5f9 !important;
+}
+
+.rewordly-grammar-tooltip-suggestions::-webkit-scrollbar {
+  width: 6px !important;
+}
+
+.rewordly-grammar-tooltip-suggestions::-webkit-scrollbar-track {
+  background: #f1f5f9 !important;
+  border-radius: 3px !important;
+}
+
+.rewordly-grammar-tooltip-suggestions::-webkit-scrollbar-thumb {
+  background: #cbd5e1 !important;
+  border-radius: 3px !important;
+}
+
+.rewordly-grammar-tooltip-suggestions::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8 !important;
 }
 
 .rewordly-grammar-suggestion {
@@ -1172,6 +1194,11 @@
   transition: all 0.2s ease !important;
   font-family: inherit !important;
   line-height: 20px !important;
+  flex-shrink: 0 !important;
+}
+
+.rewordly-grammar-suggestion.rewordly-grammar-suggestion-hidden {
+  display: none !important;
 }
 
 .rewordly-grammar-suggestion:hover {
@@ -1184,6 +1211,28 @@
   color: #6b7280 !important;
   font-size: 12px !important;
   font-style: italic !important;
+}
+
+.rewordly-grammar-see-more {
+  background: transparent !important;
+  border: 1px solid #667eea !important;
+  border-radius: 4px !important;
+  padding: 6px 12px !important;
+  text-align: center !important;
+  cursor: pointer !important;
+  font-size: 12px !important;
+  color: #667eea !important;
+  transition: all 0.2s ease !important;
+  font-family: inherit !important;
+  margin-top: 8px !important;
+  width: 100% !important;
+  line-height: 20px !important;
+  font-weight: 500 !important;
+}
+
+.rewordly-grammar-see-more:hover {
+  background: #667eea !important;
+  color: white !important;
 }
 
 .rewordly-grammar-dismiss {
