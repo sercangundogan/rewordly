@@ -550,6 +550,11 @@ class RewordlyContentScript {
    * Check if element has existing text and perform grammar check when element is visible
    */
   private checkAndPerformGrammarCheckForExistingText(element: HTMLElement): void {
+    // Only perform grammar check on allowed sites (Twitter, Gmail, Reddit, Medium)
+    if (!this.isGrammarCheckAllowedSite()) {
+      return;
+    }
+    
     if (!this.config.enabled || !this.config.highlightsEnabled) {
       return;
     }
@@ -917,6 +922,11 @@ class RewordlyContentScript {
    * Add element to grammar check queue
    */
   private queueGrammarCheck(element: HTMLElement, priority: number = 0): void {
+    // Only queue grammar check on allowed sites (Twitter, Gmail, Reddit, Medium)
+    if (!this.isGrammarCheckAllowedSite()) {
+      return;
+    }
+    
     // Check if element is already in queue
     const existingIndex = this.grammarCheckQueue.findIndex(
       item => item.element === element
@@ -984,6 +994,11 @@ class RewordlyContentScript {
    * Perform grammar check on an element
    */
   private async performGrammarCheck(element: HTMLElement): Promise<void> {
+    // Only perform grammar check on allowed sites (Twitter, Gmail, Reddit, Medium)
+    if (!this.isGrammarCheckAllowedSite()) {
+      return;
+    }
+    
     // Check if element is in ignore list
     if (this.isElementIgnored(element)) {
       return;
@@ -1757,6 +1772,36 @@ class RewordlyContentScript {
       (element as any).__rewordlyId = `rewordly-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     }
     return (element as any).__rewordlyId;
+  }
+
+  /**
+   * Check if grammar check is allowed on the current site
+   * Only Twitter, Gmail, Reddit, and Medium are allowed for real-time grammar checking
+   */
+  private isGrammarCheckAllowedSite(): boolean {
+    const hostname = window.location.hostname.toLowerCase();
+    
+    // Twitter
+    if (hostname.includes('twitter.com') || hostname.includes('x.com')) {
+      return true;
+    }
+    
+    // Gmail
+    if (hostname.includes('mail.google.com') || hostname.includes('gmail.com')) {
+      return true;
+    }
+    
+    // Reddit
+    if (hostname.includes('reddit.com')) {
+      return true;
+    }
+    
+    // Medium
+    if (hostname.includes('medium.com')) {
+      return true;
+    }
+    
+    return false;
   }
 
   /**
