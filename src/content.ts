@@ -716,20 +716,15 @@ class RewordlyContentScript {
       return;
     }
 
-    const element = event.target as HTMLElement;
-    
-    if (!this.isEditableElement(element)) {
+    // Skip programmatic input events triggered by our replace operations
+    // This prevents unnecessary grammar checks after replacements
+    if ((event as any).__rewordlyProgrammatic) {
       return;
     }
 
-    // Ignore programmatic events from replaceTextInDraftJS
-    // But still clear timeout to prevent grammar check from running after replace
-    if ((event as any).__rewordlyProgrammatic) {
-      // Clear any pending grammar check timeout
-      if (this.grammarCheckTimeout !== null) {
-        clearTimeout(this.grammarCheckTimeout);
-        this.grammarCheckTimeout = null;
-      }
+    const element = event.target as HTMLElement;
+    
+    if (!this.isEditableElement(element)) {
       return;
     }
 
@@ -899,6 +894,11 @@ class RewordlyContentScript {
       }
       
       // Small delay to allow for focus transfer (e.g., clicking on overlay)
+      // For Draft.js (Twitter), use longer delay as DOM updates are asynchronous
+      const isDraftJS = element.classList.contains('public-DraftEditor-content') || 
+                        element.closest('.DraftEditor-root') !== null;
+      const blurDelay = isDraftJS ? 400 : 100; // Longer delay for Draft.js to account for async DOM updates
+      
       const timeoutId = setTimeout(() => {
         // Remove from map when executed
         this.scheduledBlurHandlers.delete(element);
@@ -923,7 +923,7 @@ class RewordlyContentScript {
             this.hideGrammarOverlay(element);
           // }
         }
-      }, 100);
+      }, blurDelay);
       
       // Store timeout ID so we can cancel it if needed
       this.scheduledBlurHandlers.set(element, timeoutId);
@@ -1400,10 +1400,11 @@ class RewordlyContentScript {
       }
     }
 
-    // Get existing highlights to compare by error ID (most reliable)
+    // Get existing highlights to compare by error ID and position/word (for matching after replace)
     const elementId = this.getElementId(element);
     const existingHighlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
     const existingErrorMap = new Map<string, HTMLElement>(); // Key: error ID
+    const existingErrorByPositionMap = new Map<string, HTMLElement>(); // Key: "start-end-word" for position-based matching
     
     existingHighlights.forEach((highlight) => {
       const errorData = (highlight as HTMLElement).getAttribute('data-error');
@@ -1412,6 +1413,14 @@ class RewordlyContentScript {
           const error: GrammarError = JSON.parse(errorData);
           if (error.id) {
             existingErrorMap.set(error.id, highlight as HTMLElement);
+          }
+          // Also create position-based key for matching after replace (when IDs might differ)
+          if (error.start !== undefined && error.end !== undefined && error.word) {
+            const positionKey = `${error.start}-${error.end}-${error.word.toLowerCase().trim()}`;
+            // Only set if not already set (prefer first highlight found for this position)
+            if (!existingErrorByPositionMap.has(positionKey)) {
+              existingErrorByPositionMap.set(positionKey, highlight as HTMLElement);
+            }
           }
         } catch (e) {
           // Error parsing, skip
@@ -1468,7 +1477,30 @@ class RewordlyContentScript {
 
     // Update or create highlights for each valid error
     validErrors.forEach((error, index) => {
-      const existingHighlight = existingErrorMap.get(error.id);
+      // First try to match by error ID
+      let existingHighlight = existingErrorMap.get(error.id);
+      
+      // If not found by ID, try to match by position and word (for cases where API returns new IDs after replace)
+      if (!existingHighlight && error.start !== undefined && error.end !== undefined && error.word) {
+        const positionKey = `${error.start}-${error.end}-${error.word.toLowerCase().trim()}`;
+        existingHighlight = existingErrorByPositionMap.get(positionKey);
+        
+        // If found by position, update the error ID in the highlight to match the new error
+        if (existingHighlight) {
+          // Update error ID in all highlights for this position
+          if (this.highlightsContent) {
+            const allHighlightsForPosition = Array.from(this.highlightsContent.querySelectorAll(
+              `[data-element-id="${elementId}"][data-error-id="${existingHighlight.getAttribute('data-error-id')}"]`
+            )) as HTMLElement[];
+            allHighlightsForPosition.forEach(h => {
+              h.setAttribute('data-error-id', error.id);
+              h.setAttribute('data-error', JSON.stringify(error));
+            });
+          }
+          // Update the map to reflect the new ID
+          existingErrorMap.set(error.id, existingHighlight);
+        }
+      }
       
       if (existingHighlight) {
         // Check if this error is dismissed - if so, remove the highlight
@@ -1509,7 +1541,7 @@ class RewordlyContentScript {
             );
             
             if (!highlight) {
-              // Create new highlight for this line
+              // Create new highlight for this line (no animation - this is an existing error, just new line)
               highlight = document.createElement('div');
               highlight.className = 'rewordly-highlight';
               highlight.setAttribute('data-rewordly-part', 'highlight');
@@ -1522,6 +1554,14 @@ class RewordlyContentScript {
               
               // Add hover listeners to all lines
               this.attachHighlightHoverListener(highlight, error, element);
+              
+              // Set position and size immediately (no animation for existing error's new line)
+              highlight.style.top = `${highlightRect.top}px`;
+              highlight.style.left = `${highlightRect.left}px`;
+              highlight.style.width = `${highlightRect.width}px`;
+              highlight.style.height = `${highlightRect.height}px`;
+              highlight.style.opacity = '1';
+              highlight.style.overflow = 'visible';
               
               this.highlightsContent!.appendChild(highlight);
             }
@@ -1565,8 +1605,8 @@ class RewordlyContentScript {
           existingHighlight.removeAttribute('data-hidden-by-blur');
         }
       } else {
-        // New error or error position changed, create new highlight
-        this.createHighlight(element, error, index);
+        // New error or error position changed, create new highlight with animation
+        this.createHighlight(element, error, index, true);
       }
     });
 
@@ -2675,8 +2715,8 @@ class RewordlyContentScript {
         border-bottom: 2px solid #ef4444 !important;
         box-sizing: content-box !important;
         z-index: ${isReddit ? '2147483647' : '1'} !important;
-        /* No transition for top/left to avoid lag during scroll - position updates instantly */
-        /* Width and opacity transitions handled by JavaScript animation in createHighlight */
+        /* No transition for position updates - only animate on initial creation */
+        transition: none !important;
         transform-origin: left center !important;
         ${isReddit ? 'background: rgba(239, 68, 68, 0.05) !important;' : ''}
       }
@@ -2697,8 +2737,9 @@ class RewordlyContentScript {
 
   /**
    * Create a single highlight for an error
+   * @param animate - Whether to animate the highlight (default: true)
    */
-  private createHighlight(element: HTMLElement, error: GrammarError, index: number): void {
+  private createHighlight(element: HTMLElement, error: GrammarError, index: number, animate: boolean = true): void {
     
     if (!this.highlightsContent) {
       return;
@@ -2754,58 +2795,65 @@ class RewordlyContentScript {
       // Store target width for animation
       const targetWidth = highlightRect.width;
       
-      // Initially set width to 0 for animation
-      highlight.style.width = '0px';
-      highlight.style.overflow = 'hidden';
-      highlight.style.opacity = '0';
-      
-      // Add animation class
-      highlight.classList.add('rewordly-highlight-enter');
-
       // Add hover listeners to all lines - tooltip will be shared by error ID
       this.attachHighlightHoverListener(highlight, error, element);
 
-      // Append to highlights content (must be in DOM for animation to work)
+      // Append to highlights content
       if (!this.highlightsContent) return;
       this.highlightsContent.appendChild(highlight);
       
-      // Force reflow to ensure animation starts
-      void highlight.offsetWidth;
-      
-      // Animate width using requestAnimationFrame for smooth animation
-      const startTime = performance.now();
-      const duration = 300; // 300ms
-      const startWidth = 0;
-      const startOpacity = 0;
-      const endOpacity = 1;
-      
-      const animate = (currentTime: number) => {
-        const elapsed = currentTime - startTime;
-        const progress = Math.min(elapsed / duration, 1);
+      if (animate) {
+        // Initially set width to 0 for animation
+        highlight.style.width = '0px';
+        highlight.style.overflow = 'hidden';
+        highlight.style.opacity = '0';
         
-        // Ease-in-out function
-        const easeInOut = progress < 0.5
-          ? 2 * progress * progress
-          : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+        // Add animation class
+        highlight.classList.add('rewordly-highlight-enter');
         
-        const currentWidth = startWidth + (targetWidth - startWidth) * easeInOut;
-        const currentOpacity = startOpacity + (endOpacity - startOpacity) * easeInOut;
+        // Force reflow to ensure animation starts
+        void highlight.offsetWidth;
         
-        highlight.style.width = `${currentWidth}px`;
-        highlight.style.opacity = `${currentOpacity}`;
+        // Animate width using requestAnimationFrame for smooth animation
+        const startTime = performance.now();
+        const duration = 300; // 300ms
+        const startWidth = 0;
+        const startOpacity = 0;
+        const endOpacity = 1;
         
-        if (progress < 1) {
-          requestAnimationFrame(animate);
-        } else {
-          // Animation complete
-          highlight.style.width = `${targetWidth}px`;
-          highlight.style.opacity = '1';
-          highlight.style.overflow = 'visible';
-          highlight.classList.remove('rewordly-highlight-enter');
-        }
-      };
-      
-      requestAnimationFrame(animate);
+        const animateFn = (currentTime: number) => {
+          const elapsed = currentTime - startTime;
+          const progress = Math.min(elapsed / duration, 1);
+          
+          // Ease-in-out function
+          const easeInOut = progress < 0.5
+            ? 2 * progress * progress
+            : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+          
+          const currentWidth = startWidth + (targetWidth - startWidth) * easeInOut;
+          const currentOpacity = startOpacity + (endOpacity - startOpacity) * easeInOut;
+          
+          highlight.style.width = `${currentWidth}px`;
+          highlight.style.opacity = `${currentOpacity}`;
+          
+          if (progress < 1) {
+            requestAnimationFrame(animateFn);
+          } else {
+            // Animation complete
+            highlight.style.width = `${targetWidth}px`;
+            highlight.style.opacity = '1';
+            highlight.style.overflow = 'visible';
+            highlight.classList.remove('rewordly-highlight-enter');
+          }
+        };
+        
+        requestAnimationFrame(animateFn);
+      } else {
+        // No animation - set final values immediately
+        highlight.style.width = `${targetWidth}px`;
+        highlight.style.opacity = '1';
+        highlight.style.overflow = 'visible';
+      }
     });
   }
 
@@ -3237,8 +3285,27 @@ class RewordlyContentScript {
       const highlightRects = this.getErrorTextRects(element, adjustedPositions.start, adjustedPositions.end);
       
       if (highlightRects.length === 0) {
+        // Could not calculate position - check if this is during a replace operation
+        // For Draft.js, DOM might be updating, so don't remove highlights immediately
+        const isDraftJS = element.classList.contains('public-DraftEditor-content') || 
+                          element.closest('.DraftEditor-root') !== null;
+        
+        if (isDraftJS && this.isPerformingReplace) {
+          // During replace in Draft.js, DOM is updating - don't remove highlights
+          // They will be updated when DOM stabilizes
+          // Also, check if the error still exists in the text (might be temporarily unmappable)
+          const currentText = element.innerText || element.textContent || '';
+          if (error.word && currentText.includes(error.word)) {
+            // Error word still exists, just temporarily unmappable - keep highlight
+            return;
+          }
+        }
+        
         // Could not calculate position - remove all highlights for this error
-        errorHighlights.forEach(highlight => highlight.remove());
+        // But only if we're not in the middle of a replace operation
+        if (!this.isPerformingReplace) {
+          errorHighlights.forEach(highlight => highlight.remove());
+        }
         return;
       }
 
@@ -3279,13 +3346,14 @@ class RewordlyContentScript {
           }
         }
 
-        // Update highlight position and size
+        // Update highlight position and size (instant, no animation)
         highlight.style.top = `${highlightRect.top}px`;
         highlight.style.left = `${highlightRect.left}px`;
         highlight.style.width = `${highlightRect.width}px`;
         highlight.style.height = `${highlightRect.height}px`;
         // Ensure highlight is visible (may have been hidden by blur/modal)
         highlight.style.display = '';
+        highlight.style.opacity = '1'; // Restore opacity if it was faded
         highlight.removeAttribute('data-hidden-by-blur');
         highlight.removeAttribute('data-hidden-by-modal');
         highlight.setAttribute('data-error', JSON.stringify(error));
@@ -3920,6 +3988,10 @@ class RewordlyContentScript {
         // Clear the replace flag after a short delay to ensure focus is stable
         setTimeout(() => {
           this.isPerformingReplace = false;
+          // Trigger grammar check after replace is complete
+          this.performGrammarCheck(element).catch(error => {
+            console.error('Rewordly: Error performing grammar check after replace:', error);
+          });
         }, 150);
         
         // Trigger input event (this will reset timeout but won't clear errors)
@@ -3928,9 +4000,6 @@ class RewordlyContentScript {
         (inputEvent as any).__rewordlyProgrammatic = true;
         element.dispatchEvent(inputEvent);
       });
-      
-      // Don't recheck grammar here - we've already updated error positions manually
-      // Grammar check will happen automatically when user types (via handleInput)
     } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
       // For contenteditable - check if it's Lexical (Reddit) or Draft.js (Twitter)
       const isLexical = element.getAttribute('data-lexical-editor') === 'true' ||
@@ -4012,6 +4081,10 @@ class RewordlyContentScript {
               // Lexical may trigger input events asynchronously after execCommand
               setTimeout(() => {
                 this.isPerformingReplace = false;
+                // Trigger grammar check after replace is complete
+                this.performGrammarCheck(element).catch(error => {
+                  console.error('Rewordly: Error performing grammar check after replace:', error);
+                });
               }, 300);
             });
           }, 100);
@@ -4023,11 +4096,26 @@ class RewordlyContentScript {
         // Set flag to prevent blur handler from hiding highlights during replace
         this.isPerformingReplace = true;
         
-        // For Draft.js editors (Twitter), use a different approach
-        // We need to simulate user typing to trigger Draft.js onChange
-        this.replaceTextInDraftJS(element, actualStart, actualEnd, replacement);
+        // Cancel any scheduled blur handlers immediately to prevent them from hiding highlights
+        const existingBlurTimeout = this.scheduledBlurHandlers.get(element);
+        if (existingBlurTimeout) {
+          clearTimeout(existingBlurTimeout);
+          this.scheduledBlurHandlers.delete(element);
+        }
         
-        // Calculate length difference for position adjustment
+        // Store original text for verification
+        const originalText = element.innerText || element.textContent || '';
+        
+        // For Draft.js editors (Twitter), use execCommand-based replacement
+        const replaceSuccess = this.replaceTextInDraftJS(element, actualStart, actualEnd, replacement);
+        
+        if (!replaceSuccess) {
+          console.error('Rewordly: Failed to replace text in Draft.js');
+          this.isPerformingReplace = false;
+          return; // Don't update highlights if replace failed
+        }
+        
+        // Calculate length difference for position adjustment (do this immediately, not in timeout)
         const replacementLength = replacement.length;
         const originalLength = actualEnd - actualStart;
         const lengthDiff = replacementLength - originalLength;
@@ -4051,6 +4139,7 @@ class RewordlyContentScript {
         if (this.highlightsContent) {
           const elementId = this.getElementId(element);
           const highlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
+          
           highlights.forEach((highlight) => {
             const highlightErrorId = (highlight as HTMLElement).getAttribute('data-error-id');
             if (!highlightErrorId) return;
@@ -4062,54 +4151,80 @@ class RewordlyContentScript {
               // Update data-error attribute with new positions (ID remains the same)
               (highlight as HTMLElement).setAttribute('data-error', JSON.stringify(updatedError));
             } else {
-              // This error was removed
-              highlight.remove();
+              // This error was removed - fade out and remove
+              (highlight as HTMLElement).style.opacity = '0';
+              setTimeout(() => highlight.remove(), 150);
             }
           });
         }
         
-        // For Draft.js, wait for DOM to update before repositioning highlights
-        // Draft.js updates its DOM asynchronously, so we need to wait longer
-        setTimeout(() => {
+        // IMMEDIATELY update highlight positions after replace (no timeout for Twitter)
+        // This ensures highlights move instantly to their new positions
+        requestAnimationFrame(() => {
           this.updateHighlightsPosition(element);
+        });
+        
+        // Restore focus and cursor position
+        requestAnimationFrame(() => {
+          element.focus();
           
-          // Cancel any scheduled blur handlers for this element
-          const existingBlurTimeout = this.scheduledBlurHandlers.get(element);
-          if (existingBlurTimeout) {
-            clearTimeout(existingBlurTimeout);
+          // Set cursor position using Selection API
+          const selection = window.getSelection();
+          if (selection) {
+            const newCursorPosition = actualStart + replacement.length;
+            
+            // Map cursor position to text node
+            const cursorMapping = this.mapInnerTextToTextNodes(element, newCursorPosition, newCursorPosition);
+            if (cursorMapping && cursorMapping.startNode) {
+              try {
+                // Check if node is still in document before using range
+                if (this.isNodeInDocument(cursorMapping.startNode)) {
+                  const cursorRange = document.createRange();
+                  const offset = Math.min(cursorMapping.startOffset, cursorMapping.startNode.textContent!.length);
+                  cursorRange.setStart(cursorMapping.startNode, offset);
+                  cursorRange.collapse(true);
+                  selection.removeAllRanges();
+                  selection.addRange(cursorRange);
+                }
+              } catch (e) {
+                // Cursor positioning failed - not critical, user can click to reposition
+                console.warn('Rewordly: Could not set cursor position after replacement', e);
+              }
+            }
+          }
+        });
+        
+        // For Draft.js, also do a delayed verification to catch any DOM changes that Draft.js makes asynchronously
+        // But the immediate update above ensures highlights move instantly
+        setTimeout(() => {
+          const newText = element.innerText || element.textContent || '';
+          
+          // Verify replacement was successful - check if text changed
+          if (newText === originalText && originalText.length > 0) {
+            console.warn('Rewordly: Replacement verification failed - text was not replaced');
+            this.isPerformingReplace = false;
+            return;
+          }
+          
+          // Cancel any blur handlers that might have been scheduled
+          const existingBlurTimeout2 = this.scheduledBlurHandlers.get(element);
+          if (existingBlurTimeout2) {
+            clearTimeout(existingBlurTimeout2);
             this.scheduledBlurHandlers.delete(element);
           }
           
-          // Restore focus and set cursor position after replacement
-          // Use requestAnimationFrame to ensure DOM is ready before focusing
-          requestAnimationFrame(() => {
-            // Keep flag true during focus restore to prevent blur handler from hiding highlights
-            this.isPerformingReplace = true;
-            
-            element.focus();
-            // For contenteditable, set cursor position using Selection API
-            const selection = window.getSelection();
-            if (selection) {
-              const newCursorPosition = actualStart + replacement.length;
-              
-              // Map cursor position to text node
-              const cursorMapping = this.mapInnerTextToTextNodes(element, newCursorPosition, newCursorPosition);
-              if (cursorMapping && cursorMapping.startNode) {
-                const cursorRange = document.createRange();
-                const offset = Math.min(cursorMapping.startOffset, cursorMapping.startNode.textContent!.length);
-                cursorRange.setStart(cursorMapping.startNode, offset);
-                cursorRange.collapse(true);
-                selection.removeAllRanges();
-                selection.addRange(cursorRange);
-              }
-            }
-            
-            // Clear the replace flag after a short delay to ensure focus is stable
-            setTimeout(() => {
-              this.isPerformingReplace = false;
-            }, 150);
-          });
-        }, 150);
+          // Verify and update highlights (in case Draft.js made additional DOM changes)
+          this.updateHighlightsPosition(element);
+          
+          // Keep isPerformingReplace true a bit longer to catch async Draft.js events
+          setTimeout(() => {
+            this.isPerformingReplace = false;
+            // Trigger grammar check after replace is complete
+            this.performGrammarCheck(element).catch(error => {
+              console.error('Rewordly: Error performing grammar check after replace:', error);
+            });
+          }, 200);
+        }, 200); // Small delay only for verification, not for initial update
       } else {
         // Check if this is Notion
         const isNotion = element.getAttribute('data-content-editable-leaf') === 'true' ||
@@ -4313,6 +4428,10 @@ class RewordlyContentScript {
                   
                   setTimeout(() => {
                     this.isPerformingReplace = false;
+                    // Trigger grammar check after replace is complete
+                    this.performGrammarCheck(element).catch(error => {
+                      console.error('Rewordly: Error performing grammar check after replace:', error);
+                    });
                   }, 150);
                 });
               }, 100);
@@ -4507,11 +4626,12 @@ class RewordlyContentScript {
             // Clear the replace flag after a short delay to ensure focus is stable
             setTimeout(() => {
               this.isPerformingReplace = false;
+              // Trigger grammar check after replace is complete
+              this.performGrammarCheck(element).catch(error => {
+                console.error('Rewordly: Error performing grammar check after replace:', error);
+              });
             }, 150);
           });
-          
-          // Don't recheck grammar here - we've already updated error positions manually
-          // Grammar check will happen automatically when user types (via handleInput)
         } catch (err) {
           console.error('Rewordly: Error replacing text:', err);
           console.error('Rewordly: Error details:', {
@@ -4528,125 +4648,174 @@ class RewordlyContentScript {
   }
 
   /**
-   * Replace text in Draft.js editor (Twitter)
+   * Check if a node is still in the document
+   * Useful for checking if nodes are valid before using them in ranges
    */
-  private replaceTextInDraftJS(element: HTMLElement, start: number, end: number, replacement: string): void {
+  private isNodeInDocument(node: Node): boolean {
+    if (!node) return false;
+    
+    // Check if node has a parent (connected to document)
+    // For document nodes, check if they're the document itself
+    if (node.nodeType === Node.DOCUMENT_NODE) {
+      return node === document;
+    }
+    
+    // For other nodes, check if they have a parent and are connected to document
+    let current: Node | null = node;
+    while (current && current !== document) {
+      if (current.parentNode === null) {
+        return false;
+      }
+      current = current.parentNode;
+    }
+    
+    return current === document;
+  }
+
+  /**
+   * Replace text in Draft.js editor (Twitter)
+   * Uses execCommand for reliable text replacement that Draft.js recognizes
+   */
+  private replaceTextInDraftJS(element: HTMLElement, start: number, end: number, replacement: string): boolean {
     const selection = window.getSelection();
-    if (!selection) return;
-    
-    // Map innerText positions to text node positions using the same helper
-    const mapping = this.mapInnerTextToTextNodes(element, start, end);
-    
-    if (!mapping || !mapping.startNode) {
-      console.error('Rewordly: Could not map innerText positions to text nodes in Draft.js', { start, end });
-      return;
+    if (!selection) {
+      console.error('Rewordly: No selection available for Draft.js replacement');
+      return false;
     }
     
-    try {
-      const range = document.createRange();
+    // Focus the element first to ensure Draft.js is ready
+    element.focus();
+    
+    // Helper function to attempt replacement with retry
+    const attemptReplacement = (retryCount: number = 0): boolean => {
+      const maxRetries = 5;
       
-      // Validate positions
-      const startNodeLength = mapping.startNode.textContent!.length;
-      if (mapping.startOffset < 0 || mapping.startOffset > startNodeLength) {
-        console.error('Rewordly: Invalid start offset in Draft.js text node', {
-          startOffset: mapping.startOffset,
-          nodeLength: startNodeLength,
-          globalStart: start
-        });
-        return;
-      }
-      
-      if (mapping.endNode && mapping.startNode !== mapping.endNode) {
-        // Error spans multiple text nodes
-        const endNodeLength = mapping.endNode.textContent!.length;
-        if (mapping.endOffset < 0 || mapping.endOffset > endNodeLength) {
-          console.error('Rewordly: Invalid end offset in Draft.js text node', {
-            endOffset: mapping.endOffset,
-            nodeLength: endNodeLength,
-            globalEnd: end
-          });
-          return;
+      try {
+        // Map innerText positions to text node positions
+        const mapping = this.mapInnerTextToTextNodes(element, start, end);
+        
+        if (!mapping || !mapping.startNode) {
+          if (retryCount < maxRetries) {
+            // Wait a bit and retry - Draft.js DOM might be updating
+            setTimeout(() => attemptReplacement(retryCount + 1), 100 * (retryCount + 1));
+            return false;
+          }
+          console.error('Rewordly: Could not map innerText positions to text nodes in Draft.js', { start, end, retryCount });
+          return false;
         }
         
-        range.setStart(mapping.startNode, Math.min(mapping.startOffset, startNodeLength));
-        range.setEnd(mapping.endNode, Math.min(mapping.endOffset, endNodeLength));
-      } else {
-        // Error is within a single text node
-        const endPos = mapping.endOffset;
-        
-        if (endPos > startNodeLength) {
-          console.error('Rewordly: Invalid end position in Draft.js text node', {
-            startOffset: mapping.startOffset,
-            endPos,
-            nodeLength: startNodeLength,
-            globalStart: start,
-            globalEnd: end
-          });
-          return;
+        // Validate nodes are in document
+        if (!this.isNodeInDocument(mapping.startNode) || 
+            (mapping.endNode && !this.isNodeInDocument(mapping.endNode))) {
+          if (retryCount < maxRetries) {
+            setTimeout(() => attemptReplacement(retryCount + 1), 100 * (retryCount + 1));
+            return false;
+          }
+          console.warn('Rewordly: Text nodes are not in document anymore (Draft.js DOM changed)', { retryCount });
+          return false;
         }
         
-        range.setStart(mapping.startNode, mapping.startOffset);
-        range.setEnd(mapping.startNode, endPos);
+        // Create range for selection
+        const range = document.createRange();
+        
+        if (mapping.endNode && mapping.startNode !== mapping.endNode) {
+          // Error spans multiple text nodes
+          const startNodeLength = mapping.startNode.textContent!.length;
+          const endNodeLength = mapping.endNode.textContent!.length;
+          
+          range.setStart(mapping.startNode, Math.min(mapping.startOffset, startNodeLength));
+          range.setEnd(mapping.endNode, Math.min(mapping.endOffset, endNodeLength));
+        } else {
+          // Error is within a single text node
+          const startNodeLength = mapping.startNode.textContent!.length;
+          const endPos = Math.min(mapping.endOffset, startNodeLength);
+          
+          range.setStart(mapping.startNode, Math.min(mapping.startOffset, startNodeLength));
+          range.setEnd(mapping.startNode, endPos);
+        }
+        
+        // Set selection to the range
+        try {
+          selection.removeAllRanges();
+          selection.addRange(range);
+        } catch (e) {
+          if (retryCount < maxRetries) {
+            setTimeout(() => attemptReplacement(retryCount + 1), 100 * (retryCount + 1));
+            return false;
+          }
+          console.error('Rewordly: Could not set selection in Draft.js', e);
+          return false;
+        }
+        
+        // Use execCommand('insertText') - this is the most reliable way for Draft.js
+        // Draft.js listens to execCommand and updates its internal state correctly
+        const success = document.execCommand('insertText', false, replacement);
+        
+        if (!success) {
+          // Fallback: manual DOM manipulation with proper events
+          console.warn('Rewordly: execCommand failed, using fallback method');
+          
+          // Delete selected content
+          try {
+            range.deleteContents();
+          } catch (e) {
+            if (retryCount < maxRetries) {
+              setTimeout(() => attemptReplacement(retryCount + 1), 100 * (retryCount + 1));
+              return false;
+            }
+            console.error('Rewordly: Could not delete contents in Draft.js', e);
+            return false;
+          }
+          
+          // Insert replacement text
+          const textNode = document.createTextNode(replacement);
+          try {
+            range.insertNode(textNode);
+            
+            // Move cursor after inserted text
+            range.setStartAfter(textNode);
+            range.collapse(true);
+            selection.removeAllRanges();
+            selection.addRange(range);
+          } catch (e) {
+            console.warn('Rewordly: Could not position cursor after insertion', e);
+          }
+          
+          // Trigger beforeinput event (Draft.js listens to this)
+          const beforeInputEvent = new InputEvent('beforeinput', {
+            bubbles: true,
+            cancelable: true,
+            inputType: 'insertText',
+            data: replacement
+          });
+          (beforeInputEvent as any).__rewordlyProgrammatic = true;
+          element.dispatchEvent(beforeInputEvent);
+          
+          // Trigger input event (Draft.js uses this to update state)
+          const inputEvent = new InputEvent('input', {
+            bubbles: true,
+            cancelable: false,
+            inputType: 'insertText',
+            data: replacement
+          });
+          (inputEvent as any).__rewordlyProgrammatic = true;
+          element.dispatchEvent(inputEvent);
+        }
+        
+        return true; // Success
+      } catch (err) {
+        if (retryCount < maxRetries) {
+          setTimeout(() => attemptReplacement(retryCount + 1), 100 * (retryCount + 1));
+          return false;
+        }
+        console.error('Rewordly: Error replacing text in Draft.js:', err);
+        console.error('Rewordly: Error details:', { start, end, retryCount });
+        return false;
       }
-      
-      selection.removeAllRanges();
-      selection.addRange(range);
-      
-      // For Draft.js, we need to simulate user input more carefully
-      // Delete the old text first
-      range.deleteContents();
-      
-      // Insert the new text
-      const textNode = document.createTextNode(replacement);
-      range.insertNode(textNode);
-      
-      // Move cursor after inserted text
-      range.setStartAfter(textNode);
-      range.collapse(true);
-      selection.removeAllRanges();
-      selection.addRange(range);
-      
-      // Trigger multiple events to ensure Draft.js picks it up
-      // Use InputEvent for better compatibility
-      const inputEvent = new InputEvent('input', {
-        bubbles: true,
-        cancelable: true,
-        inputType: 'insertText',
-        data: replacement
-      });
-      // Mark as programmatic to prevent handleInput from processing it
-      (inputEvent as any).__rewordlyProgrammatic = true;
-      element.dispatchEvent(inputEvent);
-      
-      // Also trigger beforeinput
-      const beforeInputEvent = new InputEvent('beforeinput', {
-        bubbles: true,
-        cancelable: true,
-        inputType: 'insertText',
-        data: replacement
-      });
-      // Mark as programmatic to prevent handleInput from processing it
-      (beforeInputEvent as any).__rewordlyProgrammatic = true;
-      element.dispatchEvent(beforeInputEvent);
-      
-      // Clear selection
-      selection.removeAllRanges();
-      
-      // Note: Don't call element.focus() here as it can trigger blur/focus events
-      // that hide/show highlights, causing flickering or loss of highlights.
-      // Draft.js already manages focus internally.
-      
-      // Note: Position updates and highlight refresh will be handled by the caller
-      // (in the isDraftJS block) after this function returns. This avoids duplicate
-      // updates that can cause highlights to disappear.
-    } catch (err) {
-      console.error('Rewordly: Error replacing text in Draft.js:', err);
-      console.error('Rewordly: Error details:', {
-        start,
-        end,
-        mapping
-      });
-    }
+    };
+    
+    // Start the replacement attempt
+    return attemptReplacement(0);
   }
 
   /**
