@@ -87,6 +87,12 @@ class RewordlyContentScript {
   // Track scheduled blur handlers to cancel them if needed
   private scheduledBlurHandlers = new Map<HTMLElement, NodeJS.Timeout>();
 
+  // Request queue for batch processing API requests
+  private grammarCheckQueue: Array<{ element: HTMLElement; priority?: number }> = [];
+  private isProcessingQueue: boolean = false;
+  private readonly BATCH_SIZE: number = 3; // Process 3 requests at a time
+  private readonly BATCH_DELAY: number = 200; // Delay between batches in milliseconds
+
   constructor() {
     this.init();
   }
@@ -564,10 +570,10 @@ class RewordlyContentScript {
     const isVisible = this.isElementVisible(element);
     
     if (isVisible) {
-      // Element is visible, perform grammar check immediately
+      // Element is visible, queue grammar check
       setTimeout(() => {
         if (this.isEditableElement(element)) {
-          this.performGrammarCheck(element);
+          this.queueGrammarCheck(element, 0);
         }
       }, 300); // Small delay to ensure element is fully rendered
     } else {
@@ -576,10 +582,10 @@ class RewordlyContentScript {
       const observer = new IntersectionObserver((entries) => {
         entries.forEach((entry) => {
           if (entry.isIntersecting && entry.intersectionRatio > 0) {
-            // Element is now visible, perform grammar check
+            // Element is now visible, queue grammar check
             setTimeout(() => {
               if (this.isEditableElement(element)) {
-                this.performGrammarCheck(element);
+                this.queueGrammarCheck(element, 0);
               }
             }, 300);
             observer.disconnect();
@@ -595,7 +601,7 @@ class RewordlyContentScript {
       // Also try after a delay in case IntersectionObserver doesn't work
       setTimeout(() => {
         if (this.isElementVisible(element) && this.isEditableElement(element)) {
-          this.performGrammarCheck(element);
+          this.queueGrammarCheck(element, 0);
         }
         observer.disconnect();
       }, 2000); // Fallback: try after 2 seconds
@@ -778,8 +784,9 @@ class RewordlyContentScript {
     // Only perform grammar check if highlights are enabled
     if (this.config.highlightsEnabled) {
       // Set new timeout for grammar check (1 second after typing stops)
+      // Use higher priority (1) for user input since it's more important
       this.grammarCheckTimeout = window.setTimeout(() => {
-        this.performGrammarCheck(element);
+        this.queueGrammarCheck(element, 1);
       }, 1000);
     }
   }
@@ -904,6 +911,73 @@ class RewordlyContentScript {
       // Store timeout ID so we can cancel it if needed
       this.scheduledBlurHandlers.set(element, timeoutId);
     }
+  }
+
+  /**
+   * Add element to grammar check queue
+   */
+  private queueGrammarCheck(element: HTMLElement, priority: number = 0): void {
+    // Check if element is already in queue
+    const existingIndex = this.grammarCheckQueue.findIndex(
+      item => item.element === element
+    );
+    
+    if (existingIndex !== -1) {
+      // Update priority if new priority is higher
+      const existingItem = this.grammarCheckQueue[existingIndex];
+      if (existingItem && priority > (existingItem.priority || 0)) {
+        existingItem.priority = priority;
+      }
+      return;
+    }
+
+    // Add to queue
+    this.grammarCheckQueue.push({ element, priority });
+    
+    // Sort queue by priority (higher priority first)
+    this.grammarCheckQueue.sort((a, b) => (b.priority || 0) - (a.priority || 0));
+    
+    // Start processing queue if not already processing
+    if (!this.isProcessingQueue) {
+      this.processGrammarCheckQueue();
+    }
+  }
+
+  /**
+   * Process grammar check queue in batches
+   */
+  private async processGrammarCheckQueue(): Promise<void> {
+    if (this.isProcessingQueue || this.grammarCheckQueue.length === 0) {
+      return;
+    }
+
+    this.isProcessingQueue = true;
+
+    while (this.grammarCheckQueue.length > 0) {
+      // Get next batch
+      const batch = this.grammarCheckQueue.splice(0, this.BATCH_SIZE);
+      
+      // Process batch in parallel
+      const promises = batch.map(item => {
+        // Check if element still exists and is valid
+        if (!item.element || !item.element.isConnected) {
+          return Promise.resolve();
+        }
+        return this.performGrammarCheck(item.element).catch(error => {
+          console.error('Rewordly: Grammar check error in queue:', error);
+        });
+      });
+
+      // Wait for batch to complete
+      await Promise.all(promises);
+
+      // Wait before processing next batch (if there are more items)
+      if (this.grammarCheckQueue.length > 0) {
+        await new Promise(resolve => setTimeout(resolve, this.BATCH_DELAY));
+      }
+    }
+
+    this.isProcessingQueue = false;
   }
 
   /**
