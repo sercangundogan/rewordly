@@ -81,6 +81,9 @@ class RewordlyContentScript {
   // Track if we're currently performing a replace operation (to prevent blur from hiding highlights)
   private isPerformingReplace = false;
   
+  // Track if we're currently performing a dismiss operation (to prevent blur from hiding highlights)
+  private isPerformingDismiss = false;
+  
   // Track scheduled blur handlers to cancel them if needed
   private scheduledBlurHandlers = new Map<HTMLElement, NodeJS.Timeout>();
 
@@ -876,8 +879,8 @@ class RewordlyContentScript {
         // Remove from map when executed
         this.scheduledBlurHandlers.delete(element);
         
-        // Don't hide if we're performing a replace operation (prevents highlights from being hidden during replace)
-        if (this.isPerformingReplace) {
+        // Don't hide if we're performing a replace or dismiss operation (prevents highlights from being hidden during replace/dismiss)
+        if (this.isPerformingReplace || this.isPerformingDismiss) {
           return;
         }
         
@@ -3328,6 +3331,51 @@ class RewordlyContentScript {
             // Close tooltip
             closeTooltip();
             this.closeAllGrammarTooltips();
+            
+            // Restore focus after dismiss (similar to replace)
+            // Cancel any scheduled blur handlers for this element
+            const existingBlurTimeout = this.scheduledBlurHandlers.get(element);
+            if (existingBlurTimeout) {
+              clearTimeout(existingBlurTimeout);
+              this.scheduledBlurHandlers.delete(element);
+            }
+            
+            // Use requestAnimationFrame to ensure DOM is ready before focusing
+            requestAnimationFrame(() => {
+              // Keep flag true during focus restore to prevent blur handler from hiding highlights
+              this.isPerformingDismiss = true;
+              
+              element.focus();
+              
+              // Set cursor position to the end of the dismissed error
+              if (error) {
+                const cursorPosition = error.end;
+                
+                if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+                  // For input/textarea, use setSelectionRange
+                  element.setSelectionRange(cursorPosition, cursorPosition);
+                } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
+                  // For contenteditable, use Range API
+                  const selection = window.getSelection();
+                  if (selection) {
+                    const cursorMapping = this.mapInnerTextToTextNodes(element, cursorPosition, cursorPosition);
+                    if (cursorMapping && cursorMapping.startNode) {
+                      const cursorRange = document.createRange();
+                      const offset = Math.min(cursorMapping.startOffset, cursorMapping.startNode.textContent!.length);
+                      cursorRange.setStart(cursorMapping.startNode, offset);
+                      cursorRange.collapse(true);
+                      selection.removeAllRanges();
+                      selection.addRange(cursorRange);
+                    }
+                  }
+                }
+              }
+              
+              // Clear the dismiss flag after a short delay to ensure focus is stable
+              setTimeout(() => {
+                this.isPerformingDismiss = false;
+              }, 150);
+            });
           }
         });
       }
