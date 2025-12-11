@@ -674,6 +674,13 @@
   background: rgba(255, 255, 255, 0.1) !important;
 }
 
+.rewordly-close-btn svg {
+  width: 24px !important;
+  height: 24px !important;
+  display: block !important;
+  stroke: currentColor !important;
+}
+
 .rewordly-modal-body {
   padding: 24px !important;
   max-height: 400px !important;

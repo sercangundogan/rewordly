@@ -128,7 +128,6 @@ class RewordlyContentScript {
     // Check if this page is disabled - if so, don't initialize at all
     const pageDisabled = await this.isPageDisabled();
     if (pageDisabled) {
-      console.log('Rewordly is disabled on this page');
       return;
     }
     // Define custom element for highlights container to prevent Reddit's CSS from hiding it
@@ -501,7 +500,6 @@ class RewordlyContentScript {
     if (this.shouldIgnoreElement(element)) {
       const elementId = this.getElementId(element);
       this.ignoredElementIds.add(elementId);
-      console.log('Rewordly: Element added to ignore list', { elementId, element: element.tagName });
       return; // Don't attach grammar checking to ignored elements
     }
     
@@ -911,14 +909,12 @@ class RewordlyContentScript {
   private async performGrammarCheck(element: HTMLElement): Promise<void> {
     // Check if element is in ignore list
     if (this.isElementIgnored(element)) {
-      console.log('Rewordly: Skipping grammar check for ignored element');
       return;
     }
     
     // Don't perform grammar check if we're currently performing a replace operation
     // This prevents race conditions where API returns old errors while we're updating positions
     if (this.isPerformingReplace) {
-      console.log('Rewordly: Skipping grammar check during replace operation');
       return;
     }
     
@@ -950,7 +946,6 @@ class RewordlyContentScript {
       // Check if detected language is English
       if (response.detectedLanguage && !response.detectedLanguage.code.toLowerCase().startsWith('en')) {
         // Language is not English, clear all highlights and skip grammar check
-        console.log(`Rewordly: Detected language is ${response.detectedLanguage.name} (${response.detectedLanguage.code}), skipping grammar check`);
         this.displayGrammarErrors(element, []);
         return;
       }
@@ -1207,13 +1202,10 @@ class RewordlyContentScript {
   private validateAndRemoveInvalidHighlights(element: HTMLElement): void {
     // Don't validate during replace operations - positions are being updated
     if (this.isPerformingReplace) {
-      console.log('Rewordly: Skipping validation during replace operation');
       return;
     }
     
     const currentErrors = this.grammarErrors.get(element);
-
-    console.log("Current errors:", currentErrors);
     if (!currentErrors || currentErrors.length === 0) {
       return;
     }
@@ -1342,7 +1334,6 @@ class RewordlyContentScript {
     // Filter out errors that are no longer valid (text changed, error position out of bounds)
     const validErrors = errorsWithIds.filter(error => {
       if (error.start < 0 || error.end > text.length || error.start >= error.end) {
-        console.log('Rewordly: Error out of bounds', { error, textLength: text.length });
         return false;
       }
       // Check if the error word still matches at that position
@@ -1353,64 +1344,40 @@ class RewordlyContentScript {
                       error.word.toLowerCase().includes(errorWord.toLowerCase());
       
       if (!isValid) {
-        console.log('Rewordly: Error word mismatch', {
-          expectedWord: error.word,
-          actualWord: errorWord,
-          start: error.start,
-          end: error.end,
-          textSnippet: text.substring(Math.max(0, error.start - 10), Math.min(text.length, error.end + 10))
-        });
         // Word changed, remove from dismissed list if it was dismissed
-        const dismissKey = this.getDismissKey(elementId, error.word, error.start);
+        const dismissKey = this.getDismissKey(elementId, error, text);
         this.dismissedErrors.delete(dismissKey);
         return false;
       }
       
       // Check if this error was dismissed
-      const dismissKey = this.getDismissKey(elementId, error.word, error.start);
-      if (this.dismissedErrors.has(dismissKey)) {
-        // Check if the word at this position still matches the dismissed word
-        const currentWord = text.substring(error.start, error.end).toLowerCase().trim();
-        const dismissedWord = error.word.toLowerCase().trim();
-        if (currentWord === dismissedWord) {
-          // Word hasn't changed, keep it dismissed
-          return false;
-        } else {
-          // Word changed, remove from dismissed list
-          this.dismissedErrors.delete(dismissKey);
-        }
+      if (this.isErrorDismissed(element, error)) {
+        // Error is dismissed, filter it out
+        return false;
       }
       
       return isValid;
-    });
-
-    console.log('Rewordly: Valid errors after filtering', {
-      total: errorsWithIds.length,
-      valid: validErrors.length,
-      element: element.tagName
     });
 
     // Update stored errors with only valid ones
     this.grammarErrors.set(element, validErrors);
 
     // Update or create highlights for each valid error
-    console.log('Rewordly: Processing validErrors', { 
-      count: validErrors.length, 
-      existingCount: existingErrorMap.size,
-      highlightsContentExists: !!this.highlightsContent 
-    });
-    
     validErrors.forEach((error, index) => {
       const existingHighlight = existingErrorMap.get(error.id);
       
-      console.log('Rewordly: Processing error', { 
-        index, 
-        errorId: error.id, 
-        hasExisting: !!existingHighlight,
-        word: error.word 
-      });
-      
       if (existingHighlight) {
+        // Check if this error is dismissed - if so, remove the highlight
+        if (this.isErrorDismissed(element, error)) {
+          // Remove all highlights for this dismissed error
+          if (!this.highlightsContent) return;
+          const errorHighlights = Array.from(this.highlightsContent.querySelectorAll(
+            `[data-element-id="${this.getElementId(element)}"][data-error-id="${error.id}"]`
+          )) as HTMLElement[];
+          errorHighlights.forEach(h => h.remove());
+          return;
+        }
+        
         // Same error position, just update position (text might have changed)
         // Get text to adjust positions for multi-word errors
         let text = '';
@@ -1423,7 +1390,6 @@ class RewordlyContentScript {
         // Adjust positions for multi-word grammar errors
         const adjustedPositions = text ? this.adjustErrorPositionsForMultiWord(text, error) : { start: error.start, end: error.end };
         const highlightRects = this.getErrorTextRects(element, adjustedPositions.start, adjustedPositions.end);
-        console.log("Highlight rects:", highlightRects);
         
         // Get all existing highlights for this error
         if (!this.highlightsContent) return;
@@ -1504,7 +1470,36 @@ class RewordlyContentScript {
     const currentErrorIds = new Set(validErrors.map(err => err.id));
     existingErrorMap.forEach((highlight, errorId) => {
       if (!currentErrorIds.has(errorId)) {
-        highlight.remove();
+        // Remove all highlights for this error (multi-line support)
+        if (this.highlightsContent) {
+          const allErrorHighlights = this.highlightsContent.querySelectorAll(
+            `[data-element-id="${elementId}"][data-error-id="${errorId}"]`
+          );
+          allErrorHighlights.forEach(h => h.remove());
+        } else {
+          highlight.remove();
+        }
+      } else {
+        // Also check if this error is dismissed (double-check to be safe)
+        const errorData = highlight.getAttribute('data-error');
+        if (errorData) {
+          try {
+            const error: GrammarError = JSON.parse(errorData);
+            if (this.isErrorDismissed(element, error)) {
+              // Remove all highlights for this dismissed error (multi-line support)
+              if (this.highlightsContent) {
+                const allErrorHighlights = this.highlightsContent.querySelectorAll(
+                  `[data-element-id="${elementId}"][data-error-id="${errorId}"]`
+                );
+                allErrorHighlights.forEach(h => h.remove());
+              } else {
+                highlight.remove();
+              }
+            }
+          } catch (e) {
+            // Error parsing, skip
+          }
+        }
       }
     });
 
@@ -1767,7 +1762,6 @@ class RewordlyContentScript {
   public addElementToIgnoreList(element: HTMLElement): void {
     const elementId = this.getElementId(element);
     this.ignoredElementIds.add(elementId);
-    console.log('Rewordly: Element manually added to ignore list', { elementId });
     
     // Clear any existing highlights for this element
     this.clearElementHighlights(element);
@@ -1780,7 +1774,6 @@ class RewordlyContentScript {
   public removeElementFromIgnoreList(element: HTMLElement): void {
     const elementId = this.getElementId(element);
     this.ignoredElementIds.delete(elementId);
-    console.log('Rewordly: Element removed from ignore list', { elementId });
     
     // Re-attach to element if it's still editable
     if (this.isEditableElement(element)) {
@@ -1790,9 +1783,112 @@ class RewordlyContentScript {
 
   /**
    * Generate a unique key for dismissing an error
+   * Uses elementId + word + context to handle position changes
+   * Context includes surrounding text to uniquely identify the word location
    */
-  private getDismissKey(elementId: string, word: string, start: number): string {
-    return `${elementId}:${word.toLowerCase().trim()}:${start}`;
+  private getDismissKey(elementId: string, error: GrammarError, text: string): string {
+    // Get context around the word (30 chars before and after)
+    const contextBefore = Math.max(0, error.start - 30);
+    const contextAfter = Math.min(text.length, error.end + 30);
+    const beforeText = text.substring(contextBefore, error.start).toLowerCase().trim();
+    const afterText = text.substring(error.end, contextAfter).toLowerCase().trim();
+    const wordText = error.word.toLowerCase().trim();
+    
+    // Create a stable key based on word + context (not position)
+    // This allows dismiss to persist even when text is added/removed above
+    return `${elementId}:${wordText}:${beforeText.slice(-20)}:${afterText.slice(0, 20)}`;
+  }
+
+  /**
+   * Check if an error is dismissed
+   * Uses word + context instead of position to handle text updates
+   * If word at location changes, dismiss is automatically cleared
+   */
+  private isErrorDismissed(element: HTMLElement, error: GrammarError): boolean {
+    const elementId = this.getElementId(element);
+    
+    // Get current text to verify position is still valid
+    let text = '';
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+      text = element.value;
+    } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
+      text = element.innerText || element.textContent || '';
+    }
+    
+    // If position is invalid, try to find the word by matching context from dismiss keys
+    // This handles cases where text was added/removed above the error
+    if (error.start < 0 || error.end > text.length || error.start >= error.end) {
+      const wordLower = error.word.toLowerCase().trim();
+      const elementIdPrefix = `${elementId}:${wordLower}:`;
+      const searchText = text.toLowerCase();
+      let foundMatch = false;
+      
+      // Check all dismiss keys for this element and word
+      for (const [dismissKey, _] of this.dismissedErrors.entries()) {
+        if (!dismissKey.startsWith(elementIdPrefix)) continue;
+        
+        // Extract context from dismiss key (format: elementId:word:before:after)
+        // Note: context may contain colons, so we need to be careful
+        const afterPrefix = dismissKey.substring(elementIdPrefix.length);
+        const lastColonIndex = afterPrefix.lastIndexOf(':');
+        if (lastColonIndex === -1) continue;
+        
+        const beforeContext = afterPrefix.substring(0, lastColonIndex);
+        const afterContext = afterPrefix.substring(lastColonIndex + 1);
+        
+        // Search for word with matching context
+        let searchIndex = 0;
+        while (true) {
+          const wordIndex = searchText.indexOf(wordLower, searchIndex);
+          if (wordIndex === -1) break;
+          
+          // Get context around this occurrence
+          const beforeText = searchText.substring(Math.max(0, wordIndex - 30), wordIndex).trim();
+          const afterText = searchText.substring(wordIndex + wordLower.length, Math.min(text.length, wordIndex + wordLower.length + 30)).trim();
+          
+          // Check if context matches (using last 20 chars of before and first 20 chars of after)
+          if (beforeText.endsWith(beforeContext.slice(-20)) && afterText.startsWith(afterContext.slice(0, 20))) {
+            // Found matching word with context, update position
+            error.start = wordIndex;
+            error.end = wordIndex + wordLower.length;
+            foundMatch = true;
+            break;
+          }
+          
+          searchIndex = wordIndex + 1;
+        }
+        
+        if (foundMatch) break;
+      }
+      
+      // If still invalid, word not found or context doesn't match
+      if (!foundMatch || error.start < 0 || error.end > text.length || error.start >= error.end) {
+        return false;
+      }
+    }
+    
+    // Generate dismiss key using word + context (not position)
+    const dismissKey = this.getDismissKey(elementId, error, text);
+
+    console.log("Get dismiss key:", dismissKey);
+    console.log("Dismissed errors:", this.dismissedErrors);
+    
+    if (!this.dismissedErrors.has(dismissKey)) {
+      return false;
+    }
+    
+    // Verify the word at current position still matches
+    const currentWord = text.substring(error.start, error.end);
+    const originalWord = error.word;
+    
+    // If word changed significantly, clear dismiss
+    if (currentWord.toLowerCase().trim() !== originalWord.toLowerCase().trim()) {
+      this.dismissedErrors.delete(dismissKey);
+      return false;
+    }
+    
+    // Still dismissed
+    return true;
   }
 
   /**
@@ -2219,12 +2315,45 @@ class RewordlyContentScript {
         this.displayGrammarErrors(element, errors);
       }
     } else {
-      // Show existing highlights
-      highlights.forEach(highlight => {
-        (highlight as HTMLElement).style.display = '';
-        (highlight as HTMLElement).removeAttribute('data-hidden-by-blur');
-        (highlight as HTMLElement).removeAttribute('data-hidden-by-modal');
+      // Show existing highlights, but skip dismissed ones
+      const errors = this.grammarErrors.get(element) || [];
+      const errorIdToError = new Map<string, GrammarError>();
+      errors.forEach(err => {
+        if (err.id) {
+          errorIdToError.set(err.id, err);
+        }
       });
+      
+      const dismissedErrorIds = new Set<string>();
+      
+      highlights.forEach(highlight => {
+        const htmlHighlight = highlight as HTMLElement;
+        const errorId = htmlHighlight.getAttribute('data-error-id');
+        
+        if (errorId) {
+          const error = errorIdToError.get(errorId);
+          if (error && this.isErrorDismissed(element, error)) {
+            // Mark this error as dismissed - we'll remove all highlights for it
+            dismissedErrorIds.add(errorId);
+            return;
+          }
+        }
+        
+        // Not dismissed, show it
+        htmlHighlight.style.display = '';
+        htmlHighlight.removeAttribute('data-hidden-by-blur');
+        htmlHighlight.removeAttribute('data-hidden-by-modal');
+      });
+      
+      // Remove all highlights for dismissed errors (multi-line support)
+      if (dismissedErrorIds.size > 0 && this.highlightsContent) {
+        dismissedErrorIds.forEach(errorId => {
+          const allErrorHighlights = this.highlightsContent!.querySelectorAll(
+            `[data-element-id="${elementId}"][data-error-id="${errorId}"]`
+          );
+          allErrorHighlights.forEach(h => h.remove());
+        });
+      }
       // Update positions
       this.updateHighlightsPosition(element);
     }
@@ -2387,9 +2516,7 @@ class RewordlyContentScript {
       overflow: visible !important;
       visibility: visible !important;
     `;
-    
-    console.log('Rewordly: Creating highlights container with z-index:', zIndex, 'for site:', window.location.hostname);
-    
+        
     // Create Shadow DOM
     this.highlightsShadowRoot = this.highlightsContainer.attachShadow({ mode: 'open' });
     
@@ -2435,31 +2562,20 @@ class RewordlyContentScript {
     
     // Append to document body (at the end, like Grammarly)
     document.body.appendChild(this.highlightsContainer);
-    
-    // Verify container is in DOM
-    const containerInDom = document.body.contains(this.highlightsContainer);
-    const containerStyles = window.getComputedStyle(this.highlightsContainer);
-    console.log('Rewordly: Highlights container created and appended', {
-      inDom: containerInDom,
-      zIndex: containerStyles.zIndex,
-      position: containerStyles.position,
-      shadowRoot: !!this.highlightsShadowRoot,
-      site: window.location.hostname
-    });
   }
 
   /**
    * Create a single highlight for an error
    */
   private createHighlight(element: HTMLElement, error: GrammarError, index: number): void {
-    console.log('Rewordly: createHighlight CALLED', { 
-      errorWord: error.word, 
-      index,
-      highlightsContentExists: !!this.highlightsContent 
-    });
     
     if (!this.highlightsContent) {
-      console.log('Rewordly: createHighlight RETURNING - no highlightsContent');
+      return;
+    }
+
+    // Don't create highlight if error is dismissed
+    if (this.isErrorDismissed(element, error)) {
+      console.log('Rewordly: Skipping highlight creation - error is dismissed', { errorWord: error.word });
       return;
     }
 
@@ -2472,7 +2588,6 @@ class RewordlyContentScript {
     }
 
     if (!text || error.start >= text.length || error.end > text.length) {
-      console.log('Rewordly: Skipping highlight - invalid text or position', { textLength: text.length, start: error.start, end: error.end });
       return;
     }
 
@@ -2484,23 +2599,8 @@ class RewordlyContentScript {
     // Get all rects for multi-line support (one rect per line)
     const highlightRects = this.getErrorTextRects(element, highlightStart, highlightEnd);
     if (highlightRects.length === 0) {
-      console.log('Rewordly: No highlight rects found for error', error);
       return;
     }
-
-    console.log('Rewordly: Creating highlights', {
-      rectCount: highlightRects.length,
-      rects: highlightRects.map(r => ({
-        top: r.top,
-        left: r.left,
-        width: r.width,
-        height: r.height
-      })),
-      error: error.word,
-      errorType: error.type,
-      element: element.tagName,
-      isReddit: window.location.hostname.includes('reddit.com')
-    });
 
     // Create a highlight element for each rect (each line)
     highlightRects.forEach((highlightRect, lineIndex) => {
@@ -2542,21 +2642,6 @@ class RewordlyContentScript {
       // Force reflow to ensure animation starts
       void highlight.offsetWidth;
       
-      // Log highlight creation success
-      const computedStyle = window.getComputedStyle(highlight);
-      console.log(`Rewordly: Highlight ${lineIndex} added to DOM`, {
-        top: highlight.style.top,
-        left: highlight.style.left,
-        width: highlight.style.width,
-        height: highlight.style.height,
-        opacity: highlight.style.opacity,
-        zIndex: computedStyle.zIndex,
-        display: computedStyle.display,
-        visibility: computedStyle.visibility,
-        borderBottom: computedStyle.borderBottom,
-        containerZIndex: this.highlightsContainer ? window.getComputedStyle(this.highlightsContainer).zIndex : 'N/A'
-      });
-      
       // Animate width using requestAnimationFrame for smooth animation
       const startTime = performance.now();
       const duration = 300; // 300ms
@@ -2587,20 +2672,6 @@ class RewordlyContentScript {
           highlight.style.opacity = '1';
           highlight.style.overflow = 'visible';
           highlight.classList.remove('rewordly-highlight-enter');
-          
-          // Verify final state
-          const finalRect = highlight.getBoundingClientRect();
-          console.log(`Rewordly: Highlight ${lineIndex} animation complete`, {
-            finalRect: { top: finalRect.top, left: finalRect.left, width: finalRect.width, height: finalRect.height },
-            styles: { 
-              width: highlight.style.width, 
-              opacity: highlight.style.opacity,
-              top: highlight.style.top,
-              left: highlight.style.left
-            },
-            inViewport: finalRect.top >= 0 && finalRect.left >= 0 && 
-                       finalRect.top < window.innerHeight && finalRect.left < window.innerWidth
-          });
         }
       };
       
@@ -2949,7 +3020,6 @@ class RewordlyContentScript {
   private getContentEditableErrorRects(element: HTMLElement, start: number, end: number): DOMRect[] {
     const mapping = this.mapInnerTextToTextNodes(element, start, end);
     if (!mapping || !mapping.startNode) {
-      console.log('Rewordly: No mapping found for contenteditable', { start, end });
       return [];
     }
 
@@ -2965,13 +3035,6 @@ class RewordlyContentScript {
         range.setStart(mapping.startNode, mapping.startOffset);
         range.setEnd(mapping.startNode, Math.min(mapping.endOffset, mapping.startNode.textContent!.length));
       }
-
-      console.log("Rewordly Range:", {
-        startNode: mapping.startNode.textContent?.substring(0, 30),
-        startOffset: mapping.startOffset,
-        endOffset: mapping.endOffset,
-        rangeText: range.toString()
-      });
       
       // Get all client rects (one for each line the error spans)
       const clientRects = range.getClientRects();
@@ -2983,12 +3046,6 @@ class RewordlyContentScript {
           rects.push(new DOMRect(clientRect.left, clientRect.top, clientRect.width, clientRect.height));
         }
       }
-      
-      console.log("Rewordly Rect Details:", {
-        rectCount: rects.length,
-        rects: rects.map(r => ({ top: r.top, left: r.left, width: r.width, height: r.height })),
-        isVisible: rects.length > 0
-      });
       
       return rects;
     } catch (e) {
@@ -3238,12 +3295,35 @@ class RewordlyContentScript {
           
           if (error) {
             // Add to dismissed list
+            // Dismiss based on word + context (handles position changes)
             const elementId = this.getElementId(element);
-            const dismissKey = this.getDismissKey(elementId, error.word, error.start);
+            
+            // Get current text to generate context-based key
+            let text = '';
+            if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+              text = element.value;
+            } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
+              text = element.innerText || element.textContent || '';
+            }
+            
+            const dismissKey = this.getDismissKey(elementId, error, text);
+            console.log("Dismiss key:", dismissKey);
             this.dismissedErrors.set(dismissKey, true);
             
-            // Remove the highlight
-            highlight.remove();
+            // Remove error from grammarErrors map to prevent it from reappearing
+            const currentErrors = this.grammarErrors.get(element) || [];
+            const updatedErrors = currentErrors.filter(err => err.id !== error.id);
+            this.grammarErrors.set(element, updatedErrors);
+            
+            // Remove all highlights for this error (multi-line support)
+            if (this.highlightsContent) {
+              const allErrorHighlights = this.highlightsContent.querySelectorAll(
+                `[data-element-id="${elementId}"][data-error-id="${error.id}"]`
+              );
+              allErrorHighlights.forEach(h => h.remove());
+            } else {
+              highlight.remove();
+            }
             
             // Close tooltip
             closeTooltip();
@@ -4490,7 +4570,12 @@ class RewordlyContentScript {
       <div class="rewordly-modal-content">
         <div class="rewordly-modal-header">
           <h3 class="rewordly-modal-title">Rewordly</h3>
-          <button class="rewordly-close-btn">&times;</button>
+          <button class="rewordly-close-btn">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+              <path d="M7 17L16.8995 7.10051" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M7 7.00001L16.8995 16.8995" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
         </div>
         <div class="rewordly-modal-body">
           <div class="rewordly-original">
