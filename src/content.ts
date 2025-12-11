@@ -4055,112 +4055,327 @@ class RewordlyContentScript {
           });
         }, 150);
       } else {
-        // For regular contenteditable
-        // Set flag to prevent blur handler from hiding highlights during replace
-        this.isPerformingReplace = true;
+        // Check if this is Notion
+        const isNotion = element.getAttribute('data-content-editable-leaf') === 'true' ||
+                        element.classList.contains('notion-selectable') ||
+                        window.location.hostname.includes('notion.so');
         
-        const selection = window.getSelection();
-        if (!selection) {
-          this.isPerformingReplace = false;
-          return;
-        }
-        
-        // Get current text to validate positions
-        const currentText = element.innerText || element.textContent || '';
-        if (actualStart < 0 || actualEnd > currentText.length || actualStart >= actualEnd) {
-          console.error('Rewordly: Invalid positions for replacement', { 
-            start: actualStart, 
-            end: actualEnd, 
-            textLength: currentText.length,
-            currentErrors: this.grammarErrors.get(element)
-          });
-          this.isPerformingReplace = false;
-          return;
-        }
-        
-        // Map innerText positions to text node positions
-        const mapping = this.mapInnerTextToTextNodes(element, actualStart, actualEnd);
-        
-        if (!mapping || !mapping.startNode) {
-          console.error('Rewordly: Could not map innerText positions to text nodes', { 
-            start: actualStart, 
-            end: actualEnd,
-            textLength: currentText.length,
-            innerText: currentText.substring(Math.max(0, actualStart - 10), Math.min(currentText.length, actualEnd + 10))
-          });
-          this.isPerformingReplace = false;
-          return;
-        }
-        
-        try {
-          const range = document.createRange();
+        if (isNotion) {
+          // For Notion, use a more reliable approach that works with their complex DOM structure
+          this.isPerformingReplace = true;
           
-          // Validate positions
-          const startNodeLength = mapping.startNode.textContent!.length;
-          if (mapping.startOffset < 0 || mapping.startOffset > startNodeLength) {
-            console.error('Rewordly: Invalid start offset in text node', {
-              startOffset: mapping.startOffset,
-              nodeLength: startNodeLength,
-              globalStart: actualStart
-            });
+          // Use an async IIFE to handle the async operations
+          (async () => {
+            try {
+              // Focus the element first
+              element.focus();
+              
+              // Get current text to validate positions
+              const currentText = element.innerText || element.textContent || '';
+              if (actualStart < 0 || actualEnd > currentText.length || actualStart >= actualEnd) {
+                console.error('Rewordly: Invalid positions for Notion replacement', { 
+                  start: actualStart, 
+                  end: actualEnd, 
+                  textLength: currentText.length
+                });
+                this.isPerformingReplace = false;
+                return;
+              }
+              
+              const selection = window.getSelection();
+              if (!selection) {
+                this.isPerformingReplace = false;
+                return;
+              }
+              
+              // For Notion, we need to create a range that spans the correct text nodes
+              // Notion's DOM has nested spans, so we need to be careful
+              const range = document.createRange();
+              
+              // Map innerText positions to text node positions
+              const mapping = this.mapInnerTextToTextNodes(element, actualStart, actualEnd);
+              
+              if (!mapping || !mapping.startNode) {
+                console.error('Rewordly: Could not map innerText positions to text nodes for Notion');
+                this.isPerformingReplace = false;
+                return;
+              }
+              
+              // Set range start
+              const startNodeLength = mapping.startNode.textContent!.length;
+              const startOffset = Math.min(mapping.startOffset, startNodeLength);
+              range.setStart(mapping.startNode, startOffset);
+              
+              // Set range end
+              if (mapping.endNode && mapping.startNode !== mapping.endNode) {
+                const endNodeLength = mapping.endNode.textContent!.length;
+                const endOffset = Math.min(mapping.endOffset, endNodeLength);
+                range.setEnd(mapping.endNode, endOffset);
+              } else {
+                const endPos = Math.min(mapping.endOffset, startNodeLength);
+                range.setEnd(mapping.startNode, endPos);
+              }
+              
+              // Select the text first - this is important for Notion
+              selection.removeAllRanges();
+              selection.addRange(range);
+              
+              // Wait a bit for Notion to recognize the selection
+              await new Promise(resolve => setTimeout(resolve, 10));
+              
+              // Try execCommand first (some browsers still support it)
+              let success = false;
+              try {
+                success = document.execCommand('insertText', false, replacement);
+              } catch (e) {
+                // execCommand might fail, use fallback
+                success = false;
+              }
+              
+              if (!success) {
+                // Fallback: manually delete and insert
+                // Delete the selected content
+                range.deleteContents();
+                
+                // Insert the replacement text
+                // For Notion, we need to preserve the structure, so we insert as a text node
+                const textNode = document.createTextNode(replacement);
+                range.insertNode(textNode);
+                
+                // Collapse range to the end of inserted text
+                range.setStartAfter(textNode);
+                range.collapse(true);
+                
+                // Update selection
+                selection.removeAllRanges();
+                selection.addRange(range);
+              }
+              
+              // Clear selection after a brief moment
+              setTimeout(() => {
+                selection.removeAllRanges();
+              }, 10);
+              
+              // Trigger beforeinput event first (Notion listens to this)
+              const beforeInputEvent = new InputEvent('beforeinput', {
+                bubbles: true,
+                cancelable: true,
+                inputType: 'insertText',
+                data: replacement,
+                isComposing: false
+              });
+              (beforeInputEvent as any).__rewordlyProgrammatic = true;
+              element.dispatchEvent(beforeInputEvent);
+              
+              // Trigger input event (Notion uses this to update internal state)
+              const inputEvent = new InputEvent('input', {
+                bubbles: true,
+                cancelable: false,
+                inputType: 'insertText',
+                data: replacement,
+                isComposing: false
+              });
+              (inputEvent as any).__rewordlyProgrammatic = true;
+              element.dispatchEvent(inputEvent);
+              
+              // Also trigger a composition event (some editors listen to this)
+              const compositionStartEvent = new CompositionEvent('compositionstart', {
+                bubbles: true,
+                cancelable: true,
+                data: replacement
+              });
+              (compositionStartEvent as any).__rewordlyProgrammatic = true;
+              element.dispatchEvent(compositionStartEvent);
+              
+              const compositionEndEvent = new CompositionEvent('compositionend', {
+                bubbles: true,
+                cancelable: true,
+                data: replacement
+              });
+              (compositionEndEvent as any).__rewordlyProgrammatic = true;
+              element.dispatchEvent(compositionEndEvent);
+              
+              // Calculate length difference for position adjustment
+              const replacementLength = replacement.length;
+              const originalLength = actualEnd - actualStart;
+              const lengthDiff = replacementLength - originalLength;
+              
+              // Update stored errors - adjust positions but keep IDs intact
+              const updatedErrorsAfterReplace = updatedErrors.map(err => {
+                if (err.start > actualEnd) {
+                  return {
+                    ...err,
+                    start: err.start + lengthDiff,
+                    end: err.end + lengthDiff
+                  };
+                }
+                return err;
+              });
+              this.grammarErrors.set(element, updatedErrorsAfterReplace);
+              
+              // Update highlights
+              if (this.highlightsContent) {
+                const elementId = this.getElementId(element);
+                const highlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
+                highlights.forEach((highlight) => {
+                  const highlightErrorId = (highlight as HTMLElement).getAttribute('data-error-id');
+                  if (!highlightErrorId) return;
+                  
+                  const updatedError = updatedErrorsAfterReplace.find(err => err.id === highlightErrorId);
+                  if (updatedError) {
+                    (highlight as HTMLElement).setAttribute('data-error', JSON.stringify(updatedError));
+                  } else {
+                    highlight.remove();
+                  }
+                });
+              }
+              
+              // Update highlight positions
+              setTimeout(() => {
+                this.updateHighlightsPosition(element);
+                
+                // Cancel blur handlers
+                const existingBlurTimeout = this.scheduledBlurHandlers.get(element);
+                if (existingBlurTimeout) {
+                  clearTimeout(existingBlurTimeout);
+                  this.scheduledBlurHandlers.delete(element);
+                }
+                
+                // Restore focus and cursor position
+                requestAnimationFrame(() => {
+                  element.focus();
+                  const newCursorPosition = actualStart + replacement.length;
+                  const cursorMapping = this.mapInnerTextToTextNodes(element, newCursorPosition, newCursorPosition);
+                  if (cursorMapping && cursorMapping.startNode) {
+                    const cursorRange = document.createRange();
+                    const offset = Math.min(cursorMapping.startOffset, cursorMapping.startNode.textContent!.length);
+                    cursorRange.setStart(cursorMapping.startNode, offset);
+                    cursorRange.collapse(true);
+                    selection.removeAllRanges();
+                    selection.addRange(cursorRange);
+                  }
+                  
+                  setTimeout(() => {
+                    this.isPerformingReplace = false;
+                  }, 150);
+                });
+              }, 100);
+              
+            } catch (err) {
+              console.error('Rewordly: Error replacing text in Notion:', err);
+              this.isPerformingReplace = false;
+            }
+          })();
+          
+          // Return early since we're handling everything in the async IIFE
+          return;
+        } else {
+          // For regular contenteditable
+          // Set flag to prevent blur handler from hiding highlights during replace
+          this.isPerformingReplace = true;
+          
+          const selection = window.getSelection();
+          if (!selection) {
+            this.isPerformingReplace = false;
             return;
           }
           
-          if (mapping.endNode && mapping.startNode !== mapping.endNode) {
-            // Error spans multiple text nodes
-            const endNodeLength = mapping.endNode.textContent!.length;
-            if (mapping.endOffset < 0 || mapping.endOffset > endNodeLength) {
-              console.error('Rewordly: Invalid end offset in text node', {
-                endOffset: mapping.endOffset,
-                nodeLength: endNodeLength,
-                globalEnd: actualEnd
-              });
-              return;
-            }
-            
-            range.setStart(mapping.startNode, Math.min(mapping.startOffset, startNodeLength));
-            range.setEnd(mapping.endNode, Math.min(mapping.endOffset, endNodeLength));
-          } else {
-            // Error is within a single text node
-            const endPos = mapping.endOffset;
-            
-            if (endPos > startNodeLength) {
-              console.error('Rewordly: Invalid end position in text node', {
-                startOffset: mapping.startOffset,
-                endPos,
-                nodeLength: startNodeLength,
-                globalStart: actualStart,
-                globalEnd: actualEnd
-              });
-              return;
-            }
-            
-            range.setStart(mapping.startNode, mapping.startOffset);
-            range.setEnd(mapping.startNode, endPos);
+          // Get current text to validate positions
+          const currentText = element.innerText || element.textContent || '';
+          if (actualStart < 0 || actualEnd > currentText.length || actualStart >= actualEnd) {
+            console.error('Rewordly: Invalid positions for replacement', { 
+              start: actualStart, 
+              end: actualEnd, 
+              textLength: currentText.length,
+              currentErrors: this.grammarErrors.get(element)
+            });
+            this.isPerformingReplace = false;
+            return;
           }
           
-          selection.removeAllRanges();
-          selection.addRange(range);
+          // Map innerText positions to text node positions
+          const mapping = this.mapInnerTextToTextNodes(element, actualStart, actualEnd);
           
-          // Replace selected text
-          range.deleteContents();
-          const textNode = document.createTextNode(replacement);
-          range.insertNode(textNode);
+          if (!mapping || !mapping.startNode) {
+            console.error('Rewordly: Could not map innerText positions to text nodes', { 
+              start: actualStart, 
+              end: actualEnd,
+              textLength: currentText.length,
+              innerText: currentText.substring(Math.max(0, actualStart - 10), Math.min(currentText.length, actualEnd + 10))
+            });
+            this.isPerformingReplace = false;
+            return;
+          }
           
-          // Clear selection
-          selection.removeAllRanges();
-          
-          // Trigger multiple events to ensure contenteditable picks it up
-          const events = ['beforeinput', 'input', 'textInput'];
-          events.forEach(eventType => {
-            const event = new Event(eventType, { bubbles: true, cancelable: true });
-            (event as any).data = replacement;
-            // Mark as programmatic to prevent handleInput from processing it
-            (event as any).__rewordlyProgrammatic = true;
-            element.dispatchEvent(event);
-          });
-          
-          // Calculate length difference for position adjustment
+          try {
+            const range = document.createRange();
+            
+            // Validate positions
+            const startNodeLength = mapping.startNode.textContent!.length;
+            if (mapping.startOffset < 0 || mapping.startOffset > startNodeLength) {
+              console.error('Rewordly: Invalid start offset in text node', {
+                startOffset: mapping.startOffset,
+                nodeLength: startNodeLength,
+                globalStart: actualStart
+              });
+              return;
+            }
+            
+            if (mapping.endNode && mapping.startNode !== mapping.endNode) {
+              // Error spans multiple text nodes
+              const endNodeLength = mapping.endNode.textContent!.length;
+              if (mapping.endOffset < 0 || mapping.endOffset > endNodeLength) {
+                console.error('Rewordly: Invalid end offset in text node', {
+                  endOffset: mapping.endOffset,
+                  nodeLength: endNodeLength,
+                  globalEnd: actualEnd
+                });
+                return;
+              }
+              
+              range.setStart(mapping.startNode, Math.min(mapping.startOffset, startNodeLength));
+              range.setEnd(mapping.endNode, Math.min(mapping.endOffset, endNodeLength));
+            } else {
+              // Error is within a single text node
+              const endPos = mapping.endOffset;
+              
+              if (endPos > startNodeLength) {
+                console.error('Rewordly: Invalid end position in text node', {
+                  startOffset: mapping.startOffset,
+                  endPos,
+                  nodeLength: startNodeLength,
+                  globalStart: actualStart,
+                  globalEnd: actualEnd
+                });
+                return;
+              }
+              
+              range.setStart(mapping.startNode, mapping.startOffset);
+              range.setEnd(mapping.startNode, endPos);
+            }
+            
+            selection.removeAllRanges();
+            selection.addRange(range);
+            
+            // Replace selected text
+            range.deleteContents();
+            const textNode = document.createTextNode(replacement);
+            range.insertNode(textNode);
+            
+            // Clear selection
+            selection.removeAllRanges();
+            
+            // Trigger multiple events to ensure contenteditable picks it up
+            const events = ['beforeinput', 'input', 'textInput'];
+            events.forEach(eventType => {
+              const event = new Event(eventType, { bubbles: true, cancelable: true });
+              (event as any).data = replacement;
+              // Mark as programmatic to prevent handleInput from processing it
+              (event as any).__rewordlyProgrammatic = true;
+              element.dispatchEvent(event);
+            });
+            
+            // Calculate length difference for position adjustment
           const replacementLength = replacement.length;
           const originalLength = actualEnd - actualStart;
           const lengthDiff = replacementLength - originalLength;
@@ -4251,6 +4466,7 @@ class RewordlyContentScript {
           // Clear flag even on error
           this.isPerformingReplace = false;
         }
+      }
       }
     }
   }
