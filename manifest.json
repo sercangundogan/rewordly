@@ -37,7 +37,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["popup.html", "changelog.html", "welcome.html"],
+      "resources": ["popup.html", "changelog.html", "welcome.html", "Reddit with AI Review and Grammar check.gif"],
       "matches": ["http://*/*", "https://*/*"]
     }
   ]

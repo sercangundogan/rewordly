@@ -68,7 +68,8 @@ module.exports = (env, argv) => {
           { from: 'src/welcome.html', to: 'welcome.html' },
           { from: 'src/changelog.html', to: 'changelog.html' },
           { from: 'styles.css', to: 'styles.css' },
-          { from: 'icons', to: 'icons', noErrorOnMissing: true }
+          { from: 'icons', to: 'icons', noErrorOnMissing: true },
+          { from: 'assets/*.gif', to: '[name][ext]', noErrorOnMissing: true }
         ]
       })
     ],

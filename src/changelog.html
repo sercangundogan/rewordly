@@ -127,6 +127,44 @@
       content: '🔧';
     }
 
+    .demo-section {
+      margin-top: 24px;
+      padding: 20px;
+      background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+      border-radius: 12px;
+      border: 1px solid #e2e8f0;
+    }
+
+    .demo-section h3 {
+      font-size: 16px;
+      font-weight: 600;
+      color: #1f2937;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .demo-section h3::before {
+      content: '🎬';
+      font-size: 18px;
+    }
+
+    .demo-gif {
+      width: 100%;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      border: 1px solid #e2e8f0;
+    }
+
+    .demo-caption {
+      font-size: 13px;
+      color: #6b7280;
+      text-align: center;
+      margin-top: 8px;
+      font-style: italic;
+    }
+
     .footer {
       background: #f8fafc;
       padding: 24px 32px;
@@ -235,6 +273,12 @@
           <li class="changelog-item fix">Smooth highlight animations</li>
           <li class="changelog-item fix">Improved error dismissal with persistent memory</li>
         </ul>
+      </div>
+
+      <div class="demo-section">
+        <h3>See It In Action</h3>
+        <img src="Reddit%20with%20AI%20Review%20and%20Grammar%20check.gif" alt="Real-time grammar checking demo on Reddit" class="demo-gif">
+        <p class="demo-caption">Real-time grammar checking and AI rewrite on Reddit</p>
       </div>
     </div>
     
