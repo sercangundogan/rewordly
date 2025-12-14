@@ -127,26 +127,30 @@
       content: '🔧';
     }
 
-    .demo-section {
-      padding: 0;
+    .demo-wrapper {
+      max-width: 900px;
+      margin: 0 auto 24px;
       background: #1f2937;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1);
     }
 
-    .demo-section h3 {
-      font-size: 14px;
+    .demo-wrapper h3 {
+      font-size: 15px;
       font-weight: 600;
       color: white;
-      padding: 12px 20px;
+      padding: 14px 24px;
       margin: 0;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
       background: linear-gradient(135deg, #374151 0%, #1f2937 100%);
     }
 
-    .demo-section h3::before {
+    .demo-wrapper h3::before {
       content: '🎬';
-      font-size: 16px;
+      font-size: 18px;
     }
 
     .demo-gif {
@@ -155,10 +159,10 @@
     }
 
     .demo-caption {
-      font-size: 12px;
+      font-size: 13px;
       color: #9ca3af;
       text-align: center;
-      padding: 10px 20px;
+      padding: 12px 24px;
       background: #1f2937;
       margin: 0;
     }
@@ -228,18 +232,19 @@
   </style>
 </head>
 <body>
+  <!-- Demo GIF - Büyük görünüm için ayrı wrapper -->
+  <div class="demo-wrapper">
+    <h3>See It In Action</h3>
+    <img src="Reddit%20with%20AI%20Review%20and%20Grammar%20check.gif" alt="Real-time grammar checking demo on Reddit" class="demo-gif">
+    <p class="demo-caption">Real-time grammar checking and AI rewrite on Reddit</p>
+  </div>
+
   <div class="container">
     <div class="header">
       <button class="close-button" id="closeBtn" title="Close">×</button>
       <h1>What's New in Rewordly</h1>
       <p>We've made some exciting updates!</p>
       <span class="version-badge" id="versionBadge">Version 1.1.0</span>
-    </div>
-
-    <div class="demo-section">
-      <h3>See It In Action</h3>
-      <img src="Reddit%20with%20AI%20Review%20and%20Grammar%20check.gif" alt="Real-time grammar checking demo on Reddit" class="demo-gif">
-      <p class="demo-caption">Real-time grammar checking and AI rewrite on Reddit</p>
     </div>
     
     <div class="content">
