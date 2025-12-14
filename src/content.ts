@@ -2726,6 +2726,10 @@ class RewordlyContentScript {
       .rewordly-highlight.rewordly-highlight-enter {
         overflow: hidden !important;
       }
+      .rewordly-highlight.rewordly-no-transition {
+        transition: none !important;
+        will-change: auto !important;
+      }
     `;
     
     this.highlightsShadowRoot.appendChild(style);
@@ -3247,7 +3251,7 @@ class RewordlyContentScript {
   /**
    * Update highlights position on scroll/resize
    */
-  private updateHighlightsPosition(element: HTMLElement): void {
+  private updateHighlightsPosition(element: HTMLElement, skipTransition: boolean = false): void {
     if (!this.highlightsContent) return;
 
     const elementId = this.getElementId(element);
@@ -3347,6 +3351,10 @@ class RewordlyContentScript {
         }
 
         // Update highlight position and size (instant, no animation)
+        // Disable transitions during scroll for instant position updates
+        if (skipTransition) {
+          highlight.classList.add('rewordly-no-transition');
+        }
         highlight.style.top = `${highlightRect.top}px`;
         highlight.style.left = `${highlightRect.left}px`;
         highlight.style.width = `${highlightRect.width}px`;
@@ -3357,6 +3365,16 @@ class RewordlyContentScript {
         highlight.removeAttribute('data-hidden-by-blur');
         highlight.removeAttribute('data-hidden-by-modal');
         highlight.setAttribute('data-error', JSON.stringify(error));
+        
+        // Remove the no-transition class after position update is complete
+        if (skipTransition) {
+          // Use requestAnimationFrame to ensure the position update is applied first
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              highlight.classList.remove('rewordly-no-transition');
+            });
+          });
+        }
       });
 
       // Remove any extra highlights that are no longer needed (if rect count decreased)
@@ -3767,8 +3785,9 @@ class RewordlyContentScript {
   private setupHighlightsUpdateListeners(): void {
     const updateAllHighlights = () => {
       // Update highlights for all elements with errors
+      // Skip transitions during scroll for instant position updates
       this.grammarErrors.forEach((_errors, element) => {
-        this.updateHighlightsPosition(element);
+        this.updateHighlightsPosition(element, true);
       });
     };
 
