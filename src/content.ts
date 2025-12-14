@@ -741,7 +741,9 @@ class RewordlyContentScript {
     }
 
     // Show AI button if element has focus and has text, and rewrite is enabled
-    if (document.activeElement === element && this.config.rewriteEnabled) {
+    // Only show on sites where grammar check is enabled
+    if (document.activeElement === element && this.config.rewriteEnabled && 
+        this.isGrammarCheckAllowedSite() && this.config.highlightsEnabled) {
       let hasText = false;
       if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
         hasText = element.value.trim().length > 0;
@@ -835,7 +837,9 @@ class RewordlyContentScript {
     }
     
     // Show AI button if element has text and rewrite is enabled
-    if (hasText && this.config.rewriteEnabled) {
+    // Only show on sites where grammar check is enabled
+    if (hasText && this.config.rewriteEnabled && 
+        this.isGrammarCheckAllowedSite() && this.config.highlightsEnabled) {
       this.showAIFloatingButton(element);
     }
     
@@ -5332,7 +5336,31 @@ class RewordlyContentScript {
       return;
     }
 
-    const elementRect = element.getBoundingClientRect();
+    // Only show rewrite button on sites where grammar check is enabled
+    if (!this.isGrammarCheckAllowedSite() || !this.config.highlightsEnabled) {
+      return;
+    }
+
+    const hostname = window.location.hostname.toLowerCase();
+    const isMedium = hostname.includes('medium.com');
+    
+    let elementRect: DOMRect;
+    
+    // Medium-specific positioning: position relative to actual content area
+    if (isMedium) {
+      // Try to find .section-inner - it could be a parent (closest) or child (querySelector)
+      let sectionInner = element.closest('.section-inner') || element.querySelector('.section-inner');
+      
+      if (sectionInner) {
+        // Use .section-inner's bounding rect directly - it's already sized correctly with max-width
+        elementRect = sectionInner.getBoundingClientRect();
+      } else {
+        elementRect = element.getBoundingClientRect();
+      }
+    } else {
+      elementRect = element.getBoundingClientRect();
+    }
+    
     const buttonSize = 32; // Button size (reduced from 40)
     const offset = 8; // Offset from edge
     
