@@ -5,7 +5,6 @@
  */
 
 interface RewordlyConfig {
-  enabled: boolean;
   highlightsEnabled: boolean;
   rewriteEnabled: boolean;
 }
@@ -34,7 +33,6 @@ interface GrammarCheckResponse {
 
 class RewordlyContentScript {
   private config: RewordlyConfig = {
-    enabled: true,
     highlightsEnabled: true,
     rewriteEnabled: true
   };
@@ -195,10 +193,9 @@ class RewordlyContentScript {
 
   private async loadConfig(): Promise<void> {
     try {
-      const result = await chrome.storage.sync.get(['rewordlyEnabled', 'rewordlyHighlightsEnabled', 'rewordlyRewriteEnabled']);
+      const result = await chrome.storage.sync.get(['rewordlyHighlightsEnabled', 'rewordlyRewriteEnabled']);
       
       // Use environment variables as defaults if not set in storage
-      this.config.enabled = result['rewordlyEnabled'] !== false;
       this.config.highlightsEnabled = result['rewordlyHighlightsEnabled'] !== false;
       this.config.rewriteEnabled = result['rewordlyRewriteEnabled'] !== false;
 
@@ -555,7 +552,7 @@ class RewordlyContentScript {
       return;
     }
     
-    if (!this.config.enabled || !this.config.highlightsEnabled) {
+    if (!this.config.highlightsEnabled) {
       return;
     }
     
@@ -711,10 +708,6 @@ class RewordlyContentScript {
    * Handle input events on editable elements
    */
   private handleInput(event: Event): void {
-    
-    if (!this.config.enabled) {
-      return;
-    }
 
     // Skip programmatic input events triggered by our replace operations
     // This prevents unnecessary grammar checks after replacements
@@ -809,11 +802,6 @@ class RewordlyContentScript {
    * Handle focus events on editable elements
    */
   private handleFocus(event: Event): void {
-    // Extension is disabled - do nothing
-    if (!this.config.enabled) {
-      return;
-    }
-    
     const element = event.target as HTMLElement;
     
     if (!element || !this.isEditableElement(element)) {
@@ -5134,12 +5122,6 @@ class RewordlyContentScript {
       if (request.type === 'SETTINGS_UPDATED') {
         // Reload config when settings are updated
         this.loadConfig().then(() => {
-          
-          // Hide button if extension is disabled
-          if (!this.config.enabled) {
-            this.hideFloatingButton();
-            this.hideModal();
-          }
           
           // Hide button if rewrite is disabled
           if (!this.config.rewriteEnabled) {

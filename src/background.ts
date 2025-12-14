@@ -38,11 +38,6 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   const currentVersion = manifest.version;
 
   if (details.reason === 'install') {
-    // Set default configuration
-    await chrome.storage.sync.set({
-      rewordlyEnabled: true
-    });
-    
     // Store current version as last viewed and mark welcome as shown
     await chrome.storage.local.set({
       lastViewedVersion: currentVersion,
@@ -253,14 +248,15 @@ chrome.runtime.onStartup.addListener(async () => {
 chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
   switch (request.type) {
     case 'GET_CONFIG':
-      chrome.storage.sync.get(['rewordlyEnabled'], (result) => {
+      chrome.storage.sync.get(['rewordlyHighlightsEnabled', 'rewordlyRewriteEnabled'], (result) => {
         sendResponse(result);
       });
       return true; // Keep message channel open for async response
       
     case 'SET_CONFIG':
       chrome.storage.sync.set({
-        rewordlyEnabled: request.config.enabled
+        rewordlyHighlightsEnabled: request.config.highlightsEnabled,
+        rewordlyRewriteEnabled: request.config.rewriteEnabled
       }, () => {
         sendResponse({ success: true });
       });
