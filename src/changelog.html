@@ -19,7 +19,7 @@
     }
 
     .container {
-      max-width: 600px;
+      max-width: 700px;
       margin: 0 auto;
       background: white;
       border-radius: 16px;
@@ -128,41 +128,39 @@
     }
 
     .demo-section {
-      margin-top: 24px;
-      padding: 20px;
-      background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-      border-radius: 12px;
-      border: 1px solid #e2e8f0;
+      padding: 0;
+      background: #1f2937;
     }
 
     .demo-section h3 {
-      font-size: 16px;
+      font-size: 14px;
       font-weight: 600;
-      color: #1f2937;
-      margin-bottom: 12px;
+      color: white;
+      padding: 12px 20px;
+      margin: 0;
       display: flex;
       align-items: center;
       gap: 8px;
+      background: linear-gradient(135deg, #374151 0%, #1f2937 100%);
     }
 
     .demo-section h3::before {
       content: '🎬';
-      font-size: 18px;
+      font-size: 16px;
     }
 
     .demo-gif {
       width: 100%;
-      border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-      border: 1px solid #e2e8f0;
+      display: block;
     }
 
     .demo-caption {
-      font-size: 13px;
-      color: #6b7280;
+      font-size: 12px;
+      color: #9ca3af;
       text-align: center;
-      margin-top: 8px;
-      font-style: italic;
+      padding: 10px 20px;
+      background: #1f2937;
+      margin: 0;
     }
 
     .footer {
@@ -237,14 +235,14 @@
       <p>We've made some exciting updates!</p>
       <span class="version-badge" id="versionBadge">Version 1.1.0</span>
     </div>
+
+    <div class="demo-section">
+      <h3>See It In Action</h3>
+      <img src="Reddit%20with%20AI%20Review%20and%20Grammar%20check.gif" alt="Real-time grammar checking demo on Reddit" class="demo-gif">
+      <p class="demo-caption">Real-time grammar checking and AI rewrite on Reddit</p>
+    </div>
     
     <div class="content">
-      <div class="demo-section" style="margin-top: 0; margin-bottom: 32px;">
-        <h3>See It In Action</h3>
-        <img src="Reddit%20with%20AI%20Review%20and%20Grammar%20check.gif" alt="Real-time grammar checking demo on Reddit" class="demo-gif">
-        <p class="demo-caption">Real-time grammar checking and AI rewrite on Reddit</p>
-      </div>
-
       <div class="section">
         <h2 class="section-title">New Features</h2>
         <ul class="changelog-list">
