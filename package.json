@@ -18,7 +18,7 @@
     "text-rewriting",
     "typescript"
   ],
-  "author": "Your Name",
+  "author": "Sercan Gundogan",
   "license": "MIT",
   "devDependencies": {
     "@types/chrome": "^0.0.254",
@@ -36,10 +36,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-repo/rewordly.git"
+    "url": "https://github.com/sercangundogan/rewordly"
   },
   "bugs": {
-    "url": "https://github.com/your-repo/rewordly/issues"
+    "url": "https://github.com/sercangundogan/rewordly/issues"
   },
-  "homepage": "https://github.com/your-repo/rewordly#readme"
+  "homepage": "https://rewordly-web.vercel.app/"
 }
