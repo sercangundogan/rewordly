@@ -733,19 +733,22 @@ class RewordlyContentScript {
       return;
     }
 
-    // Show AI button if element has focus and has text, and rewrite is enabled
+    // Show AI button if element has focus and has text (at least 3 characters), and rewrite is enabled
     // Only show on sites where grammar check is enabled
     if (document.activeElement === element && this.config.rewriteEnabled && 
         this.isGrammarCheckAllowedSite() && this.config.highlightsEnabled) {
       let hasText = false;
       if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-        hasText = element.value.trim().length > 0;
+        hasText = element.value.trim().length >= 3;
       } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
-        hasText = (element.innerText || element.textContent || '').trim().length > 0;
+        hasText = (element.innerText || element.textContent || '').trim().length >= 3;
       }
       
       if (hasText) {
         this.showAIFloatingButton(element);
+      } else {
+        // Hide button if text is less than 3 characters
+        this.hideFloatingButton();
       }
     }
 
@@ -816,19 +819,24 @@ class RewordlyContentScript {
       this.scheduledBlurHandlers.delete(element);
     }
     
-    // Check if element has text
+    // Check if element has text (at least 3 characters)
     let hasText = false;
     if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-      hasText = element.value.trim().length > 0;
+      hasText = element.value.trim().length >= 3;
     } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
-      hasText = (element.innerText || element.textContent || '').trim().length > 0;
+      hasText = (element.innerText || element.textContent || '').trim().length >= 3;
     }
     
-    // Show AI button if element has text and rewrite is enabled
+    // Show AI button if element has text (at least 3 characters) and rewrite is enabled
     // Only show on sites where grammar check is enabled
-    if (hasText && this.config.rewriteEnabled && 
+    if (this.config.rewriteEnabled && 
         this.isGrammarCheckAllowedSite() && this.config.highlightsEnabled) {
-      this.showAIFloatingButton(element);
+      if (hasText) {
+        this.showAIFloatingButton(element);
+      } else {
+        // Hide button if text is less than 3 characters
+        this.hideFloatingButton();
+      }
     }
     
     // If element has grammar errors and highlights are enabled, show the overlay again
