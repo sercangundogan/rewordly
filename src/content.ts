@@ -1075,7 +1075,7 @@ class RewordlyContentScript {
    * Check grammar using API
    */
   private async checkGrammarAPI(text: string): Promise<GrammarCheckResponse> {
-    const apiUrl = 'http://localhost:3000/api/grammar';
+    const apiUrl = 'https://rewordly-web.vercel.app/api/grammar';
     
     try {
       const response = await fetch(apiUrl, {
@@ -5864,7 +5864,7 @@ class RewordlyContentScript {
   // @ts-ignore - Kept for compatibility, no longer used
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private async grammarText(_text: string): Promise<string> {
-    const response = await fetch('http://localhost:3000/api/grammar', {
+    const response = await fetch('https://rewordly-web.vercel.app/api/grammar', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
