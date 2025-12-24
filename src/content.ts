@@ -940,18 +940,32 @@ class RewordlyContentScript {
         
         // Check if element still doesn't have focus
         if (document.activeElement !== element) {
-          // Check if element has text - if it does, keep highlights visible
-          // let hasText = false;
-          // if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-          //   hasText = element.value.trim().length > 0;
-          // } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
-          //   hasText = (element.innerText || element.textContent || '').trim().length > 0;
-          // }
+          // Keep highlights visible as long as element is in the DOM and has text
+          // Only hide if element is removed from DOM or has no text
+          let hasText = false;
+          if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+            hasText = element.value.trim().length > 0;
+          } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
+            hasText = (element.innerText || element.textContent || '').trim().length > 0;
+          }
           
-          // Only hide highlights if element has no text
-          // if (!hasText) {
-            this.hideGrammarOverlay(element);
-          // }
+          // Check if element is still in the DOM
+          const isInDOM = document.body.contains(element) || element.isConnected;
+          
+          // Only hide highlights if element has no text or is removed from DOM
+          if (!hasText || !isInDOM) {
+            // Element has no text or was removed, hide highlights
+            if (this.highlightsContent) {
+              const elementId = this.getElementId(element);
+              const highlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
+              highlights.forEach(highlight => {
+                highlight.remove();
+              });
+            }
+            // Clear errors for this element
+            this.grammarErrors.delete(element);
+          }
+          // Otherwise, keep highlights visible even without focus
         }
       }, blurDelay);
       
@@ -1033,6 +1047,69 @@ class RewordlyContentScript {
   }
 
   /**
+   * Extract text from element excluding signature blocks
+   * This prevents grammar checking on email signatures which contain formatting
+   * that can trigger false positives (like whitespace, special characters, etc.)
+   * Preserves line breaks by using innerText which properly handles <br> tags and block elements.
+   */
+  private extractTextExcludingSignature(element: HTMLElement): { text: string; textSource: 'value' | 'textContent' | 'innerText' } {
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+      return {
+        text: element.value,
+        textSource: 'value'
+      };
+    } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
+      // Temporarily hide signature elements to exclude them from innerText
+      // This preserves line breaks and formatting while excluding signature
+      const signatureElements = element.querySelectorAll('.gmail_signature, [class*="signature"], [id*="signature"]');
+      const signaturePrefix = element.querySelector('.gmail_signature_prefix');
+      
+      const hiddenElements: Array<{ el: HTMLElement; originalDisplay: string }> = [];
+      
+      // Hide signature elements
+      signatureElements.forEach(sigEl => {
+        const htmlEl = sigEl as HTMLElement;
+        const originalDisplay = htmlEl.style.display;
+        htmlEl.style.display = 'none';
+        hiddenElements.push({ el: htmlEl, originalDisplay });
+      });
+      
+      // Hide signature prefix
+      if (signaturePrefix) {
+        const htmlEl = signaturePrefix as HTMLElement;
+        const originalDisplay = htmlEl.style.display;
+        htmlEl.style.display = 'none';
+        hiddenElements.push({ el: htmlEl, originalDisplay });
+      }
+      
+      // Get text with innerText (preserves line breaks from <br> and block elements)
+      let text = element.innerText || element.textContent || '';
+      
+      // Restore original display styles
+      hiddenElements.forEach(({ el, originalDisplay }) => {
+        if (originalDisplay) {
+          el.style.display = originalDisplay;
+        } else {
+          el.style.removeProperty('display');
+        }
+      });
+      
+      // Don't trim trailing whitespace - it's needed to maintain correct error positions
+      // Signature exclusion is already handled by hiding signature elements above
+      
+      const textSource = 'innerText';
+      
+      return { text, textSource };
+    }
+    
+    // Fallback for other element types
+    return {
+      text: element.textContent || '',
+      textSource: 'textContent'
+    };
+  }
+
+  /**
    * Perform grammar check directly (new optimized method with request cancellation)
    */
   private async performGrammarCheckDirect(element: HTMLElement): Promise<void> {
@@ -1051,16 +1128,8 @@ class RewordlyContentScript {
       return;
     }
     
-    let text = '';
-    let textSource: 'value' | 'textContent' | 'innerText' = 'textContent';
-    
-    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-      text = element.value;
-      textSource = 'value';
-    } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
-      text = element.innerText || element.textContent || '';
-      textSource = element.innerText ? 'innerText' : 'textContent';
-    }
+    // Extract text excluding signature blocks
+    const { text, textSource } = this.extractTextExcludingSignature(element);
 
     // Skip if text is too short
     if (text.trim().length < 3) {
@@ -1138,17 +1207,8 @@ class RewordlyContentScript {
       return;
     }
     
-    let text = '';
-    let textSource: 'value' | 'textContent' | 'innerText' = 'textContent';
-    
-    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-      text = element.value;
-      textSource = 'value';
-    } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
-      // For contenteditable, prefer innerText as it's more accurate for formatted text
-      text = element.innerText || element.textContent || '';
-      textSource = element.innerText ? 'innerText' : 'textContent';
-    }
+    // Extract text excluding signature blocks
+    const { text, textSource } = this.extractTextExcludingSignature(element);
 
     // Skip if text is too short
     if (text.trim().length < 3) {
@@ -1457,9 +1517,9 @@ class RewordlyContentScript {
 
         // Check if the error word still matches at that position
         const errorWord = text.substring(error.start, error.end);
-        const isStillValid = errorWord.toLowerCase().trim() === error.word.toLowerCase().trim() ||
-                            errorWord.toLowerCase().includes(error.word.toLowerCase()) ||
-                            error.word.toLowerCase().includes(errorWord.toLowerCase());
+        // Strict matching: word must match exactly (case-insensitive, whitespace variations allowed)
+        // If the word at that position has changed (e.g., "asd" -> "asdf"), highlight should be removed
+        const isStillValid = errorWord.toLowerCase().trim() === error.word.toLowerCase().trim();
 
         if (!isStillValid) {
           // Word changed or deleted, remove highlight immediately
@@ -1477,9 +1537,8 @@ class RewordlyContentScript {
         return false;
       }
       const errorWord = text.substring(error.start, error.end);
-      return errorWord.toLowerCase().trim() === error.word.toLowerCase().trim() ||
-             errorWord.toLowerCase().includes(error.word.toLowerCase()) ||
-             error.word.toLowerCase().includes(errorWord.toLowerCase());
+      // Strict matching: word must match exactly (case-insensitive, whitespace variations allowed)
+      return errorWord.toLowerCase().trim() === error.word.toLowerCase().trim();
     });
 
     this.grammarErrors.set(element, validErrors);
@@ -1545,13 +1604,9 @@ class RewordlyContentScript {
       return;
     }
 
-    // Validate error positions against current text
-    let text = '';
-    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-      text = element.value;
-    } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
-      text = element.innerText || element.textContent || '';
-    }
+    // Validate error positions against current text (excluding signature)
+    // Use the same text extraction method as grammar check to ensure positions match
+    const { text } = this.extractTextExcludingSignature(element);
 
     // Filter out errors that are no longer valid (text changed, error position out of bounds)
     const validErrors = errorsWithIds.filter(error => {
@@ -1560,10 +1615,9 @@ class RewordlyContentScript {
       }
       // Check if the error word still matches at that position
       const errorWord = text.substring(error.start, error.end);
-      // Allow some flexibility (case-insensitive, whitespace variations)
-      const isValid = errorWord.toLowerCase().trim() === error.word.toLowerCase().trim() ||
-                      errorWord.toLowerCase().includes(error.word.toLowerCase()) ||
-                      error.word.toLowerCase().includes(errorWord.toLowerCase());
+      // Strict matching: word must match exactly (case-insensitive, whitespace variations allowed)
+      // If the word at that position has changed (e.g., "asd" -> "asdf"), highlight should be removed
+      const isValid = errorWord.toLowerCase().trim() === error.word.toLowerCase().trim();
       
       if (!isValid) {
         // Word changed, remove from dismissed list if it was dismissed
@@ -2863,13 +2917,8 @@ class RewordlyContentScript {
       return;
     }
 
-    // Get text from element
-    let text = '';
-    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-      text = element.value;
-    } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
-      text = element.innerText || element.textContent || '';
-    }
+    // Get text from element (excluding signature)
+    const { text } = this.extractTextExcludingSignature(element);
 
     if (!text || error.start >= text.length || error.end > text.length) {
       return;
@@ -3144,7 +3193,10 @@ class RewordlyContentScript {
     endNode: Text | null; 
     endOffset: number;
   } | null {
-    const innerText = element.innerText || element.textContent || '';
+    // Use text extraction that excludes signature to match error positions
+    const { text: extractedText } = this.extractTextExcludingSignature(element);
+    const innerText = extractedText;
+    
     if (start >= innerText.length || end > innerText.length) {
       return null;
     }
@@ -3165,6 +3217,13 @@ class RewordlyContentScript {
       
       const parent = node.parentElement;
       if (!parent) continue;
+      
+      // Skip signature elements (Gmail and other email clients)
+      // Check if this node is inside a signature block
+      const isInSignature = parent.closest('.gmail_signature, [class*="signature"], [id*="signature"]') !== null;
+      if (isInSignature) {
+        continue; // Skip signature text nodes
+      }
       
       // Check visibility
       const style = window.getComputedStyle(parent);
