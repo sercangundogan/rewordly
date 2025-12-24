@@ -4,6 +4,8 @@
  * Now includes real-time grammar checking for editable elements
  */
 
+import { createRewordlyAPIUtil, RewordlyAPIUtil } from './utils/api';
+
 interface RewordlyConfig {
   highlightsEnabled: boolean;
   rewriteEnabled: boolean;
@@ -47,9 +49,12 @@ class RewordlyContentScript {
   
   // Real-time grammar checking
   private grammarCheckTimeout: number | null = null;
+  private grammarCheckThrottle: number | null = null; // Throttle timer
   private highlightPositionUpdateTimeout: number | null = null;
   private grammarErrors: Map<HTMLElement, GrammarError[]> = new Map();
   private editableElements: Set<HTMLElement> = new Set();
+  // Track active grammar check requests per element (for cancellation)
+  private activeGrammarRequests: Map<HTMLElement, string> = new Map(); // element -> requestId
   
   // Track dismissed errors: key = elementId + word + start, value = true
   private dismissedErrors: Map<string, boolean> = new Map();
@@ -85,13 +90,21 @@ class RewordlyContentScript {
   // Track scheduled blur handlers to cancel them if needed
   private scheduledBlurHandlers = new Map<HTMLElement, NodeJS.Timeout>();
 
-  // Request queue for batch processing API requests
+  // Request queue for batch processing API requests (deprecated - using direct requests now)
   private grammarCheckQueue: Array<{ element: HTMLElement; priority?: number }> = [];
   private isProcessingQueue: boolean = false;
   private readonly BATCH_SIZE: number = 3; // Process 3 requests at a time
   private readonly BATCH_DELAY: number = 200; // Delay between batches in milliseconds
+  // Throttle delay for grammar checks (300ms - faster than debounce)
+  private readonly GRAMMAR_CHECK_THROTTLE: number = 300;
+
+  // WebSocket API instance
+  private apiUtil: RewordlyAPIUtil;
 
   constructor() {
+    // Initialize WebSocket API (production server with WSS)
+    // Using wss://rewordly.store with Let's Encrypt SSL certificate
+    this.apiUtil = createRewordlyAPIUtil('wss://rewordly.store');
     this.init();
   }
 
@@ -793,11 +806,17 @@ class RewordlyContentScript {
 
     // Only perform grammar check if highlights are enabled
     if (this.config.highlightsEnabled) {
-      // Set new timeout for grammar check (1 second after typing stops)
-      // Use higher priority (1) for user input since it's more important
-      this.grammarCheckTimeout = window.setTimeout(() => {
-        this.queueGrammarCheck(element, 1);
-      }, 1000);
+      // Use throttle instead of debounce for faster response
+      // Cancel previous throttle if exists
+      if (this.grammarCheckThrottle !== null) {
+        clearTimeout(this.grammarCheckThrottle);
+      }
+      
+      // Throttle: check every 300ms while user is typing
+      this.grammarCheckThrottle = window.setTimeout(() => {
+        this.performGrammarCheckDirect(element);
+        this.grammarCheckThrottle = null;
+      }, this.GRAMMAR_CHECK_THROTTLE);
     }
   }
 
@@ -842,6 +861,17 @@ class RewordlyContentScript {
     // If element has grammar errors and highlights are enabled, show the overlay again
     if (this.config.highlightsEnabled && this.grammarErrors.has(element)) {
       this.showGrammarOverlay(element);
+    }
+    
+    // Perform immediate grammar check on focus (if element has text)
+    if (this.config.highlightsEnabled && hasText && this.isGrammarCheckAllowedSite()) {
+      // Cancel any pending throttle
+      if (this.grammarCheckThrottle !== null) {
+        clearTimeout(this.grammarCheckThrottle);
+        this.grammarCheckThrottle = null;
+      }
+      // Check immediately on focus
+      this.performGrammarCheckDirect(element);
     }
   }
 
@@ -1003,7 +1033,93 @@ class RewordlyContentScript {
   }
 
   /**
-   * Perform grammar check on an element
+   * Perform grammar check directly (new optimized method with request cancellation)
+   */
+  private async performGrammarCheckDirect(element: HTMLElement): Promise<void> {
+    // Only perform grammar check on allowed sites
+    if (!this.isGrammarCheckAllowedSite()) {
+      return;
+    }
+    
+    // Check if element is in ignore list
+    if (this.isElementIgnored(element)) {
+      return;
+    }
+    
+    // Don't perform grammar check if we're currently performing a replace operation
+    if (this.isPerformingReplace) {
+      return;
+    }
+    
+    let text = '';
+    let textSource: 'value' | 'textContent' | 'innerText' = 'textContent';
+    
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+      text = element.value;
+      textSource = 'value';
+    } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
+      text = element.innerText || element.textContent || '';
+      textSource = element.innerText ? 'innerText' : 'textContent';
+    }
+
+    // Skip if text is too short
+    if (text.trim().length < 3) {
+      return;
+    }
+
+    // Store text source for overlay creation
+    (element as any).__rewordlyTextSource = textSource;
+    (element as any).__rewordlyText = text;
+
+    // Cancel previous request for this element if exists
+    const previousRequestId = this.activeGrammarRequests.get(element);
+    if (previousRequestId) {
+      this.apiUtil.cancelRequest(previousRequestId);
+      this.activeGrammarRequests.delete(element);
+    }
+
+    try {
+      // Call WebSocket API with cancellation support
+      const result = await this.apiUtil.checkGrammar(text, 'default', previousRequestId);
+      
+      // Store the new request ID
+      this.activeGrammarRequests.set(element, result.requestId);
+      
+      // Check if detected language is English
+      if (result.detectedLanguage && !result.detectedLanguage.code.toLowerCase().startsWith('en')) {
+        // Language is not English, clear all highlights
+        this.displayGrammarErrors(element, []);
+        this.activeGrammarRequests.delete(element);
+        return;
+      }
+      
+      // Map errors to include id field
+      const errorsWithId: GrammarError[] = result.errors.map((error) => ({
+        id: this.generateErrorId(),
+        start: error.start,
+        end: error.end,
+        word: error.word,
+        suggestions: error.suggestions,
+        type: error.type,
+      }));
+      
+      // Display errors (or clear if no errors)
+      this.displayGrammarErrors(element, errorsWithId);
+      this.activeGrammarRequests.delete(element);
+    } catch (error) {
+      // Don't log cancellation errors
+      if (error instanceof Error && error.message === 'Request cancelled') {
+        return;
+      }
+      console.error('Rewordly: Grammar check error:', error);
+      this.activeGrammarRequests.delete(element);
+      // Clear highlights on error
+      this.displayGrammarErrors(element, []);
+    }
+  }
+
+  /**
+   * Perform grammar check on an element (legacy method - kept for queue system)
    */
   private async performGrammarCheck(element: HTMLElement): Promise<void> {
     // Only perform grammar check on allowed sites (Twitter, Gmail, Reddit, Medium)
@@ -1072,41 +1188,34 @@ class RewordlyContentScript {
   }
 
   /**
-   * Check grammar using API
+   * Check grammar using WebSocket API (legacy method - kept for compatibility)
    */
   private async checkGrammarAPI(text: string): Promise<GrammarCheckResponse> {
-    const apiUrl = 'https://rewordly-web.vercel.app/api/grammar';
-    
     try {
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ text }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status} ${response.statusText}`);
-      }
-
-      const data = await response.json();
+      // Use WebSocket API for grammar check
+      const result = await this.apiUtil.checkGrammar(text, 'default');
       
-      // Validate response structure
-      if (!data || typeof data !== 'object') {
-        throw new Error('Invalid API response format');
-      }
-
-      // Ensure errors array exists
-      const errors = Array.isArray(data.errors) ? data.errors : [];
+      // Map errors to include id field (required by GrammarError interface)
+      const errorsWithId: GrammarError[] = result.errors.map((error) => ({
+        id: this.generateErrorId(),
+        start: error.start,
+        end: error.end,
+        word: error.word,
+        suggestions: error.suggestions,
+        type: error.type,
+      }));
       
       return {
-        errors: errors,
-        corrected: data.corrected || text,
-        detectedLanguage: data.detectedLanguage,
+        errors: errorsWithId,
+        corrected: result.corrected,
+        ...(result.detectedLanguage && { detectedLanguage: result.detectedLanguage }),
       };
     } catch (error) {
-      console.error('Rewordly: API request failed:', error);
+      // Don't log cancellation errors
+      if (error instanceof Error && error.message === 'Request cancelled') {
+        throw error;
+      }
+      console.error('Rewordly: WebSocket API request failed:', error);
       throw error;
     }
   }

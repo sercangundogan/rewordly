@@ -10,7 +10,10 @@
     "contextMenus"
   ],
   "host_permissions": [
-    "https://rewordly-web.vercel.app/*"
+    "https://rewordly-web.vercel.app/*",
+    "http://localhost:*/*",
+    "ws://localhost:*/*",
+    "wss://rewordly.store/*"
   ],
   "background": {
     "service_worker": "background.js"
