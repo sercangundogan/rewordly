@@ -1151,15 +1151,48 @@ class RewordlyContentScript {
       // Call WebSocket API with cancellation support
       const result = await this.apiUtil.checkGrammar(text, 'default', previousRequestId);
       
+      console.log('Rewordly: Grammar check result', {
+        errorsCount: result.errors.length,
+        errors: result.errors,
+        text: text.substring(0, 50) + '...',
+        textLength: text.length
+      });
+      
       // Store the new request ID
       this.activeGrammarRequests.set(element, result.requestId);
       
       // Check if detected language is English
+      // For short texts, language detection can be inaccurate, so we allow grammar checking
+      // if the text contains English words or if language detection confidence is low
+      const textLength = text.trim().length;
+      const isShortText = textLength < 50; // Consider text short if less than 50 characters
+      
       if (result.detectedLanguage && !result.detectedLanguage.code.toLowerCase().startsWith('en')) {
-        // Language is not English, clear all highlights
-        this.displayGrammarErrors(element, []);
-        this.activeGrammarRequests.delete(element);
-        return;
+        // For short texts, be more lenient - allow grammar checking if text contains English words
+        if (isShortText) {
+          // Check if text contains common English words or patterns
+          const englishPattern = /\b(the|and|or|but|in|on|at|to|for|of|with|by|from|as|is|are|was|were|be|been|have|has|had|do|does|did|will|would|should|could|can|may|might|this|that|these|those|a|an)\b/i;
+          const hasEnglishWords = englishPattern.test(text);
+          
+          if (hasEnglishWords) {
+            console.log('Rewordly: Short text with English words, allowing grammar check despite language detection', {
+              detectedLanguage: result.detectedLanguage,
+              textLength
+            });
+            // Continue with grammar check even if language is not detected as English
+          } else {
+            console.log('Rewordly: Language is not English and no English words detected', result.detectedLanguage);
+            this.displayGrammarErrors(element, []);
+            this.activeGrammarRequests.delete(element);
+            return;
+          }
+        } else {
+          // For longer texts, trust language detection
+          console.log('Rewordly: Language is not English', result.detectedLanguage);
+          this.displayGrammarErrors(element, []);
+          this.activeGrammarRequests.delete(element);
+          return;
+        }
       }
       
       // Map errors to include id field
@@ -1171,6 +1204,11 @@ class RewordlyContentScript {
         suggestions: error.suggestions,
         type: error.type,
       }));
+      
+      console.log('Rewordly: Mapped errors', {
+        errorsWithId,
+        textLength: text.length
+      });
       
       // Display errors (or clear if no errors)
       this.displayGrammarErrors(element, errorsWithId);
@@ -1483,13 +1521,8 @@ class RewordlyContentScript {
       return;
     }
 
-    // Get current text
-    let text = '';
-    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-      text = element.value;
-    } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
-      text = element.innerText || element.textContent || '';
-    }
+    // Get current text (excluding signature to match error positions)
+    const { text } = this.extractTextExcludingSignature(element);
 
     if (!this.highlightsContent) {
       return;
@@ -1548,6 +1581,14 @@ class RewordlyContentScript {
    * Display grammar errors on an element using Grammarly-style highlights
    */
   private displayGrammarErrors(element: HTMLElement, errors: GrammarError[]): void {
+    console.log('Rewordly: displayGrammarErrors called', {
+      errorsCount: errors.length,
+      errors: errors,
+      element: element.tagName,
+      elementId: this.getElementId(element),
+      stackTrace: new Error().stack
+    });
+    
     // Ensure all errors have unique IDs (assign if missing from API response)
     const errorsWithIds = errors.map(error => {
       if (!error.id) {
@@ -1611,6 +1652,12 @@ class RewordlyContentScript {
     // Filter out errors that are no longer valid (text changed, error position out of bounds)
     const validErrors = errorsWithIds.filter(error => {
       if (error.start < 0 || error.end > text.length || error.start >= error.end) {
+        console.warn('Rewordly: Error position out of bounds', { 
+          error, 
+          textLength: text.length, 
+          start: error.start, 
+          end: error.end 
+        });
         return false;
       }
       // Check if the error word still matches at that position
@@ -1620,6 +1667,12 @@ class RewordlyContentScript {
       const isValid = errorWord.toLowerCase().trim() === error.word.toLowerCase().trim();
       
       if (!isValid) {
+        console.warn('Rewordly: Error word mismatch', { 
+          error, 
+          errorWord, 
+          expectedWord: error.word,
+          text: text.substring(Math.max(0, error.start - 5), Math.min(text.length, error.end + 5))
+        });
         // Word changed, remove from dismissed list if it was dismissed
         const dismissKey = this.getDismissKey(elementId, error, text);
         this.dismissedErrors.delete(dismissKey);
@@ -1633,6 +1686,13 @@ class RewordlyContentScript {
       }
       
       return isValid;
+    });
+    
+    console.log('Rewordly: displayGrammarErrors', {
+      totalErrors: errorsWithIds.length,
+      validErrors: validErrors.length,
+      textLength: text.length,
+      text: text.substring(0, 50) + '...'
     });
 
     // Update stored errors with only valid ones
@@ -2932,8 +2992,22 @@ class RewordlyContentScript {
     // Get all rects for multi-line support (one rect per line)
     const highlightRects = this.getErrorTextRects(element, highlightStart, highlightEnd);
     if (highlightRects.length === 0) {
+      console.warn('Rewordly: No highlight rects found', {
+        error,
+        highlightStart,
+        highlightEnd,
+        textLength: text.length,
+        elementType: element instanceof HTMLInputElement ? 'input' : element instanceof HTMLTextAreaElement ? 'textarea' : 'contenteditable'
+      });
       return;
     }
+    
+    console.log('Rewordly: Creating highlight', {
+      error,
+      highlightRects: highlightRects.length,
+      highlightStart,
+      highlightEnd
+    });
 
     // Create a highlight element for each rect (each line)
     highlightRects.forEach((highlightRect, lineIndex) => {
