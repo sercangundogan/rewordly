@@ -5561,7 +5561,59 @@ class RewordlyContentScript {
   }
 
   /**
+   * Check if element is single-line (approximately)
+   * Uses multiple heuristics for reliable detection across different platforms
+   */
+  private isSingleLineElement(element: HTMLElement): boolean {
+    const computedStyle = window.getComputedStyle(element);
+    const elementRect = element.getBoundingClientRect();
+    
+    // Get line-height (can be 'normal', number, or pixel value)
+    let lineHeight: number;
+    const lineHeightValue = computedStyle.lineHeight;
+    
+    if (lineHeightValue === 'normal') {
+      // Normal line-height is typically 1.2-1.5x font-size
+      const fontSize = parseFloat(computedStyle.fontSize) || 16;
+      lineHeight = fontSize * 1.2; // Conservative estimate
+    } else if (lineHeightValue.includes('px')) {
+      lineHeight = parseFloat(lineHeightValue);
+    } else {
+      // Relative value (e.g., 1.5)
+      const fontSize = parseFloat(computedStyle.fontSize) || 16;
+      lineHeight = parseFloat(lineHeightValue) * fontSize;
+    }
+    
+    // Get actual content height
+    const clientHeight = element.clientHeight;
+    const scrollHeight = element.scrollHeight;
+    
+    // Heuristic 1: If element height is close to line-height (within 1.5x), likely single line
+    // Account for padding
+    const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
+    const paddingBottom = parseFloat(computedStyle.paddingBottom) || 0;
+    const contentHeight = clientHeight - paddingTop - paddingBottom;
+    
+    // Heuristic 2: If scrollHeight equals clientHeight, no vertical scrolling (likely single line)
+    const hasNoVerticalScroll = Math.abs(scrollHeight - clientHeight) < 2;
+    
+    // Heuristic 3: If content height is less than 1.8x line-height, likely single line
+    // Using 1.8x to account for various font sizes and padding
+    const isHeightCloseToLineHeight = contentHeight <= lineHeight * 1.8;
+    
+    // Heuristic 4: For very small elements (e.g., input fields), if height < 60px, likely single line
+    const isSmallElement = elementRect.height < 60;
+    
+    // Combine heuristics: element is single-line if:
+    // - Height is close to line-height AND no vertical scroll, OR
+    // - Very small element with no vertical scroll
+    return (isHeightCloseToLineHeight && hasNoVerticalScroll) || (isSmallElement && hasNoVerticalScroll);
+  }
+
+  /**
    * Show AI floating button at bottom-right of editable element
+   * For single-line elements, positions button at right-center (vertically aligned)
+   * For multi-line elements, positions button at bottom-right
    */
   private showAIFloatingButton(element: HTMLElement): void {
     if (!this.floatingButton || !this.config.rewriteEnabled) {
@@ -5596,14 +5648,28 @@ class RewordlyContentScript {
     const buttonSize = 32; // Button size (reduced from 40)
     const offset = 8; // Offset from edge
     
-    // Position at bottom-right of element
-    let buttonX = elementRect.right - buttonSize - offset;
-    let buttonY = elementRect.bottom - buttonSize - offset;
+    // Check if element is single-line
+    const isSingleLine = this.isSingleLineElement(element);
+    
+    let buttonX: number;
+    let buttonY: number;
+    
+    if (isSingleLine) {
+      // For single-line elements: position at right-center (vertically aligned)
+      buttonX = elementRect.right - buttonSize - offset;
+      // Center vertically within the element
+      buttonY = elementRect.top + (elementRect.height / 2) - (buttonSize / 2);
+    } else {
+      // For multi-line elements: position at bottom-right (existing behavior)
+      buttonX = elementRect.right - buttonSize - offset;
+      buttonY = elementRect.bottom - buttonSize - offset;
+    }
     
     // Keep within viewport bounds
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
     
+    // Horizontal bounds check
     if (buttonX < 0) {
       buttonX = elementRect.left + offset;
     }
@@ -5611,10 +5677,15 @@ class RewordlyContentScript {
       buttonX = viewportWidth - buttonSize - offset;
     }
     
+    // Vertical bounds check
     if (buttonY < 0) {
-      buttonY = elementRect.top + offset;
+      // If button goes above viewport, position at top of element (for single-line) or top with offset
+      buttonY = isSingleLine 
+        ? elementRect.top + offset 
+        : elementRect.top + offset;
     }
     if (buttonY + buttonSize > viewportHeight) {
+      // If button goes below viewport, position at bottom of viewport
       buttonY = viewportHeight - buttonSize - offset;
     }
     
