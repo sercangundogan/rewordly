@@ -52,6 +52,7 @@ class RewordlyContentScript {
   private grammarCheckThrottle: number | null = null; // Throttle timer
   private highlightPositionUpdateTimeout: number | null = null;
   private buttonBlurTimeout: number | null = null; // Timeout for hiding button on blur
+  private currentFocusedElement: HTMLElement | null = null; // Track currently focused element - if set, button should not be hidden
   private grammarErrors: Map<HTMLElement, GrammarError[]> = new Map();
   private editableElements: Set<HTMLElement> = new Set();
   // Track active grammar check requests per element (for cancellation)
@@ -767,6 +768,8 @@ class RewordlyContentScript {
       if (hasFocus) {
         // For textarea/input: always show button when focused
         if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+          // Set current focused element - this prevents button from being hidden
+          this.currentFocusedElement = element;
           this.showAIFloatingButton(element);
         } else {
           // For contenteditable: check if has text
@@ -864,6 +867,9 @@ class RewordlyContentScript {
       this.buttonBlurTimeout = null;
     }
     
+    // Track currently focused element - this prevents button from being hidden
+    this.currentFocusedElement = element;
+    
     // Check if element has text (at least 3 characters)
     let hasText = false;
     if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
@@ -879,6 +885,8 @@ class RewordlyContentScript {
         this.isGrammarCheckAllowedSite() && this.config.highlightsEnabled) {
       // For textarea/input: show button immediately on focus, regardless of text length
       if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+        // Set current focused element - this prevents button from being hidden
+        this.currentFocusedElement = element;
         this.showAIFloatingButton(element);
       } else if (hasText) {
         // For contenteditable: only show if has text
@@ -939,27 +947,27 @@ class RewordlyContentScript {
         this.buttonBlurTimeout = null;
       }
       
+      // Clear current focused element - allow button to be hidden
+      // But use a delay to allow for focus transfer (e.g., clicking on button)
+      const blurredElement = element;
+      this.currentFocusedElement = null;
+      
       // Small delay to allow for focus transfer (e.g., clicking on button)
       this.buttonBlurTimeout = window.setTimeout(() => {
         // Check if element still doesn't have focus and button wasn't clicked
-        // Also check if the element is still an input/textarea (for textarea/input, keep button visible if element exists)
-        const isInputOrTextarea = element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement;
-        const shouldHide = document.activeElement !== element && 
+        const shouldHide = document.activeElement !== blurredElement && 
                           document.activeElement !== this.floatingButton &&
-                          !this.floatingButton?.contains(document.activeElement);
+                          !this.floatingButton?.contains(document.activeElement) &&
+                          this.currentFocusedElement !== blurredElement; // Check if element is no longer the focused element
         
-        // For textarea/input: only hide if element truly lost focus (not just a temporary blur)
-        // For contenteditable: hide if no focus and no text
+        // Only hide if element truly lost focus and is not the current focused element
         if (shouldHide) {
-          if (isInputOrTextarea) {
-            // Double-check: if element is still in the document and is an input/textarea, 
-            // it might have regained focus, so check again
-            if (document.body.contains(element) && 
-                (document.activeElement === element || element === document.activeElement)) {
-              // Element regained focus, don't hide
-              this.buttonBlurTimeout = null;
-              return;
-            }
+          // Double-check: if element regained focus, don't hide
+          if (document.activeElement === blurredElement) {
+            // Element regained focus, update current focused element
+            this.currentFocusedElement = blurredElement;
+            this.buttonBlurTimeout = null;
+            return;
           }
           this.hideFloatingButton();
         }
@@ -6022,8 +6030,20 @@ class RewordlyContentScript {
     this.floatingButton.classList.add('show');
   }
 
+  /**
+   * Hide floating button
+   * Only hides if currentFocusedElement is not set or element doesn't have focus
+   */
   private hideFloatingButton(): void {
     if (this.floatingButton) {
+      // Don't hide button if there's a current focused element that still has focus
+      if (this.currentFocusedElement && 
+          document.activeElement === this.currentFocusedElement) {
+        // Element still has focus, don't hide button
+        return;
+      }
+      
+      // Hide button
       this.floatingButton.classList.remove('show');
     }
   }
