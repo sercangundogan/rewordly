@@ -51,6 +51,7 @@ class RewordlyContentScript {
   private grammarCheckTimeout: number | null = null;
   private grammarCheckThrottle: number | null = null; // Throttle timer
   private highlightPositionUpdateTimeout: number | null = null;
+  private buttonBlurTimeout: number | null = null; // Timeout for hiding button on blur
   private grammarErrors: Map<HTMLElement, GrammarError[]> = new Map();
   private editableElements: Set<HTMLElement> = new Set();
   // Track active grammar check requests per element (for cancellation)
@@ -746,22 +747,41 @@ class RewordlyContentScript {
       return;
     }
 
-    // Show AI button if element has focus and has text (at least 3 characters), and rewrite is enabled
+    // Show AI button if element has focus and rewrite is enabled
+    // For textarea/input: always show when focused (regardless of text length)
+    // For contenteditable: only show if has text (at least 3 characters)
     // Only show on sites where grammar check is enabled
-    if (document.activeElement === element && this.config.rewriteEnabled && 
+    if (this.config.rewriteEnabled && 
         this.isGrammarCheckAllowedSite() && this.config.highlightsEnabled) {
-      let hasText = false;
-      if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-        hasText = element.value.trim().length >= 3;
-      } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
-        hasText = (element.innerText || element.textContent || '').trim().length >= 3;
+      // Cancel button blur timeout to prevent button from hiding
+      if (this.buttonBlurTimeout !== null) {
+        clearTimeout(this.buttonBlurTimeout);
+        this.buttonBlurTimeout = null;
       }
       
-      if (hasText) {
-        this.showAIFloatingButton(element);
-      } else {
-        // Hide button if text is less than 3 characters
-        this.hideFloatingButton();
+      // Check if element has focus (or is the active element)
+      const hasFocus = document.activeElement === element || 
+                       (element instanceof HTMLInputElement && document.activeElement === element) ||
+                       (element instanceof HTMLTextAreaElement && document.activeElement === element);
+      
+      if (hasFocus) {
+        // For textarea/input: always show button when focused
+        if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+          this.showAIFloatingButton(element);
+        } else {
+          // For contenteditable: check if has text
+          let hasText = false;
+          if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
+            hasText = (element.innerText || element.textContent || '').trim().length >= 3;
+          }
+          
+          if (hasText) {
+            this.showAIFloatingButton(element);
+          } else {
+            // Hide button if text is less than 3 characters
+            this.hideFloatingButton();
+          }
+        }
       }
     }
 
@@ -838,6 +858,12 @@ class RewordlyContentScript {
       this.scheduledBlurHandlers.delete(element);
     }
     
+    // Cancel button blur timeout if exists (prevents button from hiding after focus)
+    if (this.buttonBlurTimeout !== null) {
+      clearTimeout(this.buttonBlurTimeout);
+      this.buttonBlurTimeout = null;
+    }
+    
     // Check if element has text (at least 3 characters)
     let hasText = false;
     if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
@@ -846,14 +872,19 @@ class RewordlyContentScript {
       hasText = (element.innerText || element.textContent || '').trim().length >= 3;
     }
     
-    // Show AI button if element has text (at least 3 characters) and rewrite is enabled
+    // Show AI button on focus for textarea/input elements (always show on focus)
+    // For contenteditable elements, only show if has text (at least 3 characters)
     // Only show on sites where grammar check is enabled
     if (this.config.rewriteEnabled && 
         this.isGrammarCheckAllowedSite() && this.config.highlightsEnabled) {
-      if (hasText) {
+      // For textarea/input: show button immediately on focus, regardless of text length
+      if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+        this.showAIFloatingButton(element);
+      } else if (hasText) {
+        // For contenteditable: only show if has text
         this.showAIFloatingButton(element);
       } else {
-        // Hide button if text is less than 3 characters
+        // Hide button if contenteditable and text is less than 3 characters
         this.hideFloatingButton();
       }
     }
@@ -902,14 +933,37 @@ class RewordlyContentScript {
     );
     
     if (!isClickingButton) {
+      // Cancel any existing button blur timeout
+      if (this.buttonBlurTimeout !== null) {
+        clearTimeout(this.buttonBlurTimeout);
+        this.buttonBlurTimeout = null;
+      }
+      
       // Small delay to allow for focus transfer (e.g., clicking on button)
-      setTimeout(() => {
+      this.buttonBlurTimeout = window.setTimeout(() => {
         // Check if element still doesn't have focus and button wasn't clicked
-        if (document.activeElement !== element && 
-            document.activeElement !== this.floatingButton &&
-            !this.floatingButton?.contains(document.activeElement)) {
+        // Also check if the element is still an input/textarea (for textarea/input, keep button visible if element exists)
+        const isInputOrTextarea = element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement;
+        const shouldHide = document.activeElement !== element && 
+                          document.activeElement !== this.floatingButton &&
+                          !this.floatingButton?.contains(document.activeElement);
+        
+        // For textarea/input: only hide if element truly lost focus (not just a temporary blur)
+        // For contenteditable: hide if no focus and no text
+        if (shouldHide) {
+          if (isInputOrTextarea) {
+            // Double-check: if element is still in the document and is an input/textarea, 
+            // it might have regained focus, so check again
+            if (document.body.contains(element) && 
+                (document.activeElement === element || element === document.activeElement)) {
+              // Element regained focus, don't hide
+              this.buttonBlurTimeout = null;
+              return;
+            }
+          }
           this.hideFloatingButton();
         }
+        this.buttonBlurTimeout = null;
       }, 150);
     }
     
@@ -2668,19 +2722,6 @@ class RewordlyContentScript {
   // }
 
 
-  /**
-   * Hide grammar highlights for an element (but keep errors stored)
-   */
-  private hideGrammarOverlay(element: HTMLElement): void {
-    if (!this.highlightsContent) return;
-    
-    const elementId = this.getElementId(element);
-    const highlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
-    highlights.forEach(highlight => {
-      (highlight as HTMLElement).style.display = 'none';
-      (highlight as HTMLElement).setAttribute('data-hidden-by-blur', 'true');
-    });
-  }
 
   /**
    * Show grammar highlights for an element (if errors exist)
@@ -5645,7 +5686,7 @@ class RewordlyContentScript {
       elementRect = element.getBoundingClientRect();
     }
     
-    const buttonSize = 32; // Button size (reduced from 40)
+    const buttonSize = 28; // Button size (reduced from 32)
     const offset = 8; // Offset from edge
     
     // Check if element is single-line
@@ -5696,6 +5737,12 @@ class RewordlyContentScript {
     this.floatingButton.style.left = `${buttonX}px`;
     this.floatingButton.style.top = `${buttonY}px`;
     this.floatingButton.classList.add('show');
+    
+    // Cancel any pending button blur timeout to prevent button from hiding
+    if (this.buttonBlurTimeout !== null) {
+      clearTimeout(this.buttonBlurTimeout);
+      this.buttonBlurTimeout = null;
+    }
     
     // Store reference to current element for rewrite functionality
     (this.floatingButton as any).__currentElement = element;
