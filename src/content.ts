@@ -92,6 +92,14 @@ class RewordlyContentScript {
   // Track scheduled blur handlers to cancel them if needed
   private scheduledBlurHandlers = new Map<HTMLElement, NodeJS.Timeout>();
 
+  // Track scrollable containers for each editable element
+  // Maps element -> Set of scrollable parent containers
+  private scrollableContainers = new Map<HTMLElement, Set<HTMLElement>>();
+  
+  // Track scroll event listeners for cleanup
+  // Maps scrollable container -> bound update function
+  private scrollListeners = new Map<HTMLElement, () => void>();
+
   // Request queue for batch processing API requests (deprecated - using direct requests now)
   private grammarCheckQueue: Array<{ element: HTMLElement; priority?: number }> = [];
   private isProcessingQueue: boolean = false;
@@ -556,6 +564,9 @@ class RewordlyContentScript {
     // Check if element already has text and perform grammar check
     // Wait for element to be visible and rendered (especially for dynamic content like Google)
     this.checkAndPerformGrammarCheckForExistingText(element);
+    
+    // Set up scroll listeners for scrollable containers
+    this.setupElementScrollListeners(element);
   }
   
   /**
@@ -3537,6 +3548,9 @@ class RewordlyContentScript {
     const elementId = this.getElementId(element);
     const highlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
     highlights.forEach(highlight => highlight.remove());
+    
+    // Remove scroll listeners for this element
+    this.removeElementScrollListeners(element);
   }
 
   /**
@@ -3641,6 +3655,41 @@ class RewordlyContentScript {
           }
         }
 
+        // Check if element is visible
+        const elementRect = element.getBoundingClientRect();
+        const isElementVisible = elementRect.width > 0 && elementRect.height > 0;
+        
+        // Check if highlight rect is within element bounds
+        // getBoundingClientRect() already accounts for scroll position, so we just check bounds
+        const isHighlightWithinElement = 
+          isElementVisible &&
+          highlightRect.top >= elementRect.top &&
+          highlightRect.bottom <= elementRect.bottom &&
+          highlightRect.left >= elementRect.left &&
+          highlightRect.right <= elementRect.right;
+        
+        // Check if highlight is within any scrollable container's visible bounds
+        // getBoundingClientRect() already accounts for scroll, so we check if highlight
+        // is within the container's visible viewport
+        let isWithinScrollableContainer = true;
+        const scrollableContainers = this.scrollableContainers.get(element);
+        if (scrollableContainers && scrollableContainers.size > 0) {
+          scrollableContainers.forEach(container => {
+            const containerRect = container.getBoundingClientRect();
+            // Check if highlight rect intersects with container's visible bounds
+            // Highlight should be visible if it's within or intersects the container's viewport
+            const highlightIntersectsContainer = 
+              highlightRect.bottom > containerRect.top &&
+              highlightRect.top < containerRect.bottom &&
+              highlightRect.right > containerRect.left &&
+              highlightRect.left < containerRect.right;
+            
+            if (!highlightIntersectsContainer) {
+              isWithinScrollableContainer = false;
+            }
+          });
+        }
+        
         // Update highlight position and size (instant, no animation)
         // Disable transitions during scroll for instant position updates
         if (skipTransition) {
@@ -3650,11 +3699,20 @@ class RewordlyContentScript {
         highlight.style.left = `${highlightRect.left}px`;
         highlight.style.width = `${highlightRect.width}px`;
         highlight.style.height = `${highlightRect.height}px`;
-        // Ensure highlight is visible (may have been hidden by blur/modal)
-        highlight.style.display = '';
-        highlight.style.opacity = '1'; // Restore opacity if it was faded
-        highlight.removeAttribute('data-hidden-by-blur');
-        highlight.removeAttribute('data-hidden-by-modal');
+        
+        // Show or hide highlight based on visibility
+        if (isHighlightWithinElement && isWithinScrollableContainer) {
+          // Ensure highlight is visible (may have been hidden by blur/modal)
+          highlight.style.display = '';
+          highlight.style.opacity = '1'; // Restore opacity if it was faded
+          highlight.removeAttribute('data-hidden-by-blur');
+          highlight.removeAttribute('data-hidden-by-modal');
+        } else {
+          // Hide highlight if element is not visible or highlight is outside bounds
+          highlight.style.display = 'none';
+          highlight.setAttribute('data-hidden-by-scroll', 'true');
+        }
+        
         highlight.setAttribute('data-error', JSON.stringify(error));
         
         // Remove the no-transition class after position update is complete
@@ -4068,6 +4126,119 @@ class RewordlyContentScript {
       }
     }
     return suggestion;
+  }
+
+  /**
+   * Find all scrollable parent containers for an element
+   * Also checks if the element itself is scrollable (e.g., textarea)
+   */
+  private findScrollableContainers(element: HTMLElement): Set<HTMLElement> {
+    const scrollableContainers = new Set<HTMLElement>();
+    
+    // Check if element itself is scrollable (e.g., textarea, contenteditable div)
+    const elementStyle = window.getComputedStyle(element);
+    const elementOverflowY = elementStyle.overflowY;
+    const elementOverflowX = elementStyle.overflowX;
+    const elementOverflow = elementStyle.overflow;
+    
+    const isElementScrollable = 
+      (elementOverflowY === 'auto' || elementOverflowY === 'scroll' || elementOverflow === 'auto' || elementOverflow === 'scroll') &&
+      element.scrollHeight > element.clientHeight;
+    
+    const isElementScrollableX = 
+      (elementOverflowX === 'auto' || elementOverflowX === 'scroll' || elementOverflow === 'auto' || elementOverflow === 'scroll') &&
+      element.scrollWidth > element.clientWidth;
+    
+    if (isElementScrollable || isElementScrollableX) {
+      scrollableContainers.add(element);
+    }
+    
+    // Check parent containers
+    let current: HTMLElement | null = element.parentElement;
+
+    while (current && current !== document.body && current !== document.documentElement) {
+      const style = window.getComputedStyle(current);
+      const overflowY = style.overflowY;
+      const overflowX = style.overflowX;
+      const overflow = style.overflow;
+      
+      // Check if element is scrollable
+      const isScrollable = 
+        (overflowY === 'auto' || overflowY === 'scroll' || overflow === 'auto' || overflow === 'scroll') &&
+        current.scrollHeight > current.clientHeight;
+      
+      // Also check for overflow-x scrollable containers
+      const isScrollableX = 
+        (overflowX === 'auto' || overflowX === 'scroll' || overflow === 'auto' || overflow === 'scroll') &&
+        current.scrollWidth > current.clientWidth;
+
+      if (isScrollable || isScrollableX) {
+        scrollableContainers.add(current);
+      }
+
+      current = current.parentElement;
+    }
+
+    return scrollableContainers;
+  }
+
+  /**
+   * Set up scroll listeners for a specific editable element
+   */
+  private setupElementScrollListeners(element: HTMLElement): void {
+    // Remove existing listeners for this element
+    this.removeElementScrollListeners(element);
+
+    // Find scrollable containers
+    const containers = this.findScrollableContainers(element);
+    this.scrollableContainers.set(element, containers);
+
+    // Add scroll listeners to each scrollable container
+    containers.forEach(container => {
+      // Check if we already have a listener for this container
+      if (!this.scrollListeners.has(container)) {
+        const updateAllForContainer = () => {
+          // Update highlights for all elements that have this container as a scrollable parent
+          this.scrollableContainers.forEach((containers, el) => {
+            if (containers.has(container) && this.grammarErrors.has(el)) {
+              this.updateHighlightsPosition(el, true);
+            }
+          });
+        };
+        
+        container.addEventListener('scroll', updateAllForContainer, { passive: true });
+        this.scrollListeners.set(container, updateAllForContainer);
+      }
+    });
+  }
+
+  /**
+   * Remove scroll listeners for a specific editable element
+   */
+  private removeElementScrollListeners(element: HTMLElement): void {
+    const containers = this.scrollableContainers.get(element);
+    if (!containers) return;
+
+    // Check if any other elements use these containers
+    containers.forEach(container => {
+      let isUsedByOthers = false;
+      this.scrollableContainers.forEach((otherContainers, otherElement) => {
+        if (otherElement !== element && otherContainers.has(container)) {
+          isUsedByOthers = true;
+        }
+      });
+
+      // If no other elements use this container, remove the listener
+      if (!isUsedByOthers) {
+        const listener = this.scrollListeners.get(container);
+        if (listener) {
+          container.removeEventListener('scroll', listener);
+          this.scrollListeners.delete(container);
+        }
+      }
+    });
+
+    this.scrollableContainers.delete(element);
   }
 
   /**
