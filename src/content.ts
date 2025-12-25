@@ -6208,6 +6208,10 @@ class RewordlyContentScript {
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
     
+    // Check if element is completely outside viewport
+    const elementTop = elementRect.top;
+    const elementBottom = elementRect.bottom;
+    
     // Horizontal bounds check
     if (buttonX < 0) {
       buttonX = elementRect.left + offset;
@@ -6216,16 +6220,29 @@ class RewordlyContentScript {
       buttonX = viewportWidth - buttonSize - offset;
     }
     
-    // Vertical bounds check
-    if (buttonY < 0) {
-      // If button goes above viewport, position at top of element (for single-line) or top with offset
-      buttonY = isSingleLine 
-        ? elementRect.top + offset 
-        : elementRect.top + offset;
+    // Vertical bounds check - only constrain if element is partially visible
+    // If element is completely above viewport, let button follow element
+    if (elementBottom < 0) {
+      // Element is completely above viewport - keep button relative to element
+      // Don't constrain to viewport
+    } 
+    // If element is completely below viewport, let button follow element
+    else if (elementTop > viewportHeight) {
+      // Element is completely below viewport - keep button relative to element
+      // Don't constrain to viewport
     }
-    if (buttonY + buttonSize > viewportHeight) {
-      // If button goes below viewport, position at bottom of viewport
-      buttonY = viewportHeight - buttonSize - offset;
+    // Element is partially or fully visible - apply viewport constraints
+    else {
+      if (buttonY < 0) {
+        // If button goes above viewport, position at top of element (for single-line) or top with offset
+        buttonY = isSingleLine 
+          ? elementRect.top + offset 
+          : elementRect.top + offset;
+      }
+      if (buttonY + buttonSize > viewportHeight) {
+        // If button goes below viewport, position at bottom of viewport
+        buttonY = viewportHeight - buttonSize - offset;
+      }
     }
     
     // Update button position (transition is disabled during scroll by scroll listener)
@@ -6304,19 +6321,43 @@ class RewordlyContentScript {
     window.addEventListener('scroll', updatePosition, true);
     window.addEventListener('resize', updatePosition);
     document.addEventListener('scroll', updatePosition, true);
+    
+    // Also listen to scrollable parent containers (important for Medium and other sites with nested scroll containers)
+    const scrollableContainers = this.findScrollableContainers(element);
+    scrollableContainers.forEach(container => {
+      container.addEventListener('scroll', updatePosition, { passive: true, capture: true });
+    });
+    
+    // Store containers for cleanup
+    (this.floatingButton as any).__scrollContainers = scrollableContainers;
   }
 
   /**
    * Remove scroll listener for AI button
    */
   private removeAIButtonScrollListener(): void {
-    if (this.aiButtonScrollListener) {
-      window.removeEventListener('scroll', this.aiButtonScrollListener, true);
-      window.removeEventListener('resize', this.aiButtonScrollListener);
-      document.removeEventListener('scroll', this.aiButtonScrollListener, true);
+    const updatePosition = this.aiButtonScrollListener;
+    
+    if (updatePosition) {
+      window.removeEventListener('scroll', updatePosition, true);
+      window.removeEventListener('resize', updatePosition);
+      document.removeEventListener('scroll', updatePosition, true);
       this.aiButtonScrollListener = null;
     }
     
+    // Remove scroll listeners from scrollable containers
+    if (this.floatingButton && (this.floatingButton as any).__scrollContainers && updatePosition) {
+      const containers = (this.floatingButton as any).__scrollContainers as Set<HTMLElement>;
+      containers.forEach(container => {
+        try {
+          container.removeEventListener('scroll', updatePosition, { capture: true } as any);
+        } catch (e) {
+          // Fallback if capture option causes issues
+          container.removeEventListener('scroll', updatePosition, true);
+        }
+      });
+      delete (this.floatingButton as any).__scrollContainers;
+    }
   }
 
   // @ts-ignore - Legacy function, no longer used (only showAIFloatingButton is used)
