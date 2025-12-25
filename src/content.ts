@@ -100,6 +100,9 @@ class RewordlyContentScript {
   // Maps scrollable container -> bound update function
   private scrollListeners = new Map<HTMLElement, () => void>();
 
+  // Track scroll listener for AI floating button position updates
+  private aiButtonScrollListener: (() => void) | null = null;
+
   // Request queue for batch processing API requests (deprecated - using direct requests now)
   private grammarCheckQueue: Array<{ element: HTMLElement; priority?: number }> = [];
   private isProcessingQueue: boolean = false;
@@ -6143,17 +6146,21 @@ class RewordlyContentScript {
   }
 
   /**
-   * Show AI floating button at bottom-right of editable element
-   * For single-line elements, positions button at right-center (vertically aligned)
-   * For multi-line elements, positions button at bottom-right
+   * Update AI floating button position based on element's current position
+   * This is called both on initial show and on scroll/resize events
    */
-  private showAIFloatingButton(element: HTMLElement): void {
+  private updateAIFloatingButtonPosition(element: HTMLElement): void {
     if (!this.floatingButton || !this.config.rewriteEnabled) {
       return;
     }
 
     // Only show rewrite button on sites where grammar check is enabled
     if (!this.isGrammarCheckAllowedSite() || !this.config.highlightsEnabled) {
+      return;
+    }
+
+    // Check if element is still in the DOM
+    if (!document.body.contains(element)) {
       return;
     }
 
@@ -6221,12 +6228,36 @@ class RewordlyContentScript {
       buttonY = viewportHeight - buttonSize - offset;
     }
     
+    // Update button position (transition is disabled during scroll by scroll listener)
+    this.floatingButton.style.left = `${buttonX}px`;
+    this.floatingButton.style.top = `${buttonY}px`;
+  }
+
+  /**
+   * Show AI floating button at bottom-right of editable element
+   * For single-line elements, positions button at right-center (vertically aligned)
+   * For multi-line elements, positions button at bottom-right
+   */
+  private showAIFloatingButton(element: HTMLElement): void {
+    if (!this.floatingButton || !this.config.rewriteEnabled) {
+      return;
+    }
+
+    // Only show rewrite button on sites where grammar check is enabled
+    if (!this.isGrammarCheckAllowedSite() || !this.config.highlightsEnabled) {
+      return;
+    }
+
+    // Remove existing scroll listener if any
+    this.removeAIButtonScrollListener();
+
+    // Update button position
+    this.updateAIFloatingButtonPosition(element);
+    
     // Ensure button is visible
     this.floatingButton.style.display = 'flex';
     this.floatingButton.style.visibility = 'visible';
     this.floatingButton.style.opacity = '1';
-    this.floatingButton.style.left = `${buttonX}px`;
-    this.floatingButton.style.top = `${buttonY}px`;
     this.floatingButton.classList.add('show');
     
     // Cancel any pending button blur timeout to prevent button from hiding
@@ -6237,6 +6268,55 @@ class RewordlyContentScript {
     
     // Store reference to current element for rewrite functionality
     (this.floatingButton as any).__currentElement = element;
+
+    // Add scroll listener to update button position on scroll
+    this.addAIButtonScrollListener(element);
+  }
+
+  /**
+   * Add scroll listener to update AI button position
+   */
+  private addAIButtonScrollListener(element: HTMLElement): void {
+    // Remove existing listener if any
+    this.removeAIButtonScrollListener();
+
+    // Create throttled update function for better performance
+    let rafId: number | null = null;
+    const updatePosition = () => {
+      if (rafId !== null) {
+        return; // Already scheduled
+      }
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        // Check if button is still visible and element still exists
+        if (this.floatingButton && 
+            this.floatingButton.classList.contains('show') &&
+            document.body.contains(element)) {
+          this.updateAIFloatingButtonPosition(element);
+        }
+      });
+    };
+
+    // Store the bound function
+    this.aiButtonScrollListener = updatePosition;
+
+    // Add listeners to window and document for comprehensive scroll detection
+    window.addEventListener('scroll', updatePosition, true);
+    window.addEventListener('resize', updatePosition);
+    document.addEventListener('scroll', updatePosition, true);
+  }
+
+  /**
+   * Remove scroll listener for AI button
+   */
+  private removeAIButtonScrollListener(): void {
+    if (this.aiButtonScrollListener) {
+      window.removeEventListener('scroll', this.aiButtonScrollListener, true);
+      window.removeEventListener('resize', this.aiButtonScrollListener);
+      document.removeEventListener('scroll', this.aiButtonScrollListener, true);
+      this.aiButtonScrollListener = null;
+    }
+    
   }
 
   // @ts-ignore - Legacy function, no longer used (only showAIFloatingButton is used)
@@ -6528,6 +6608,9 @@ class RewordlyContentScript {
       
       // Hide button
       this.floatingButton.classList.remove('show');
+      
+      // Remove scroll listener when button is hidden
+      this.removeAIButtonScrollListener();
     }
   }
 

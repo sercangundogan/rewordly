@@ -11,7 +11,7 @@
   align-items: center !important;
   gap: 8px !important;
   z-index: 2147483647 !important; /* Maximum z-index value */
-  transition: all 0.2s ease !important;
+  transition: opacity 0.2s ease, transform 0.2s ease !important; /* Only transition opacity and transform, not position (left/top) */
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
   pointer-events: auto !important;
   user-select: none !important;
