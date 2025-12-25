@@ -4813,12 +4813,306 @@ class RewordlyContentScript {
           }, 200);
         }, 200); // Small delay only for verification, not for initial update
       } else {
+        // Check if this is Slate.js (Medium)
+        const isSlate = element.getAttribute('data-slate-editor') === 'true' ||
+                        element.querySelector('[data-slate-editor="true"]') !== null ||
+                        element.closest('[data-slate-editor="true"]') !== null;
+        
         // Check if this is Notion
         const isNotion = element.getAttribute('data-content-editable-leaf') === 'true' ||
                         element.classList.contains('notion-selectable') ||
                         window.location.hostname.includes('notion.so');
         
-        if (isNotion) {
+        if (isSlate) {
+          // For Slate.js editors (Medium), use a special approach that properly updates Slate's internal state
+          this.isPerformingReplace = true;
+          
+          // Use an async IIFE to handle the async operations
+          (async () => {
+            try {
+              // Focus the element first
+              element.focus();
+              
+              // Get current text to validate positions
+              const currentText = element.innerText || element.textContent || '';
+              if (actualStart < 0 || actualEnd > currentText.length || actualStart >= actualEnd) {
+                console.error('Rewordly: Invalid positions for Slate.js replacement', { 
+                  start: actualStart, 
+                  end: actualEnd, 
+                  textLength: currentText.length
+                });
+                this.isPerformingReplace = false;
+                return;
+              }
+              
+              const selection = window.getSelection();
+              if (!selection) {
+                this.isPerformingReplace = false;
+                return;
+              }
+              
+              // Map innerText positions to text node positions
+              const mapping = this.mapInnerTextToTextNodes(element, actualStart, actualEnd);
+              
+              if (!mapping || !mapping.startNode) {
+                console.error('Rewordly: Could not map innerText positions to text nodes for Slate.js');
+                this.isPerformingReplace = false;
+                return;
+              }
+              
+              // Create range for the text to replace
+              const range = document.createRange();
+              
+              // Set range start
+              const startNodeLength = mapping.startNode.textContent!.length;
+              const startOffset = Math.min(mapping.startOffset, startNodeLength);
+              range.setStart(mapping.startNode, startOffset);
+              
+              // Set range end
+              if (mapping.endNode && mapping.startNode !== mapping.endNode) {
+                const endNodeLength = mapping.endNode.textContent!.length;
+                const endOffset = Math.min(mapping.endOffset, endNodeLength);
+                range.setEnd(mapping.endNode, endOffset);
+              } else {
+                const endPos = Math.min(mapping.endOffset, startNodeLength);
+                range.setEnd(mapping.startNode, endPos);
+              }
+              
+              // Select the text first - this is important for Slate.js
+              selection.removeAllRanges();
+              selection.addRange(range);
+              
+              // Wait a bit for Slate.js to recognize the selection
+              await new Promise(resolve => setTimeout(resolve, 20));
+              
+              // For Slate.js, we need to use beforeinput events properly
+              // Slate.js listens to beforeinput events to update its internal state
+              // We'll use deleteContent to delete selected text, then insertText to insert replacement
+              
+              // Step 1: Delete the selected content using deleteContent inputType
+              const deleteBeforeInputEvent = new InputEvent('beforeinput', {
+                bubbles: true,
+                cancelable: true,
+                inputType: 'deleteContent',
+                isComposing: false
+              });
+              // Add getTargetRanges method for Slate.js compatibility
+              (deleteBeforeInputEvent as any).getTargetRanges = () => [range.cloneRange()];
+              (deleteBeforeInputEvent as any).__rewordlyProgrammatic = true;
+              
+              const deleteCancelled = !element.dispatchEvent(deleteBeforeInputEvent);
+              
+              if (!deleteCancelled) {
+                // Delete the selected content from DOM
+                range.deleteContents();
+                
+                // Trigger input event for deletion
+                const deleteInputEvent = new InputEvent('input', {
+                  bubbles: true,
+                  cancelable: false,
+                  inputType: 'deleteContent',
+                  isComposing: false
+                });
+                (deleteInputEvent as any).__rewordlyProgrammatic = true;
+                element.dispatchEvent(deleteInputEvent);
+              }
+              
+              // Wait for Slate.js to process the deletion
+              await new Promise(resolve => setTimeout(resolve, 20));
+              
+              // Step 2: Insert the replacement text
+              // Get the current selection (should be collapsed at deletion point)
+              const currentRange = selection.rangeCount > 0 ? selection.getRangeAt(0) : range;
+              
+              // Ensure range is collapsed
+              if (!currentRange.collapsed) {
+                currentRange.collapse(true);
+              }
+              
+              // Trigger beforeinput event for insertion
+              const insertBeforeInputEvent = new InputEvent('beforeinput', {
+                bubbles: true,
+                cancelable: true,
+                inputType: 'insertText',
+                data: replacement,
+                isComposing: false
+              });
+              // Add getTargetRanges method for Slate.js compatibility
+              (insertBeforeInputEvent as any).getTargetRanges = () => [currentRange.cloneRange()];
+              (insertBeforeInputEvent as any).__rewordlyProgrammatic = true;
+              
+              const insertCancelled = !element.dispatchEvent(insertBeforeInputEvent);
+              
+              if (!insertCancelled) {
+                // Insert the replacement text into DOM
+                const textNode = document.createTextNode(replacement);
+                currentRange.insertNode(textNode);
+                
+                // Move cursor after the inserted text
+                currentRange.setStartAfter(textNode);
+                currentRange.collapse(true);
+                selection.removeAllRanges();
+                selection.addRange(currentRange);
+                
+                // Trigger input event for insertion
+                const insertInputEvent = new InputEvent('input', {
+                  bubbles: true,
+                  cancelable: false,
+                  inputType: 'insertText',
+                  data: replacement,
+                  isComposing: false
+                });
+                (insertInputEvent as any).__rewordlyProgrammatic = true;
+                element.dispatchEvent(insertInputEvent);
+              }
+              
+              // Also try execCommand as a backup (some Slate.js versions may prefer it)
+              // But only if the above didn't work
+              try {
+                // Re-select the text we just inserted to verify it's there
+                const verifyRange = document.createRange();
+                const verifyMapping = this.mapInnerTextToTextNodes(element, actualStart, actualStart + replacement.length);
+                if (verifyMapping && verifyMapping.startNode) {
+                  verifyRange.setStart(verifyMapping.startNode, Math.min(verifyMapping.startOffset, verifyMapping.startNode.textContent!.length));
+                  if (verifyMapping.endNode && verifyMapping.endNode !== verifyMapping.startNode) {
+                    verifyRange.setEnd(verifyMapping.endNode, Math.min(verifyMapping.endOffset, verifyMapping.endNode.textContent!.length));
+                  } else {
+                    verifyRange.setEnd(verifyMapping.startNode, Math.min(verifyMapping.endOffset, verifyMapping.startNode.textContent!.length));
+                  }
+                  selection.removeAllRanges();
+                  selection.addRange(verifyRange);
+                }
+              } catch (e) {
+                // Ignore errors in verification
+              }
+              
+              // Wait longer for Slate.js to fully process the changes
+              await new Promise(resolve => setTimeout(resolve, 100));
+              
+              // Verify the replacement was successful by checking the text content
+              const newText = element.innerText || element.textContent || '';
+              const expectedText = currentText.substring(0, actualStart) + replacement + currentText.substring(actualEnd);
+              
+              // If replacement didn't work, try one more time with execCommand
+              if (newText !== expectedText) {
+                console.warn('Rewordly: Slate.js replacement verification failed, trying execCommand fallback', {
+                  expected: expectedText.substring(0, 50),
+                  actual: newText.substring(0, 50)
+                });
+                
+                // Try execCommand as a last resort
+                try {
+                  // Re-select the original text range
+                  const retryMapping = this.mapInnerTextToTextNodes(element, actualStart, actualEnd);
+                  if (retryMapping && retryMapping.startNode) {
+                    const retryRange = document.createRange();
+                    retryRange.setStart(retryMapping.startNode, Math.min(retryMapping.startOffset, retryMapping.startNode.textContent!.length));
+                    if (retryMapping.endNode && retryMapping.endNode !== retryMapping.startNode) {
+                      retryRange.setEnd(retryMapping.endNode, Math.min(retryMapping.endOffset, retryMapping.endNode.textContent!.length));
+                    } else {
+                      retryRange.setEnd(retryMapping.startNode, Math.min(retryMapping.endOffset, retryMapping.startNode.textContent!.length));
+                    }
+                    
+                    selection.removeAllRanges();
+                    selection.addRange(retryRange);
+                    
+                    await new Promise(resolve => setTimeout(resolve, 20));
+                    
+                    // Try execCommand insertText which should replace selected text
+                    const execSuccess = document.execCommand('insertText', false, replacement);
+                    if (execSuccess) {
+                      await new Promise(resolve => setTimeout(resolve, 50));
+                      // Verify again
+                      const retryText = element.innerText || element.textContent || '';
+                      if (retryText === expectedText) {
+                        console.log('Rewordly: execCommand fallback succeeded for Slate.js');
+                      }
+                    }
+                  }
+                } catch (e) {
+                  console.error('Rewordly: execCommand fallback failed', e);
+                }
+              }
+              
+              // Calculate length difference for position adjustment
+              const replacementLength = replacement.length;
+              const originalLength = actualEnd - actualStart;
+              const lengthDiff = replacementLength - originalLength;
+              
+              // Update stored errors - adjust positions but keep IDs intact
+              const updatedErrorsAfterReplace = updatedErrors.map(err => {
+                if (err.start > actualEnd) {
+                  return {
+                    ...err,
+                    start: err.start + lengthDiff,
+                    end: err.end + lengthDiff
+                  };
+                }
+                return err;
+              });
+              this.grammarErrors.set(element, updatedErrorsAfterReplace);
+              
+              // Update highlights
+              if (this.highlightsContent) {
+                const elementId = this.getElementId(element);
+                const highlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
+                highlights.forEach((highlight) => {
+                  const highlightErrorId = (highlight as HTMLElement).getAttribute('data-error-id');
+                  if (!highlightErrorId) return;
+                  
+                  const updatedError = updatedErrorsAfterReplace.find(err => err.id === highlightErrorId);
+                  if (updatedError) {
+                    (highlight as HTMLElement).setAttribute('data-error', JSON.stringify(updatedError));
+                  } else {
+                    highlight.remove();
+                  }
+                });
+              }
+              
+              // Update highlight positions after Slate.js has updated its DOM
+              setTimeout(() => {
+                this.updateHighlightsPosition(element);
+                
+                // Cancel blur handlers
+                const existingBlurTimeout = this.scheduledBlurHandlers.get(element);
+                if (existingBlurTimeout) {
+                  clearTimeout(existingBlurTimeout);
+                  this.scheduledBlurHandlers.delete(element);
+                }
+                
+                // Restore focus and cursor position
+                requestAnimationFrame(() => {
+                  element.focus();
+                  const newCursorPosition = actualStart + replacement.length;
+                  const cursorMapping = this.mapInnerTextToTextNodes(element, newCursorPosition, newCursorPosition);
+                  if (cursorMapping && cursorMapping.startNode) {
+                    const cursorRange = document.createRange();
+                    const offset = Math.min(cursorMapping.startOffset, cursorMapping.startNode.textContent!.length);
+                    cursorRange.setStart(cursorMapping.startNode, offset);
+                    cursorRange.collapse(true);
+                    const sel = window.getSelection();
+                    if (sel) {
+                      sel.removeAllRanges();
+                      sel.addRange(cursorRange);
+                    }
+                  }
+                  
+                  // Keep flag true longer to catch any async Slate.js events
+                  setTimeout(() => {
+                    this.isPerformingReplace = false;
+                    // Trigger grammar check after replace is complete
+                    this.performGrammarCheck(element).catch(error => {
+                      console.error('Rewordly: Error performing grammar check after replace:', error);
+                    });
+                  }, 300);
+                });
+              }, 150);
+            } catch (err) {
+              console.error('Rewordly: Error replacing text in Slate.js:', err);
+              this.isPerformingReplace = false;
+            }
+          })();
+        } else if (isNotion) {
           // For Notion, use a more reliable approach that works with their complex DOM structure
           this.isPerformingReplace = true;
           
