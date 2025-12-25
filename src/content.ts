@@ -5070,7 +5070,9 @@ class RewordlyContentScript {
               }
               
               // Update highlight positions after Slate.js has updated its DOM
+              // Use longer delay to ensure Slate.js has fully updated its internal state
               setTimeout(() => {
+                // First, update highlight positions with the adjusted error positions
                 this.updateHighlightsPosition(element);
                 
                 // Cancel blur handlers
@@ -5099,14 +5101,30 @@ class RewordlyContentScript {
                   
                   // Keep flag true longer to catch any async Slate.js events
                   setTimeout(() => {
-                    this.isPerformingReplace = false;
-                    // Trigger grammar check after replace is complete
-                    this.performGrammarCheck(element).catch(error => {
-                      console.error('Rewordly: Error performing grammar check after replace:', error);
-                    });
+                    // Update highlight positions again after a delay to ensure they're correct
+                    // This ensures highlights are positioned correctly after Slate.js has fully updated
+                    setTimeout(() => {
+                      this.updateHighlightsPosition(element);
+                      
+                      // Update again after another delay to catch any late DOM updates
+                      setTimeout(() => {
+                        this.updateHighlightsPosition(element);
+                        
+                        // One more update to ensure positions are stable
+                        setTimeout(() => {
+                          this.updateHighlightsPosition(element);
+                          this.isPerformingReplace = false;
+                          
+                          // Don't trigger grammar check immediately after replace
+                          // The existing highlights with updated positions should be sufficient
+                          // Grammar check will happen naturally on next user input or focus change
+                          // This prevents highlights from disappearing due to re-checking
+                        }, 200);
+                      }, 200);
+                    }, 200);
                   }, 300);
                 });
-              }, 150);
+              }, 200); // Increased delay to ensure Slate.js has updated its DOM
             } catch (err) {
               console.error('Rewordly: Error replacing text in Slate.js:', err);
               this.isPerformingReplace = false;
