@@ -50,6 +50,7 @@ export {
   performGrammarCheck,
   queueGrammarCheck,
   processGrammarCheckQueue,
+  checkAndPerformGrammarCheckForExistingText,
 } from "./grammar-check-helper";
 
 // Text Processing Helpers
@@ -76,6 +77,10 @@ export {
   createHighlight,
   displayGrammarErrors,
   attachHighlightHoverListener,
+  showGrammarOverlay,
+  clearGrammarErrors,
+  clearAllGrammarErrors,
+  hideAllGrammarHighlights,
 } from "./highlight-helper";
 
 // Text Replacement Helpers

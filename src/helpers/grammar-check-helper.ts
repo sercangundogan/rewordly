@@ -755,3 +755,97 @@ export async function processGrammarCheckQueue(options: {
 
   isProcessingQueue.set(false);
 }
+
+/**
+ * Check if element has existing text and perform grammar check when element is visible
+ */
+export function checkAndPerformGrammarCheckForExistingText(
+  element: HTMLElement,
+  options: {
+    isGrammarCheckAllowedSite: () => boolean;
+    config: { highlightsEnabled: boolean };
+    queueGrammarCheck: (element: HTMLElement, priority: number) => void;
+    isEditableElement: (element: HTMLElement) => boolean;
+    isElementVisible: (element: HTMLElement) => boolean;
+  }
+): void {
+  const {
+    isGrammarCheckAllowedSite,
+    config,
+    queueGrammarCheck,
+    isEditableElement,
+    isElementVisible,
+  } = options;
+
+  // Only perform grammar check on allowed sites (Twitter, Gmail, Reddit, Medium)
+  if (!isGrammarCheckAllowedSite()) {
+    return;
+  }
+
+  if (!config.highlightsEnabled) {
+    return;
+  }
+
+  // Check if element has text
+  let hasText = false;
+  if (
+    element instanceof HTMLInputElement ||
+    element instanceof HTMLTextAreaElement
+  ) {
+    hasText = element.value.trim().length >= 3;
+  } else if (
+    element.getAttribute("contenteditable") === "true" ||
+    element.isContentEditable
+  ) {
+    hasText =
+      (element.innerText || element.textContent || "").trim().length >= 3;
+  }
+
+  if (!hasText || !isEditableElement(element)) {
+    return;
+  }
+
+  // Check if element is visible
+  const isVisible = isElementVisible(element);
+
+  if (isVisible) {
+    // Element is visible, queue grammar check
+    setTimeout(() => {
+      if (isEditableElement(element)) {
+        queueGrammarCheck(element, 0);
+      }
+    }, 300); // Small delay to ensure element is fully rendered
+  } else {
+    // Element is not visible yet, wait for it to become visible
+    // Use IntersectionObserver to detect when element becomes visible
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && entry.intersectionRatio > 0) {
+            // Element is now visible, queue grammar check
+            setTimeout(() => {
+              if (isEditableElement(element)) {
+                queueGrammarCheck(element, 0);
+              }
+            }, 300);
+            observer.disconnect();
+          }
+        });
+      },
+      {
+        threshold: 0.1, // Trigger when at least 10% of element is visible
+        rootMargin: "50px", // Start checking slightly before element enters viewport
+      }
+    );
+
+    observer.observe(element);
+
+    // Also try after a delay in case IntersectionObserver doesn't work
+    setTimeout(() => {
+      if (isElementVisible(element) && isEditableElement(element)) {
+        queueGrammarCheck(element, 0);
+      }
+      observer.disconnect();
+    }, 2000); // Fallback: try after 2 seconds
+  }
+}

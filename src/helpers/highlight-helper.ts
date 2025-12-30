@@ -2532,3 +2532,169 @@ export function attachHighlightHoverListener(
     });
   });
 }
+
+/**
+ * Show grammar highlights for an element (if errors exist)
+ */
+export function showGrammarOverlay(
+  element: HTMLElement,
+  options: {
+    grammarErrors: Map<HTMLElement, GrammarError[]>;
+    highlightHelper: HighlightContainerHelper;
+    displayGrammarErrors: (
+      element: HTMLElement,
+      errors: GrammarError[],
+      options: any
+    ) => void;
+    isErrorDismissed: (element: HTMLElement, error: GrammarError) => boolean;
+    getElementId: (element: HTMLElement) => string;
+  }
+): void {
+  const {
+    grammarErrors,
+    highlightHelper,
+    displayGrammarErrors,
+    isErrorDismissed,
+    getElementId,
+  } = options;
+
+  if (!grammarErrors.has(element)) {
+    return;
+  }
+
+  const highlightsContent = highlightHelper.getContent();
+  if (!highlightsContent) {
+    // Recreate if doesn't exist
+    const errors = grammarErrors.get(element);
+    if (errors) {
+      displayGrammarErrors(element, errors, {
+        grammarErrors,
+        highlightHelper,
+        dismissedErrors: new Map(),
+        isErrorDismissed,
+        createHighlight: () => {},
+        attachHighlightHoverListener: () => {},
+        highlightsContent: null,
+      });
+    }
+    return;
+  }
+
+  const elementId = getElementId(element);
+  const highlights = highlightsContent.querySelectorAll(
+    `[data-element-id="${elementId}"]`
+  );
+
+  if (highlights.length === 0) {
+    // Recreate if doesn't exist
+    const errors = grammarErrors.get(element);
+    if (errors) {
+      displayGrammarErrors(element, errors, {
+        grammarErrors,
+        highlightHelper,
+        dismissedErrors: new Map(),
+        isErrorDismissed,
+        createHighlight: () => {},
+        attachHighlightHoverListener: () => {},
+        highlightsContent,
+      });
+    }
+  } else {
+    // Show existing highlights, but skip dismissed ones
+    const errors = grammarErrors.get(element) || [];
+    const errorIdToError = new Map<string, GrammarError>();
+    errors.forEach((err) => {
+      if (err.id) {
+        errorIdToError.set(err.id, err);
+      }
+    });
+
+    const dismissedErrorIds = new Set<string>();
+
+    highlights.forEach((highlight) => {
+      const htmlHighlight = highlight as HTMLElement;
+      const errorId = htmlHighlight.getAttribute("data-error-id");
+
+      if (errorId) {
+        const error = errorIdToError.get(errorId);
+        if (error && isErrorDismissed(element, error)) {
+          // Mark this error as dismissed - we'll remove all highlights for it
+          dismissedErrorIds.add(errorId);
+          return;
+        }
+      }
+
+      // Not dismissed, show it
+      htmlHighlight.style.display = "";
+      htmlHighlight.removeAttribute("data-hidden-by-blur");
+      htmlHighlight.removeAttribute("data-hidden-by-modal");
+    });
+
+    // Remove all highlights for dismissed errors (multi-line support)
+    if (dismissedErrorIds.size > 0 && highlightsContent) {
+      dismissedErrorIds.forEach((errorId) => {
+        const allErrorHighlights = highlightsContent.querySelectorAll(
+          `[data-element-id="${elementId}"][data-error-id="${errorId}"]`
+        );
+        allErrorHighlights.forEach((h: Element) => h.remove());
+      });
+    }
+  }
+}
+
+/**
+ * Clear grammar errors from an element (permanently remove)
+ */
+export function clearGrammarErrors(
+  element: HTMLElement,
+  options: {
+    grammarErrors: Map<HTMLElement, GrammarError[]>;
+    clearElementHighlights: (element: HTMLElement) => void;
+  }
+): void {
+  const { grammarErrors, clearElementHighlights } = options;
+
+  // Remove highlights for this element
+  clearElementHighlights(element);
+
+  // Clear stored errors
+  grammarErrors.delete(element);
+}
+
+/**
+ * Clear all grammar errors (cleanup function)
+ */
+export function clearAllGrammarErrors(options: {
+  grammarErrors: Map<HTMLElement, GrammarError[]>;
+  clearGrammarErrors: (element: HTMLElement) => void;
+}): void {
+  const { grammarErrors, clearGrammarErrors } = options;
+
+  // Get all elements with errors
+  const elementsWithErrors = Array.from(grammarErrors.keys());
+
+  elementsWithErrors.forEach((element) => {
+    // Check if element still exists in DOM
+    if (!document.contains(element) && !element.isConnected) {
+      clearGrammarErrors(element);
+    }
+  });
+}
+
+/**
+ * Hide all grammar highlights across all elements
+ */
+export function hideAllGrammarHighlights(options: {
+  highlightHelper: HighlightContainerHelper;
+}): void {
+  const { highlightHelper } = options;
+  const highlightsContent = highlightHelper.getContent();
+  if (!highlightsContent) return;
+
+  // Hide all highlights by setting display to none
+  const allHighlights =
+    highlightsContent.querySelectorAll("[data-element-id]");
+  allHighlights.forEach((highlight) => {
+    (highlight as HTMLElement).style.display = "none";
+  });
+}

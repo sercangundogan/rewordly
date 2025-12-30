@@ -16,6 +16,10 @@ import {
   createHighlight,
   displayGrammarErrors,
   attachHighlightHoverListener,
+  showGrammarOverlay,
+  clearGrammarErrors,
+  clearAllGrammarErrors,
+  hideAllGrammarHighlights,
   isEditableElement,
   isElementVisible,
   getElementId,
@@ -38,7 +42,7 @@ import {
   performGrammarCheck,
   queueGrammarCheck,
   processGrammarCheckQueue,
-  mapInnerTextToTextNodes,
+  checkAndPerformGrammarCheckForExistingText,
   adjustErrorPositionsForMultiWord,
   replaceGrammarError as replaceGrammarErrorHelper,
 } from "./helpers";
@@ -251,7 +255,11 @@ class RewordlyContentScript {
               const element = node as HTMLElement;
               // Check if this element or its children had grammar errors
               if (this.grammarErrors.has(element)) {
-                this.clearGrammarErrors(element);
+                clearGrammarErrors(element, {
+                  grammarErrors: this.grammarErrors,
+                  clearElementHighlights: (el: HTMLElement) =>
+                    this.clearElementHighlights(el),
+                });
               }
               // Also check children
               const childOverlays = element.querySelectorAll(
@@ -265,7 +273,11 @@ class RewordlyContentScript {
                     this.grammarErrors.keys()
                   ).find((el) => getElementId(el) === elementId);
                   if (errorElement) {
-                    this.clearGrammarErrors(errorElement);
+                    clearGrammarErrors(errorElement, {
+                      grammarErrors: this.grammarErrors,
+                      clearElementHighlights: (el: HTMLElement) =>
+                        this.clearElementHighlights(el),
+                    });
                   }
                 }
               });
@@ -276,7 +288,15 @@ class RewordlyContentScript {
 
       // Periodically clean up overlays for removed elements (skip during replace)
       if (!this.isPerformingReplace) {
-        this.clearAllGrammarErrors();
+        clearAllGrammarErrors({
+          grammarErrors: this.grammarErrors,
+          clearGrammarErrors: (el: HTMLElement) =>
+            clearGrammarErrors(el, {
+              grammarErrors: this.grammarErrors,
+              clearElementHighlights: (elem: HTMLElement) =>
+                this.clearElementHighlights(elem),
+            }),
+        });
       }
     });
 
@@ -431,7 +451,14 @@ class RewordlyContentScript {
 
     // Check if element already has text and perform grammar check
     // Wait for element to be visible and rendered (especially for dynamic content like Google)
-    this.checkAndPerformGrammarCheckForExistingText(element);
+    checkAndPerformGrammarCheckForExistingText(element, {
+      isGrammarCheckAllowedSite: () => isGrammarCheckAllowedSite(),
+      config: this.config,
+      queueGrammarCheck: (el: HTMLElement, priority: number) =>
+        this.queueGrammarCheck(el, priority),
+      isEditableElement,
+      isElementVisible,
+    });
 
     // Set up scroll listeners for scrollable containers
     setupElementScrollListeners(element, {
@@ -447,85 +474,6 @@ class RewordlyContentScript {
           scrollListeners: this.scrollListeners,
         }),
     });
-  }
-
-  /**
-   * Check if element has existing text and perform grammar check when element is visible
-   */
-  private checkAndPerformGrammarCheckForExistingText(
-    element: HTMLElement
-  ): void {
-    // Only perform grammar check on allowed sites (Twitter, Gmail, Reddit, Medium)
-    if (!this.isGrammarCheckAllowedSite()) {
-      return;
-    }
-
-    if (!this.config.highlightsEnabled) {
-      return;
-    }
-
-    // Check if element has text
-    let hasText = false;
-    if (
-      element instanceof HTMLInputElement ||
-      element instanceof HTMLTextAreaElement
-    ) {
-      hasText = element.value.trim().length >= 3;
-    } else if (
-      element.getAttribute("contenteditable") === "true" ||
-      element.isContentEditable
-    ) {
-      hasText =
-        (element.innerText || element.textContent || "").trim().length >= 3;
-    }
-
-    if (!hasText || !isEditableElement(element)) {
-      return;
-    }
-
-    // Check if element is visible
-    const isVisible = isElementVisible(element);
-
-    if (isVisible) {
-      // Element is visible, queue grammar check
-      setTimeout(() => {
-        if (isEditableElement(element)) {
-          this.queueGrammarCheck(element, 0);
-        }
-      }, 300); // Small delay to ensure element is fully rendered
-    } else {
-      // Element is not visible yet, wait for it to become visible
-      // Use IntersectionObserver to detect when element becomes visible
-      const observer = new IntersectionObserver(
-        (entries) => {
-          entries.forEach((entry) => {
-            if (entry.isIntersecting && entry.intersectionRatio > 0) {
-              // Element is now visible, queue grammar check
-              setTimeout(() => {
-                if (isEditableElement(element)) {
-                  this.queueGrammarCheck(element, 0);
-                }
-              }, 300);
-              observer.disconnect();
-            }
-          });
-        },
-        {
-          threshold: 0.1, // Trigger when at least 10% of element is visible
-          rootMargin: "50px", // Start checking slightly before element enters viewport
-        }
-      );
-
-      observer.observe(element);
-
-      // Also try after a delay in case IntersectionObserver doesn't work
-      setTimeout(() => {
-        if (isElementVisible(element) && isEditableElement(element)) {
-          this.queueGrammarCheck(element, 0);
-        }
-        observer.disconnect();
-      }, 2000); // Fallback: try after 2 seconds
-    }
   }
 
   /**
@@ -562,7 +510,7 @@ class RewordlyContentScript {
     // Only show on sites where grammar check is enabled
     if (
       this.config.rewriteEnabled &&
-      this.isGrammarCheckAllowedSite() &&
+      isGrammarCheckAllowedSite() &&
       this.config.highlightsEnabled
     ) {
       // Cancel button blur timeout to prevent button from hiding
@@ -718,7 +666,7 @@ class RewordlyContentScript {
     // Only show on sites where grammar check is enabled
     if (
       this.config.rewriteEnabled &&
-      this.isGrammarCheckAllowedSite() &&
+      isGrammarCheckAllowedSite() &&
       this.config.highlightsEnabled
     ) {
       // For textarea/input: show button immediately on focus, regardless of text length
@@ -740,14 +688,22 @@ class RewordlyContentScript {
 
     // If element has grammar errors and highlights are enabled, show the overlay again
     if (this.config.highlightsEnabled && this.grammarErrors.has(element)) {
-      this.showGrammarOverlay(element);
+      showGrammarOverlay(element, {
+        grammarErrors: this.grammarErrors,
+        highlightHelper: this.highlightHelper,
+        displayGrammarErrors: (el: HTMLElement, errors: GrammarError[]) =>
+          this.displayGrammarErrors(el, errors),
+        isErrorDismissed: (el: HTMLElement, err: GrammarError) =>
+          this.isErrorDismissed(el, err),
+        getElementId,
+      });
     }
 
     // Perform immediate grammar check on focus (if element has text)
     if (
       this.config.highlightsEnabled &&
       hasText &&
-      this.isGrammarCheckAllowedSite()
+      isGrammarCheckAllowedSite()
     ) {
       // Cancel any pending throttle
       if (this.grammarCheckThrottle !== null) {
@@ -902,7 +858,7 @@ class RewordlyContentScript {
    */
   private queueGrammarCheck(element: HTMLElement, priority: number = 0): void {
     queueGrammarCheck(element, priority, {
-      isGrammarCheckAllowedSite: () => this.isGrammarCheckAllowedSite(),
+      isGrammarCheckAllowedSite: () => isGrammarCheckAllowedSite(),
       grammarCheckQueue: this.grammarCheckQueue,
       isProcessingQueue: {
         get: () => this.isProcessingQueue,
@@ -939,7 +895,7 @@ class RewordlyContentScript {
     await performGrammarCheckDirect(element, {
       apiUtil: this.apiUtil,
       activeGrammarRequests: this.activeGrammarRequests,
-      isGrammarCheckAllowedSite: () => this.isGrammarCheckAllowedSite(),
+      isGrammarCheckAllowedSite: () => isGrammarCheckAllowedSite(),
       isElementIgnored: (el: HTMLElement) => this.isElementIgnored(el),
       isPerformingReplace: this.isPerformingReplace,
       displayGrammarErrors: (el: HTMLElement, errors: GrammarError[]) =>
@@ -953,7 +909,7 @@ class RewordlyContentScript {
   private async performGrammarCheck(element: HTMLElement): Promise<void> {
     await performGrammarCheck(element, {
       apiUtil: this.apiUtil,
-      isGrammarCheckAllowedSite: () => this.isGrammarCheckAllowedSite(),
+      isGrammarCheckAllowedSite: () => isGrammarCheckAllowedSite(),
       isElementIgnored: (el: HTMLElement) => this.isElementIgnored(el),
       isPerformingReplace: this.isPerformingReplace,
       displayGrammarErrors: (el: HTMLElement, errors: GrammarError[]) =>
@@ -1004,14 +960,6 @@ class RewordlyContentScript {
   }
 
   /**
-   * Check if grammar check is allowed on the current site
-   * Delegates to helper function
-   */
-  private isGrammarCheckAllowedSite(): boolean {
-    return isGrammarCheckAllowedSite();
-  }
-
-  /**
    * Set up platform-specific adapter
    */
   private setupPlatformAdapter(): void {
@@ -1045,112 +993,6 @@ class RewordlyContentScript {
       );
       this.platformAdapter.initialize();
     }
-  }
-
-  /**
-   * Show grammar highlights for an element (if errors exist)
-   */
-  private showGrammarOverlay(element: HTMLElement): void {
-    if (!this.grammarErrors.has(element)) {
-      return;
-    }
-
-    const highlightsContent = this.highlightHelper.getContent();
-    if (!highlightsContent) {
-      // Recreate if doesn't exist
-      const errors = this.grammarErrors.get(element);
-      if (errors) {
-        this.displayGrammarErrors(element, errors);
-      }
-      return;
-    }
-
-    const elementId = getElementId(element);
-    const highlights = highlightsContent.querySelectorAll(
-      `[data-element-id="${elementId}"]`
-    );
-
-    if (highlights.length === 0) {
-      // Recreate if doesn't exist
-      const errors = this.grammarErrors.get(element);
-      if (errors) {
-        this.displayGrammarErrors(element, errors);
-      }
-    } else {
-      // Show existing highlights, but skip dismissed ones
-      const errors = this.grammarErrors.get(element) || [];
-      const errorIdToError = new Map<string, GrammarError>();
-      errors.forEach((err) => {
-        if (err.id) {
-          errorIdToError.set(err.id, err);
-        }
-      });
-
-      const dismissedErrorIds = new Set<string>();
-
-      highlights.forEach((highlight) => {
-        const htmlHighlight = highlight as HTMLElement;
-        const errorId = htmlHighlight.getAttribute("data-error-id");
-
-        if (errorId) {
-          const error = errorIdToError.get(errorId);
-          if (error && this.isErrorDismissed(element, error)) {
-            // Mark this error as dismissed - we'll remove all highlights for it
-            dismissedErrorIds.add(errorId);
-            return;
-          }
-        }
-
-        // Not dismissed, show it
-        htmlHighlight.style.display = "";
-        htmlHighlight.removeAttribute("data-hidden-by-blur");
-        htmlHighlight.removeAttribute("data-hidden-by-modal");
-      });
-
-      // Remove all highlights for dismissed errors (multi-line support)
-      const highlightsContent = this.highlightHelper.getContent();
-      if (dismissedErrorIds.size > 0 && highlightsContent) {
-        dismissedErrorIds.forEach((errorId) => {
-          const allErrorHighlights = highlightsContent.querySelectorAll(
-            `[data-element-id="${elementId}"][data-error-id="${errorId}"]`
-          );
-          allErrorHighlights.forEach((h: Element) => h.remove());
-        });
-      }
-      // Update positions
-      this.highlightHelper.updatePositions(
-        element,
-        errors,
-        (error: GrammarError) =>
-          getErrorTextRects(element, error.start, error.end)
-      );
-    }
-  }
-
-  /**
-   * Clear grammar errors from an element (permanently remove)
-   */
-  private clearGrammarErrors(element: HTMLElement): void {
-    // Remove highlights for this element
-    this.clearElementHighlights(element);
-
-    // Clear stored errors
-    this.grammarErrors.delete(element);
-  }
-
-  /**
-   * Clear all grammar errors (cleanup function)
-   */
-  private clearAllGrammarErrors(): void {
-    // Get all elements with errors
-    const elementsWithErrors = Array.from(this.grammarErrors.keys());
-
-    elementsWithErrors.forEach((element) => {
-      // Check if element still exists in DOM
-      if (!document.contains(element) && !element.isConnected) {
-        this.clearGrammarErrors(element);
-      }
-    });
   }
 
   /**
@@ -1255,421 +1097,6 @@ class RewordlyContentScript {
   }
 
   /**
-   * Set up scroll listeners for a specific editable element
-
-    const closeTooltip = () => {
-      if (tooltipTimeout !== null) {
-        clearTimeout(tooltipTimeout);
-        tooltipTimeout = null;
-      }
-    };
-
-    highlight.addEventListener("mouseenter", () => {
-      // Close any existing tooltip for this error ID
-      closeTooltip();
-
-      // Close all other tooltips when opening a new one
-      closeAllGrammarTooltips();
-
-      // Get current errors
-      const currentErrors = this.grammarErrors.get(element) || [];
-
-      // Find the current error by ID (guaranteed to find the exact error)
-      let currentError = currentErrors.find((err) => err.id === error.id);
-
-      // If error not found (shouldn't happen), use the stored error as fallback
-      if (!currentError) {
-        currentError = error;
-      }
-
-      // Create tooltip
-      const tooltip = document.createElement("div");
-      tooltip.className = "rewordly-grammar-tooltip";
-
-      // Limit initial suggestions display (show first 5, rest with "see more")
-      const INITIAL_SUGGESTIONS_LIMIT = 5;
-      const allSuggestions = currentError.suggestions || [];
-      const hasMoreSuggestions =
-        allSuggestions.length > INITIAL_SUGGESTIONS_LIMIT;
-      const initialSuggestions = hasMoreSuggestions
-        ? allSuggestions.slice(0, INITIAL_SUGGESTIONS_LIMIT)
-        : allSuggestions;
-      const remainingSuggestions = hasMoreSuggestions
-        ? allSuggestions.slice(INITIAL_SUGGESTIONS_LIMIT)
-        : [];
-
-      const initialSuggestionsHtml =
-        initialSuggestions.length > 0
-          ? initialSuggestions
-              .map((suggestion, index) => {
-                // Format suggestion for display - make whitespace visible
-                const displayText = formatSuggestionForDisplay(
-                  suggestion,
-                  currentError.word
-                );
-                return `<button class="rewordly-grammar-suggestion" data-suggestion="${escapeHtml(
-                  suggestion
-                )}" data-error-start="${currentError.start}" data-error-end="${
-                  currentError.end
-                }" data-suggestion-index="${index}">${escapeHtml(
-                  displayText
-                )}</button>`;
-              })
-              .join("")
-          : '<div class="rewordly-grammar-no-suggestions">No suggestions available</div>';
-
-      const remainingSuggestionsHtml =
-        remainingSuggestions.length > 0
-          ? remainingSuggestions
-              .map((suggestion, index) => {
-                const displayText = formatSuggestionForDisplay(
-                  suggestion,
-                  currentError.word
-                );
-                return `<button class="rewordly-grammar-suggestion rewordly-grammar-suggestion-hidden" data-suggestion="${escapeHtml(
-                  suggestion
-                )}" data-error-start="${currentError.start}" data-error-end="${
-                  currentError.end
-                }" data-suggestion-index="${
-                  initialSuggestions.length + index
-                }">${escapeHtml(displayText)}</button>`;
-              })
-              .join("")
-          : "";
-
-      const seeMoreButtonHtml = hasMoreSuggestions
-        ? `<button class="rewordly-grammar-see-more" data-error-id="${currentError.id}">See more (${remainingSuggestions.length})</button>`
-        : "";
-
-      tooltip.innerHTML = `
-        <div class="rewordly-grammar-tooltip-content">
-          <div class="rewordly-grammar-tooltip-word">${escapeHtml(
-            currentError.word
-          )}</div>
-          <div class="rewordly-grammar-tooltip-suggestions">
-            ${initialSuggestionsHtml}
-            ${remainingSuggestionsHtml}
-          </div>
-          ${seeMoreButtonHtml}
-          <button class="rewordly-grammar-dismiss" data-error-id="${
-            currentError.id
-          }">Dismiss</button>
-        </div>
-      `;
-
-      document.body.appendChild(tooltip);
-
-      // Calculate available screen space for max-height
-      const highlightRect = highlight.getBoundingClientRect();
-      const viewportHeight = window.innerHeight;
-      const viewportWidth = window.innerWidth;
-
-      // Calculate space above and below the highlight
-      const spaceAbove = highlightRect.top;
-      const spaceBelow = viewportHeight - highlightRect.bottom;
-
-      // Use the larger space, but leave some margin (at least 16px from edges)
-      const maxAvailableHeight = Math.max(spaceAbove, spaceBelow) - 32; // 16px margin top + 16px margin bottom
-
-      // Set a reasonable minimum and maximum
-      const MIN_TOOLTIP_HEIGHT = 100;
-      const MAX_TOOLTIP_HEIGHT = 400;
-      const calculatedMaxHeight = Math.max(
-        MIN_TOOLTIP_HEIGHT,
-        Math.min(MAX_TOOLTIP_HEIGHT, maxAvailableHeight)
-      );
-
-      // Apply max-height to suggestions container
-      const suggestionsContainer = tooltip.querySelector(
-        ".rewordly-grammar-tooltip-suggestions"
-      ) as HTMLElement;
-      if (suggestionsContainer) {
-        suggestionsContainer.style.maxHeight = `${calculatedMaxHeight}px`;
-        suggestionsContainer.style.overflowY = "auto";
-        suggestionsContainer.style.overflowX = "hidden";
-      }
-
-      // Position tooltip
-      const tooltipRect = tooltip.getBoundingClientRect();
-      const tooltipTop = highlightRect.top - tooltipRect.height - 8;
-      const tooltipLeft =
-        highlightRect.left + highlightRect.width / 2 - tooltipRect.width / 2;
-
-      // Ensure tooltip doesn't go outside screen bounds horizontally
-      const adjustedLeft = Math.max(
-        8,
-        Math.min(tooltipLeft, viewportWidth - tooltipRect.width - 8)
-      );
-
-      // Ensure tooltip doesn't go outside screen bounds vertically
-      let adjustedTop = tooltipTop;
-      if (tooltipTop < 8) {
-        // Not enough space above, try below
-        adjustedTop = highlightRect.bottom + 8;
-        // If still doesn't fit below, adjust to fit within viewport
-        if (adjustedTop + tooltipRect.height > viewportHeight - 8) {
-          adjustedTop = Math.max(8, viewportHeight - tooltipRect.height - 8);
-        }
-      } else if (adjustedTop + tooltipRect.height > viewportHeight - 8) {
-        // Doesn't fit below, adjust to fit within viewport
-        adjustedTop = Math.max(8, viewportHeight - tooltipRect.height - 8);
-      }
-
-      tooltip.style.top = `${adjustedTop}px`;
-      tooltip.style.left = `${adjustedLeft}px`;
-
-      // Attach click handlers
-      const suggestionButtons = tooltip.querySelectorAll(
-        ".rewordly-grammar-suggestion"
-      );
-      suggestionButtons.forEach((button) => {
-        button.addEventListener("click", (e) => {
-          e.stopPropagation();
-          e.preventDefault();
-
-          const suggestion = (button as HTMLElement).getAttribute(
-            "data-suggestion"
-          );
-          if (!suggestion) return;
-
-          // Get error data directly from highlight - this is the most reliable source
-          const errorData = highlight.getAttribute("data-error");
-          const errorId = highlight.getAttribute("data-error-id");
-
-          if (!errorId || !errorData) {
-            console.error("Rewordly: No error data found on highlight", {
-              errorId,
-              hasErrorData: !!errorData,
-            });
-            return;
-          }
-
-          let targetError: GrammarError;
-          try {
-            targetError = JSON.parse(errorData);
-          } catch (e) {
-            console.error(
-              "Rewordly: Failed to parse error data from highlight",
-              e
-            );
-            return;
-          }
-
-          closeTooltip();
-          this.closeAllGrammarTooltips();
-
-          // Use the error directly from highlight - no need to search in maps
-          this.replaceGrammarError(element, targetError, suggestion);
-        });
-      });
-
-      // Attach "see more" button handler
-      const seeMoreButton = tooltip.querySelector(".rewordly-grammar-see-more");
-      if (seeMoreButton) {
-        seeMoreButton.addEventListener("click", (e) => {
-          e.stopPropagation();
-          e.preventDefault();
-
-          // Show all hidden suggestions
-          const hiddenSuggestions = tooltip.querySelectorAll(
-            ".rewordly-grammar-suggestion-hidden"
-          );
-          hiddenSuggestions.forEach((suggestion) => {
-            suggestion.classList.remove("rewordly-grammar-suggestion-hidden");
-          });
-
-          // Hide the "see more" button
-          seeMoreButton.remove();
-
-          // Recalculate tooltip position after showing all suggestions
-          const updatedTooltipRect = tooltip.getBoundingClientRect();
-          const updatedHighlightRect = highlight.getBoundingClientRect();
-          const updatedTooltipTop =
-            updatedHighlightRect.top - updatedTooltipRect.height - 8;
-          const updatedTooltipLeft =
-            updatedHighlightRect.left +
-            updatedHighlightRect.width / 2 -
-            updatedTooltipRect.width / 2;
-
-          const updatedAdjustedLeft = Math.max(
-            8,
-            Math.min(
-              updatedTooltipLeft,
-              window.innerWidth - updatedTooltipRect.width - 8
-            )
-          );
-          let updatedAdjustedTop = updatedTooltipTop;
-
-          if (updatedTooltipTop < 8) {
-            updatedAdjustedTop = updatedHighlightRect.bottom + 8;
-            if (
-              updatedAdjustedTop + updatedTooltipRect.height >
-              window.innerHeight - 8
-            ) {
-              updatedAdjustedTop = Math.max(
-                8,
-                window.innerHeight - updatedTooltipRect.height - 8
-              );
-            }
-          } else if (
-            updatedAdjustedTop + updatedTooltipRect.height >
-            window.innerHeight - 8
-          ) {
-            updatedAdjustedTop = Math.max(
-              8,
-              window.innerHeight - updatedTooltipRect.height - 8
-            );
-          }
-
-          tooltip.style.top = `${updatedAdjustedTop}px`;
-          tooltip.style.left = `${updatedAdjustedLeft}px`;
-        });
-      }
-
-      // Attach dismiss button handler
-      const dismissButton = tooltip.querySelector(".rewordly-grammar-dismiss");
-      if (dismissButton) {
-        dismissButton.addEventListener("click", (e) => {
-          e.stopPropagation();
-          e.preventDefault();
-
-          // Get error ID from the highlight
-          const errorId = highlight.getAttribute("data-error-id");
-          if (!errorId) {
-            console.error("Rewordly: No error ID found on highlight");
-            return;
-          }
-
-          // Find the error in the stored errors
-          const errors = this.grammarErrors.get(element) || [];
-          const error = errors.find((err) => err.id === errorId);
-
-          if (error) {
-            // Add to dismissed list
-            // Dismiss based on word + context (handles position changes)
-            const elementId = getElementId(element);
-
-            // Get current text to generate context-based key
-            let text = "";
-            if (
-              element instanceof HTMLInputElement ||
-              element instanceof HTMLTextAreaElement
-            ) {
-              text = element.value;
-            } else if (
-              element.getAttribute("contenteditable") === "true" ||
-              element.isContentEditable
-            ) {
-              text = element.innerText || element.textContent || "";
-            }
-
-            const dismissKey = getDismissKey(elementId, error, text);
-            this.dismissedErrors.set(dismissKey, true);
-
-            // Remove error from grammarErrors map to prevent it from reappearing
-            const currentErrors = this.grammarErrors.get(element) || [];
-            const updatedErrors = currentErrors.filter(
-              (err) => err.id !== error.id
-            );
-            this.grammarErrors.set(element, updatedErrors);
-
-            // Remove all highlights for this error (multi-line support)
-            if (this.highlightsContent) {
-              const allErrorHighlights =
-                this.highlightsContent.querySelectorAll(
-                  `[data-element-id="${elementId}"][data-error-id="${error.id}"]`
-                );
-              allErrorHighlights.forEach((h) => h.remove());
-            } else {
-              highlight.remove();
-            }
-
-            // Close tooltip
-            closeTooltip();
-            this.closeAllGrammarTooltips();
-
-            // Restore focus after dismiss (similar to replace)
-            // Cancel any scheduled blur handlers for this element
-            const existingBlurTimeout = this.scheduledBlurHandlers.get(element);
-            if (existingBlurTimeout) {
-              clearTimeout(existingBlurTimeout);
-              this.scheduledBlurHandlers.delete(element);
-            }
-
-            // Use requestAnimationFrame to ensure DOM is ready before focusing
-            requestAnimationFrame(() => {
-              // Keep flag true during focus restore to prevent blur handler from hiding highlights
-              this.isPerformingDismiss = true;
-
-              element.focus();
-
-              // Set cursor position to the end of the dismissed error
-              if (error) {
-                const cursorPosition = error.end;
-
-                if (
-                  element instanceof HTMLInputElement ||
-                  element instanceof HTMLTextAreaElement
-                ) {
-                  // For input/textarea, use setSelectionRange
-                  element.setSelectionRange(cursorPosition, cursorPosition);
-                } else if (
-                  element.getAttribute("contenteditable") === "true" ||
-                  element.isContentEditable
-                ) {
-                  // For contenteditable, use Range API
-                  const selection = window.getSelection();
-                  if (selection) {
-                    const cursorMapping = mapInnerTextToTextNodes(
-                      element,
-                      cursorPosition,
-                      cursorPosition
-                    );
-                    if (cursorMapping && cursorMapping.startNode) {
-                      const cursorRange = document.createRange();
-                      const offset = Math.min(
-                        cursorMapping.startOffset,
-                        cursorMapping.startNode.textContent!.length
-                      );
-                      cursorRange.setStart(cursorMapping.startNode, offset);
-                      cursorRange.collapse(true);
-                      selection.removeAllRanges();
-                      selection.addRange(cursorRange);
-                    }
-                  }
-                }
-              }
-
-              // Clear the dismiss flag after a short delay to ensure focus is stable
-              setTimeout(() => {
-                this.isPerformingDismiss = false;
-              }, 150);
-            });
-          }
-        });
-      }
-
-      tooltip.addEventListener("mouseleave", () => {
-        tooltipTimeout = window.setTimeout(() => {
-          // Check if any highlight for this error is still hovered
-          const allHighlightsForError =
-            this.highlightsContent?.querySelectorAll(
-              `[data-error-id="${error.id}"]`
-            ) || [];
-          const isAnyHighlightHovered = Array.from(allHighlightsForError).some(
-            (h) => (h as HTMLElement).matches(":hover")
-          );
-
-          if (!isAnyHighlightHovered && !tooltip.matches(":hover")) {
-            closeTooltip();
-          }
-        }, 100);
-      });
-    });
-  }
-
-
-  /**
    * Set up scroll/resize listeners for highlights
    */
   private setupHighlightsUpdateListeners(): void {
@@ -1745,7 +1172,9 @@ class RewordlyContentScript {
 
           // Hide all highlights if highlights are disabled
           if (!this.config.highlightsEnabled) {
-            this.hideAllGrammarHighlights();
+            hideAllGrammarHighlights({
+              highlightHelper: this.highlightHelper,
+            });
           }
         });
       } else if (request.type === "CONTEXT_MENU_CLICKED") {
@@ -1761,21 +1190,6 @@ class RewordlyContentScript {
           this.handleContextMenuRewrite(selectedText);
         }
       }
-    });
-  }
-
-  /**
-   * Hide all grammar highlights across all elements
-   */
-  private hideAllGrammarHighlights(): void {
-    const highlightsContent = this.highlightHelper.getContent();
-    if (!highlightsContent) return;
-
-    // Hide all highlights by setting display to none
-    const allHighlights =
-      highlightsContent.querySelectorAll("[data-element-id]");
-    allHighlights.forEach((highlight) => {
-      (highlight as HTMLElement).style.display = "none";
     });
   }
 
@@ -1809,7 +1223,7 @@ class RewordlyContentScript {
     }
 
     // Only show rewrite button on sites where grammar check is enabled
-    if (!this.isGrammarCheckAllowedSite() || !this.config.highlightsEnabled) {
+    if (!isGrammarCheckAllowedSite() || !this.config.highlightsEnabled) {
       return;
     }
 
@@ -1915,7 +1329,7 @@ class RewordlyContentScript {
     this.rewriteButtonHelper.showAIRewriteButton(element, {
       rewriteEnabled: this.config.rewriteEnabled,
       highlightsEnabled: this.config.highlightsEnabled,
-      isGrammarCheckAllowedSite: () => this.isGrammarCheckAllowedSite(),
+      isGrammarCheckAllowedSite: () => isGrammarCheckAllowedSite(),
       buttonBlurTimeout: {
         value: this.buttonBlurTimeout,
         set: (value: number | null) => {
