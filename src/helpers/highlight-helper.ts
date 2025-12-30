@@ -8,7 +8,6 @@
 
 import { GrammarError } from "../types";
 import { getElementId } from "./element-helper";
-import { mapInnerTextToTextNodes } from "./text-processing-helper";
 import { generateErrorId } from "./config-helper";
 import { getDismissKey } from "./grammar-check-helper";
 import {
@@ -16,8 +15,8 @@ import {
   adjustErrorPositionsForMultiWord,
   escapeHtml,
   formatSuggestionForDisplay,
+  mapInnerTextToTextNodes,
 } from "./text-processing-helper";
-import { mapInnerTextToTextNodes } from "./text-processing-helper";
 
 /**
  * Highlight Container Helper
@@ -1673,8 +1672,7 @@ export function displayGrammarErrors(
     highlightsContent,
   } = options;
 
-  const isGoogleDocsElement =
-    (element as any).__rewordlyIsGoogleDocs === true;
+  const isGoogleDocsElement = (element as any).__rewordlyIsGoogleDocs === true;
   console.log("Rewordly: displayGrammarErrors called", {
     errorsCount: errors.length,
     errors: errors,
@@ -2081,10 +2079,8 @@ export function displayGrammarErrors(
   }
 
   // Update highlights on scroll/resize
-  highlightHelper.updatePositions(
-    element,
-    errors,
-    (error: GrammarError) => getErrorTextRects(element, error.start, error.end)
+  highlightHelper.updatePositions(element, errors, (error: GrammarError) =>
+    getErrorTextRects(element, error.start, error.end)
   );
 }
 
@@ -2692,8 +2688,7 @@ export function hideAllGrammarHighlights(options: {
   if (!highlightsContent) return;
 
   // Hide all highlights by setting display to none
-  const allHighlights =
-    highlightsContent.querySelectorAll("[data-element-id]");
+  const allHighlights = highlightsContent.querySelectorAll("[data-element-id]");
   allHighlights.forEach((highlight) => {
     (highlight as HTMLElement).style.display = "none";
   });
