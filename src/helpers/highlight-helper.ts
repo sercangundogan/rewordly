@@ -1279,3 +1279,13 @@ export function getGoogleDocsErrorRects(
     return [];
   }
 }
+
+/**
+ * Close all grammar tooltips
+ */
+export function closeAllGrammarTooltips(): void {
+  const allTooltips = document.querySelectorAll(".rewordly-grammar-tooltip");
+  allTooltips.forEach((tooltip) => {
+    tooltip.remove();
+  });
+}

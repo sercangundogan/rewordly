@@ -42,6 +42,7 @@ export {
   dismissError,
   undismissError,
   filterDismissedErrors,
+  isElementIgnored,
 } from "./grammar-check-helper";
 
 // Text Processing Helpers
@@ -63,4 +64,11 @@ export {
   getErrorTextRects,
   getInputTextareaErrorRects,
   getGoogleDocsErrorRects,
+  closeAllGrammarTooltips,
 } from "./highlight-helper";
+
+// Text Replacement Helpers
+export {
+  replaceTextInDraftJS,
+  replaceTextInContentEditable,
+} from "./text-replacement-helper";
