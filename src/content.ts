@@ -192,13 +192,6 @@ class RewordlyContentScript {
     this.setupMessageListener();
   }
 
-  /**
-   * Load config
-   * @deprecated Use loadConfig() from helpers instead
-   */
-  private async loadConfig(): Promise<void> {
-    this.config = await loadConfig();
-  }
 
   private setupEventListeners(): void {
     // Remove existing listeners to prevent duplicates
@@ -6264,7 +6257,8 @@ class RewordlyContentScript {
     chrome.runtime.onMessage.addListener((request) => {
       if (request.type === 'SETTINGS_UPDATED') {
         // Reload config when settings are updated
-        this.loadConfig().then(() => {
+        loadConfig().then((config) => {
+          this.config = config;
           
           // Hide button if rewrite is disabled
           if (!this.config.rewriteEnabled) {
