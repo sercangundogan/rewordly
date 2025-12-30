@@ -5,7 +5,7 @@ A Chrome extension that rewrites selected text instantly with advanced AI to enh
 ## Features
 
 - **Text Selection**: Select any text on any webpage to rewrite it
-- **Floating Button**: A convenient floating button appears when text is selected
+- **Rewrite Button**: A convenient rewrite button appears when text is selected
 - **Modal Interface**: Clean modal interface to display original and rewritten text
 - **Copy to Clipboard**: Easy one-click copying of rewritten text
 - **Settings Management**: Enable/disable the extension through the popup interface

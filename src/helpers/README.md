@@ -5,16 +5,16 @@ Bu klasör, `content.ts` dosyasındaki fonksiyonları kategorilere ayırarak olu
 ## Dosya Yapısı
 
 ### 📱 UI Helper (`ui-helper.ts`)
-**Ne yapar?** Floating button, modal ve tooltip işlemleri
+**Ne yapar?** Rewrite button, modal ve tooltip işlemleri
 
 **İçindekiler:**
-- `FloatingButtonHelper` - Yüzen buton oluşturma, gösterme, gizleme
+- `RewriteButtonHelper` - Rewrite buton oluşturma, gösterme, gizleme
 - `ModalHelper` - Modal dialog oluşturma, gösterme, gizleme
 - `TooltipHelper` - Grammar error tooltip'leri gösterme, gizleme
 
 **Kullanım:**
 ```typescript
-const buttonHelper = new FloatingButtonHelper();
+const buttonHelper = new RewriteButtonHelper();
 buttonHelper.create();
 buttonHelper.show(element, rect);
 ```
@@ -141,7 +141,7 @@ Tüm helper'lar `helpers/index.ts` dosyasından export edilir:
 
 ```typescript
 import {
-  FloatingButtonHelper,
+  RewriteButtonHelper,
   isEditableElement,
   loadConfig,
   checkGrammarAPI

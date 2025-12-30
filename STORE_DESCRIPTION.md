@@ -14,7 +14,7 @@ Rewordly seamlessly integrates into any website in your browser. Whether you're 
 
 🔸 Grammar Check – Fix grammar mistakes instantly with a single click. Right-click the button or click the green area for grammar-only corrections.
 
-🔸 Distraction-Free Design – A clean, intuitive floating button that appears only when you need it. No intrusive overlays or constant notifications.
+🔸 Distraction-Free Design – A clean, intuitive rewrite button that appears only when you need it. No intrusive overlays or constant notifications.
 
 🔸 One-Click Copy – Easily copy your improved text with a single click.
 
@@ -35,7 +35,7 @@ Rewordly seamlessly integrates into any website in your browser. Whether you're 
 ⚡ Quick Access
 
 • Select any text on any webpage
-• Floating button appears automatically
+• Rewrite button appears automatically
 • Click for rewrite, right-click for grammar check
 • Copy improved text instantly
 

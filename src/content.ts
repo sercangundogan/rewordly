@@ -1,13 +1,13 @@
 /**
  * Rewordly Content Script
- * Handles text selection, floating button UI, and displaying rewritten text
+ * Handles text selection, rewrite button UI, and displaying rewritten text
  * Now includes real-time grammar checking for editable elements
  */
 
 import { createRewordlyAPIUtil, RewordlyAPIUtil } from './utils/api';
 import { RewordlyConfig, GrammarError, GrammarCheckResponse, IPlatformAdapter } from './types';
 import {
-  FloatingButtonHelper,
+  RewriteButtonHelper,
   ModalHelper,
   HighlightContainerHelper,
   isEditableElement,
@@ -32,14 +32,14 @@ class RewordlyContentScript {
   };
   
   // UI Helpers
-  private floatingButtonHelper: FloatingButtonHelper;
+  private rewriteButtonHelper: RewriteButtonHelper;
   private modalHelper: ModalHelper;
   
   // Highlight Helper
   private highlightHelper: HighlightContainerHelper;
   
   // Legacy references (deprecated - use helpers instead)
-  private floatingButton: HTMLDivElement | null = null;
+  private rewriteButton: HTMLDivElement | null = null;
   private modal: HTMLDivElement | null = null;
   private selectedText: string = '';
   private isModalOpen: boolean = false; // Add flag to track modal state
@@ -101,7 +101,7 @@ class RewordlyContentScript {
   // Maps scrollable container -> bound update function
   private scrollListeners = new Map<HTMLElement, () => void>();
 
-  // Track scroll listener for AI floating button position updates
+  // Track scroll listener for AI rewrite button position updates
   private aiButtonScrollListener: (() => void) | null = null;
 
   // Request queue for batch processing API requests (deprecated - using direct requests now)
@@ -122,7 +122,7 @@ class RewordlyContentScript {
     this.apiUtil = createRewordlyAPIUtil('wss://rewordly.store');
     
     // Initialize helpers
-    this.floatingButtonHelper = new FloatingButtonHelper();
+    this.rewriteButtonHelper = new RewriteButtonHelper();
     this.modalHelper = new ModalHelper();
     this.highlightHelper = new HighlightContainerHelper();
     
@@ -174,12 +174,12 @@ class RewordlyContentScript {
     this.setupPlatformAdapter();
     
     // Create UI elements using helpers
-    this.floatingButtonHelper.create();
+    this.rewriteButtonHelper.create();
     this.modalHelper.create();
     this.highlightHelper.create();
     
     // Legacy references for backward compatibility
-    this.floatingButton = this.floatingButtonHelper['button'];
+    this.rewriteButton = this.rewriteButtonHelper['button'];
     this.modal = this.modalHelper['modal'];
     
     // Set up scroll/resize listeners for highlights
@@ -591,7 +591,7 @@ class RewordlyContentScript {
         if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
           // Set current focused element - this prevents button from being hidden
           this.currentFocusedElement = element;
-          this.showAIFloatingButton(element);
+          this.showAIRewriteButton(element);
         } else {
           // For contenteditable: check if has text
           let hasText = false;
@@ -600,10 +600,10 @@ class RewordlyContentScript {
           }
           
           if (hasText) {
-            this.showAIFloatingButton(element);
+            this.showAIRewriteButton(element);
           } else {
             // Hide button if text is less than 3 characters
-            this.hideFloatingButton();
+            this.hideRewriteButton();
           }
         }
       }
@@ -708,13 +708,13 @@ class RewordlyContentScript {
       if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
         // Set current focused element - this prevents button from being hidden
         this.currentFocusedElement = element;
-        this.showAIFloatingButton(element);
+        this.showAIRewriteButton(element);
       } else if (hasText) {
         // For contenteditable: only show if has text
-        this.showAIFloatingButton(element);
+        this.showAIRewriteButton(element);
       } else {
         // Hide button if contenteditable and text is less than 3 characters
-        this.hideFloatingButton();
+        this.hideRewriteButton();
       }
     }
     
@@ -757,8 +757,8 @@ class RewordlyContentScript {
     // Check if the blur is caused by clicking the button
     const relatedTarget = (event as FocusEvent).relatedTarget as HTMLElement | null;
     const isClickingButton = relatedTarget && (
-      relatedTarget === this.floatingButton ||
-      this.floatingButton?.contains(relatedTarget)
+      relatedTarget === this.rewriteButton ||
+      this.rewriteButton?.contains(relatedTarget)
     );
     
     if (!isClickingButton) {
@@ -777,8 +777,8 @@ class RewordlyContentScript {
       this.buttonBlurTimeout = window.setTimeout(() => {
         // Check if element still doesn't have focus and button wasn't clicked
         const shouldHide = document.activeElement !== blurredElement && 
-                          document.activeElement !== this.floatingButton &&
-                          !this.floatingButton?.contains(document.activeElement) &&
+                          document.activeElement !== this.rewriteButton &&
+                          !this.rewriteButton?.contains(document.activeElement) &&
                           this.currentFocusedElement !== blurredElement; // Check if element is no longer the focused element
         
         // Only hide if element truly lost focus and is not the current focused element
@@ -790,7 +790,7 @@ class RewordlyContentScript {
             this.buttonBlurTimeout = null;
             return;
           }
-          this.hideFloatingButton();
+          this.hideRewriteButton();
         }
         this.buttonBlurTimeout = null;
       }, 150);
@@ -6268,7 +6268,7 @@ class RewordlyContentScript {
           
           // Hide button if rewrite is disabled
           if (!this.config.rewriteEnabled) {
-            this.hideFloatingButton();
+            this.hideRewriteButton();
           }
           
           // Hide all highlights if highlights are disabled
@@ -6313,15 +6313,15 @@ class RewordlyContentScript {
   private handleOutsideClick(event: Event): void {
     const target = event.target as HTMLElement;
     
-    // Hide floating button if clicking outside
-    if (this.floatingButton && !this.floatingButton.contains(target)) {
-      this.hideFloatingButton();
+    // Hide rewrite button if clicking outside
+    if (this.rewriteButton && !this.rewriteButton.contains(target)) {
+      this.hideRewriteButton();
     }
     
     // Hide modal if clicking outside or on the backdrop
     if (this.modal && this.isModalOpen) {
       // Check if click is on the modal backdrop (the modal element itself, not its content)
-      if (target === this.modal || (!this.modal.contains(target) && !this.floatingButton?.contains(target))) {
+      if (target === this.modal || (!this.modal.contains(target) && !this.rewriteButton?.contains(target))) {
         this.hideModal();
       }
     }
@@ -6330,7 +6330,7 @@ class RewordlyContentScript {
   private handleKeyDown(event: KeyboardEvent): void {
     if (event.key === 'Escape') {
       this.hideModal();
-      this.hideFloatingButton();
+      this.hideRewriteButton();
     }
   }
 
@@ -6385,11 +6385,11 @@ class RewordlyContentScript {
   }
 
   /**
-   * Update AI floating button position based on element's current position
+   * Update AI rewrite button position based on element's current position
    * This is called both on initial show and on scroll/resize events
    */
-  private updateAIFloatingButtonPosition(element: HTMLElement): void {
-    if (!this.floatingButton || !this.config.rewriteEnabled) {
+  private updateAIRewriteButtonPosition(element: HTMLElement): void {
+    if (!this.rewriteButton || !this.config.rewriteEnabled) {
       return;
     }
 
@@ -6485,17 +6485,17 @@ class RewordlyContentScript {
     }
     
     // Update button position (transition is disabled during scroll by scroll listener)
-    this.floatingButton.style.left = `${buttonX}px`;
-    this.floatingButton.style.top = `${buttonY}px`;
+    this.rewriteButton.style.left = `${buttonX}px`;
+    this.rewriteButton.style.top = `${buttonY}px`;
   }
 
   /**
-   * Show AI floating button at bottom-right of editable element
+   * Show AI rewrite button at bottom-right of editable element
    * For single-line elements, positions button at right-center (vertically aligned)
    * For multi-line elements, positions button at bottom-right
    */
-  private showAIFloatingButton(element: HTMLElement): void {
-    if (!this.floatingButton || !this.config.rewriteEnabled) {
+  private showAIRewriteButton(element: HTMLElement): void {
+    if (!this.rewriteButton || !this.config.rewriteEnabled) {
       return;
     }
 
@@ -6508,13 +6508,13 @@ class RewordlyContentScript {
     this.removeAIButtonScrollListener();
 
     // Update button position
-    this.updateAIFloatingButtonPosition(element);
+    this.updateAIRewriteButtonPosition(element);
     
     // Ensure button is visible
-    this.floatingButton.style.display = 'flex';
-    this.floatingButton.style.visibility = 'visible';
-    this.floatingButton.style.opacity = '1';
-    this.floatingButton.classList.add('show');
+    this.rewriteButton.style.display = 'flex';
+    this.rewriteButton.style.visibility = 'visible';
+    this.rewriteButton.style.opacity = '1';
+    this.rewriteButton.classList.add('show');
     
     // Cancel any pending button blur timeout to prevent button from hiding
     if (this.buttonBlurTimeout !== null) {
@@ -6523,7 +6523,7 @@ class RewordlyContentScript {
     }
     
     // Store reference to current element for rewrite functionality
-    (this.floatingButton as any).__currentElement = element;
+    (this.rewriteButton as any).__currentElement = element;
 
     // Add scroll listener to update button position on scroll
     this.addAIButtonScrollListener(element);
@@ -6545,10 +6545,10 @@ class RewordlyContentScript {
       rafId = requestAnimationFrame(() => {
         rafId = null;
         // Check if button is still visible and element still exists
-        if (this.floatingButton && 
-            this.floatingButton.classList.contains('show') &&
+        if (this.rewriteButton && 
+            this.rewriteButton.classList.contains('show') &&
             document.body.contains(element)) {
-          this.updateAIFloatingButtonPosition(element);
+          this.updateAIRewriteButtonPosition(element);
         }
       });
     };
@@ -6568,7 +6568,7 @@ class RewordlyContentScript {
     });
     
     // Store containers for cleanup
-    (this.floatingButton as any).__scrollContainers = scrollableContainers;
+    (this.rewriteButton as any).__scrollContainers = scrollableContainers;
   }
 
   /**
@@ -6585,8 +6585,8 @@ class RewordlyContentScript {
     }
     
     // Remove scroll listeners from scrollable containers
-    if (this.floatingButton && (this.floatingButton as any).__scrollContainers && updatePosition) {
-      const containers = (this.floatingButton as any).__scrollContainers as Set<HTMLElement>;
+    if (this.rewriteButton && (this.rewriteButton as any).__scrollContainers && updatePosition) {
+      const containers = (this.rewriteButton as any).__scrollContainers as Set<HTMLElement>;
       containers.forEach(container => {
         try {
           container.removeEventListener('scroll', updatePosition, { capture: true } as any);
@@ -6595,14 +6595,14 @@ class RewordlyContentScript {
           container.removeEventListener('scroll', updatePosition, true);
         }
       });
-      delete (this.floatingButton as any).__scrollContainers;
+      delete (this.rewriteButton as any).__scrollContainers;
     }
   }
 
-  // @ts-ignore - Legacy function, no longer used (only showAIFloatingButton is used)
+  // @ts-ignore - Legacy function, no longer used (only showAIRewriteButton is used)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  private showFloatingButton(): void {
-    if (!this.floatingButton) {
+  private showRewriteButton(): void {
+    if (!this.rewriteButton) {
       return;
     }
 
@@ -6652,9 +6652,9 @@ class RewordlyContentScript {
       buttonX = Math.max(10, Math.min(buttonX, viewportWidth - containerWidth - 10));
       buttonY = Math.max(10, Math.min(buttonY, viewportHeight - containerHeight - 10));
 
-      this.floatingButton.style.left = `${buttonX}px`;
-      this.floatingButton.style.top = `${buttonY}px`;
-      this.floatingButton.classList.add('show');
+      this.rewriteButton.style.left = `${buttonX}px`;
+      this.rewriteButton.style.top = `${buttonY}px`;
+      this.rewriteButton.classList.add('show');
       return;
     }
 
@@ -6868,17 +6868,17 @@ class RewordlyContentScript {
     buttonY = Math.max(10, Math.min(buttonY, viewportHeight - containerHeight - 10));
     
     // Set the container position
-    this.floatingButton.style.left = `${buttonX}px`;
-    this.floatingButton.style.top = `${buttonY}px`;
-    this.floatingButton.classList.add('show');
+    this.rewriteButton.style.left = `${buttonX}px`;
+    this.rewriteButton.style.top = `${buttonY}px`;
+    this.rewriteButton.classList.add('show');
   }
 
   /**
-   * Hide floating button
+   * Hide rewrite button
    * Only hides if currentFocusedElement is not set or element doesn't have focus
    */
-  private hideFloatingButton(): void {
-    if (this.floatingButton) {
+  private hideRewriteButton(): void {
+    if (this.rewriteButton) {
       // Don't hide button if there's a current focused element that still has focus
       if (this.currentFocusedElement && 
           document.activeElement === this.currentFocusedElement) {
@@ -6887,7 +6887,7 @@ class RewordlyContentScript {
       }
       
       // Hide button
-      this.floatingButton.classList.remove('show');
+      this.rewriteButton.classList.remove('show');
       
       // Remove scroll listener when button is hidden
       this.removeAIButtonScrollListener();
@@ -7093,8 +7093,8 @@ class RewordlyContentScript {
     this.modal.classList.add('show');
     this.isModalOpen = true; // Set flag when modal opens
     
-    // Hide the floating button when modal is open
-    this.hideFloatingButton();
+    // Hide the rewrite button when modal is open
+    this.hideRewriteButton();
     
     // Hide all grammar error overlays when modal opens
     this.hideAllGrammarOverlays();

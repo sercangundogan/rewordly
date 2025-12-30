@@ -7,7 +7,7 @@
  */
 
 // UI Helpers
-export { FloatingButtonHelper, ModalHelper, TooltipHelper } from './ui-helper';
+export { RewriteButtonHelper, ModalHelper, TooltipHelper } from './ui-helper';
 
 // Element Helpers
 export {

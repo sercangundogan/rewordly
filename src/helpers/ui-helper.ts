@@ -1,6 +1,6 @@
 /**
  * UI Helper
- * Floating button, modal ve tooltip işlemleri için yardımcı fonksiyonlar
+ * Rewrite button, modal ve tooltip işlemleri için yardımcı fonksiyonlar
  * 
  * Bu dosya tüm UI elementlerinin oluşturulması, gösterilmesi ve gizlenmesi ile ilgilenir.
  * En basit developer bile anlayabilir: Button göster, modal aç, tooltip göster gibi.
@@ -9,14 +9,14 @@
 import { GrammarError } from '../types';
 
 /**
- * Floating Button Helper
- * Sayfada yüzen buton işlemleri
+ * Rewrite Button Helper
+ * Sayfada rewrite buton işlemleri
  */
-export class FloatingButtonHelper {
+export class RewriteButtonHelper {
   private button: HTMLDivElement | null = null;
 
   /**
-   * Floating button oluştur
+   * Rewrite button oluştur
    */
   create(): HTMLDivElement {
     if (this.button) {
@@ -24,8 +24,8 @@ export class FloatingButtonHelper {
     }
 
     const button = document.createElement('div');
-    button.id = 'rewordly-floating-button';
-    button.className = 'rewordly-floating-button';
+    button.id = 'rewordly-rewrite-button';
+    button.className = 'rewordly-rewrite-button';
     button.innerHTML = `
       <button class="rewordly-rewrite-btn" title="Rewrite with AI">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -49,7 +49,7 @@ export class FloatingButtonHelper {
   }
 
   /**
-   * Floating button'u göster
+   * Rewrite button'u göster
    * Element'in yanında konumlandırır
    */
   show(element: HTMLElement, rect: DOMRect): void {
@@ -101,7 +101,7 @@ export class FloatingButtonHelper {
   }
 
   /**
-   * Floating button'u gizle
+   * Rewrite button'u gizle
    */
   hide(): void {
     if (this.button) {

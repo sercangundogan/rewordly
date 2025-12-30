@@ -1,11 +1,11 @@
 /**
  * Rewordly Extension Styles
- * Styles for floating button and modal components
+ * Styles for rewrite button and modal components
  * Using high specificity and !important to override website CSS
  */
 
-/* Floating Button Styles */
-.rewordly-floating-button-container {
+/* Rewrite Button Styles */
+.rewordly-rewrite-button-container {
   position: fixed !important;
   display: none !important;
   align-items: center !important;
@@ -57,7 +57,7 @@
   -moz-osx-font-smoothing: grayscale !important;
 }
 
-.rewordly-floating-button-container.show {
+.rewordly-rewrite-button-container.show {
   display: flex !important;
 }
 
@@ -430,8 +430,8 @@
   vertical-align: middle !important;
 }
 
-/* Legacy floating button styles for backward compatibility */
-.rewordly-floating-button {
+/* Legacy rewrite button styles for backward compatibility */
+.rewordly-rewrite-button {
   position: fixed !important;
   display: none !important;
   align-items: center !important;
@@ -492,21 +492,21 @@
   -moz-osx-font-smoothing: grayscale !important;
 }
 
-.rewordly-floating-button.show {
+.rewordly-rewrite-button.show {
   display: flex !important;
 }
 
-.rewordly-floating-button:hover {
+.rewordly-rewrite-button:hover {
   transform: translateY(-1px) !important;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2) !important;
 }
 
-.rewordly-floating-button:active {
+.rewordly-rewrite-button:active {
   transform: translateY(0) !important;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
 }
 
-.rewordly-floating-button svg {
+.rewordly-rewrite-button svg {
   width: 18px !important;
   height: 18px !important;
   stroke: currentColor !important;
@@ -527,7 +527,7 @@
   display: none !important;
   justify-content: center !important;
   align-items: center !important;
-  z-index: 2147483646 !important; /* Just below floating button */
+  z-index: 2147483646 !important; /* Just below rewrite button */
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
   opacity: 0 !important;
   transition: opacity 0.3s ease !important;
@@ -1077,7 +1077,7 @@
 }
 
 /* Accessibility */
-.rewordly-floating-button:focus,
+.rewordly-rewrite-button:focus,
 .rewordly-close-btn:focus,
 .rewordly-copy-btn:focus,
 .rewordly-replace-btn:focus {
@@ -1087,7 +1087,7 @@
 
 /* High contrast mode support */
 @media (prefers-contrast: high) {
-  .rewordly-floating-button {
+  .rewordly-rewrite-button {
     border: 2px solid white !important;
   }
   
@@ -1098,7 +1098,7 @@
 
 /* Reduced motion support */
 @media (prefers-reduced-motion: reduce) {
-  .rewordly-floating-button,
+  .rewordly-rewrite-button,
   .rewordly-copy-btn,
   .rewordly-replace-btn {
     transition: none !important;
