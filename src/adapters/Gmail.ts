@@ -3,12 +3,12 @@
  * Gmail için özel implementasyon
  */
 
-import { BaseAdapter } from './BaseAdapter';
-import { Platform, GrammarError } from '../types';
+import { BaseAdapter } from "./BaseAdapter";
+import { Platform, GrammarError } from "../types";
 
 export class GmailAdapter extends BaseAdapter {
-  override readonly platform: Platform = 'gmail';
-  
+  override readonly platform: Platform = "gmail";
+
   private editableElements: Set<HTMLElement> = new Set();
   private observer: MutationObserver | null = null;
   private gmailObservers: Map<HTMLElement, MutationObserver> = new Map();
@@ -18,7 +18,7 @@ export class GmailAdapter extends BaseAdapter {
   }
 
   override isGrammarCheckEnabled(): boolean {
-    return this.isHostname('mail.google.com') || this.isHostname('gmail.com');
+    return this.isHostname("mail.google.com") || this.isHostname("gmail.com");
   }
 
   initialize(): void {
@@ -26,7 +26,7 @@ export class GmailAdapter extends BaseAdapter {
       return;
     }
 
-    console.log('Rewordly: Gmail adapter initializing...');
+    console.log("Rewordly: Gmail adapter initializing...");
 
     // Gmail editable elementleri bul
     this.findAndAttachToEditableElements();
@@ -49,7 +49,7 @@ export class GmailAdapter extends BaseAdapter {
         childList: true,
         subtree: true,
         attributes: true,
-        attributeFilter: ['contenteditable']
+        attributeFilter: ["contenteditable"],
       });
     }
   }
@@ -60,10 +60,10 @@ export class GmailAdapter extends BaseAdapter {
       'div[contenteditable="true"]',
       'div[contenteditable=""]',
       '[contenteditable="true"]',
-      'textarea'
+      "textarea",
     ];
 
-    selectors.forEach(selector => {
+    selectors.forEach((selector) => {
       const elements = document.querySelectorAll(selector);
       elements.forEach((el) => {
         this.attachToEditableElement(el as HTMLElement);
@@ -75,10 +75,10 @@ export class GmailAdapter extends BaseAdapter {
     const selectors = [
       'div[contenteditable="true"]',
       '[contenteditable="true"]',
-      'textarea'
+      "textarea",
     ];
 
-    selectors.forEach(selector => {
+    selectors.forEach((selector) => {
       const children = element.querySelectorAll(selector);
       children.forEach((child) => {
         this.attachToEditableElement(child as HTMLElement);
@@ -87,7 +87,10 @@ export class GmailAdapter extends BaseAdapter {
   }
 
   private attachToEditableElement(element: HTMLElement): void {
-    if (!this.isEditableElement(element) || this.editableElements.has(element)) {
+    if (
+      !this.isEditableElement(element) ||
+      this.editableElements.has(element)
+    ) {
       return;
     }
 
@@ -97,11 +100,11 @@ export class GmailAdapter extends BaseAdapter {
     }
 
     this.editableElements.add(element);
-    
+
     // Gmail spell check observer'ını kur
     this.setupGmailSpellCheckObserver(element);
-    
-    console.log('Rewordly: Gmail adapter attached to element', element);
+
+    console.log("Rewordly: Gmail adapter attached to element", element);
   }
 
   /**
@@ -112,42 +115,49 @@ export class GmailAdapter extends BaseAdapter {
     // - Container with class "aoD hl" (the main container)
     // - Input with name="to" attribute
     // - Contenteditable div with class "oL aDm az9" containing span with class "aQ2"
-    
+
     // Check for Gmail's "To" field container
-    const gmailToContainer = element.closest('.aoD.hl');
+    const gmailToContainer = element.closest(".aoD.hl");
     if (gmailToContainer) {
       // Check if this is the actual input/editable element within the "To" field
       const hasToName = element.closest('[name="to"]') !== null;
-      const hasToClasses = element.classList.contains('oL') && 
-                          element.classList.contains('aDm') && 
-                          element.classList.contains('az9');
-      const hasToSpan = element.querySelector('.aQ2') !== null || 
-                       element.closest('.aQ2') !== null ||
-                       (element.parentElement && element.parentElement.querySelector('.aQ2') !== null);
-      
+      const hasToClasses =
+        element.classList.contains("oL") &&
+        element.classList.contains("aDm") &&
+        element.classList.contains("az9");
+      const hasToSpan =
+        element.querySelector(".aQ2") !== null ||
+        element.closest(".aQ2") !== null ||
+        (element.parentElement &&
+          element.parentElement.querySelector(".aQ2") !== null);
+
       if (hasToName || hasToClasses || hasToSpan) {
         return true;
       }
     }
-    
+
     // Check if element is inside a Gmail "To" field input
     if (element.closest('[name="to"]') !== null) {
       return true;
     }
-    
+
     // Check if element is the Gmail "To" field input itself
-    if (element.getAttribute('name') === 'to' || 
-        (element instanceof HTMLInputElement && element.name === 'to')) {
+    if (
+      element.getAttribute("name") === "to" ||
+      (element instanceof HTMLInputElement && element.name === "to")
+    ) {
       return true;
     }
-    
+
     // Check if element contains or is inside the Gmail "To" field span
-    if (element.classList.contains('aQ2') || 
-        element.closest('.aQ2') !== null ||
-        element.querySelector('.aQ2') !== null) {
+    if (
+      element.classList.contains("aQ2") ||
+      element.closest(".aQ2") !== null ||
+      element.querySelector(".aQ2") !== null
+    ) {
       return true;
     }
-    
+
     return false;
   }
 
@@ -155,11 +165,11 @@ export class GmailAdapter extends BaseAdapter {
    * Gmail'in spell check marker'larını kaldır
    */
   private removeGmailSpellCheckMarkers(element: HTMLElement): void {
-    const spellCheckSpans = element.querySelectorAll('span[aria-invalid]');
+    const spellCheckSpans = element.querySelectorAll("span[aria-invalid]");
     spellCheckSpans.forEach((span) => {
       const parent = span.parentNode;
       if (parent) {
-        const textNode = document.createTextNode(span.textContent || '');
+        const textNode = document.createTextNode(span.textContent || "");
         parent.replaceChild(textNode, span);
         parent.normalize();
       }
@@ -181,21 +191,23 @@ export class GmailAdapter extends BaseAdapter {
           if (node.nodeType === Node.ELEMENT_NODE) {
             const el = node as HTMLElement;
             // Check if it's a spell check span
-            if (el.tagName === 'SPAN' && el.hasAttribute('aria-invalid')) {
+            if (el.tagName === "SPAN" && el.hasAttribute("aria-invalid")) {
               // Remove the spell check marker
               const parent = el.parentNode;
               if (parent) {
-                const textNode = document.createTextNode(el.textContent || '');
+                const textNode = document.createTextNode(el.textContent || "");
                 parent.replaceChild(textNode, el);
                 parent.normalize();
               }
             }
             // Also check children
-            const spellCheckSpans = el.querySelectorAll('span[aria-invalid]');
+            const spellCheckSpans = el.querySelectorAll("span[aria-invalid]");
             spellCheckSpans.forEach((span) => {
               const parent = span.parentNode;
               if (parent) {
-                const textNode = document.createTextNode(span.textContent || '');
+                const textNode = document.createTextNode(
+                  span.textContent || ""
+                );
                 parent.replaceChild(textNode, span);
                 parent.normalize();
               }
@@ -209,7 +221,7 @@ export class GmailAdapter extends BaseAdapter {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ['aria-invalid', 'class']
+      attributeFilter: ["aria-invalid", "class"],
     });
 
     // Store observer reference for cleanup
@@ -249,11 +261,10 @@ export class GmailAdapter extends BaseAdapter {
 
   clearHighlights(element: HTMLElement): void {
     // Gmail için highlight temizleme
-    const overlays = element.querySelectorAll('.rewordly-grammar-overlay');
-    overlays.forEach(overlay => overlay.remove());
-    
+    const overlays = element.querySelectorAll(".rewordly-grammar-overlay");
+    overlays.forEach((overlay) => overlay.remove());
+
     // Ayrıca Gmail spell check marker'larını da temizle
     this.removeGmailSpellCheckMarkers(element);
   }
 }
-

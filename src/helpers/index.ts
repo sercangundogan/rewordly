@@ -1,13 +1,13 @@
 /**
  * Helpers Index
  * Tüm helper'ları export eder
- * 
+ *
  * Bu dosya tüm helper fonksiyonlarını tek bir yerden export eder.
  * Basitçe: import { ... } from './helpers' şeklinde kullanılabilir.
  */
 
 // UI Helpers
-export { RewriteButtonHelper, ModalHelper, TooltipHelper } from './ui-helper';
+export { RewriteButtonHelper, ModalHelper, TooltipHelper } from "./ui-helper";
 
 // Element Helpers
 export {
@@ -19,8 +19,11 @@ export {
   findEditableInElement,
   findEditableInShadowDOM,
   shouldIgnoreElement,
-  isNodeInDocument
-} from './element-helper';
+  isNodeInDocument,
+  findScrollableContainers,
+  isSingleLineElement,
+  getInputTextareaSelectionRect,
+} from "./element-helper";
 
 // Config Helpers
 export {
@@ -28,8 +31,8 @@ export {
   isPageDisabled,
   isGrammarCheckAllowedSite,
   createPlatformAdapterForSite,
-  generateErrorId
-} from './config-helper';
+  generateErrorId,
+} from "./config-helper";
 
 // Grammar Check Helpers
 export {
@@ -38,21 +41,26 @@ export {
   isErrorDismissed,
   dismissError,
   undismissError,
-  filterDismissedErrors
-} from './grammar-check-helper';
+  filterDismissedErrors,
+} from "./grammar-check-helper";
 
 // Text Processing Helpers
 export {
   mapInnerTextToTextNodes,
   extractTextExcludingSignature,
   updateErrorPositions,
-  type TextNodeMapping
-} from './text-processing-helper';
+  adjustErrorPositionsForMultiWord,
+  escapeHtml,
+  formatSuggestionForDisplay,
+  type TextNodeMapping,
+} from "./text-processing-helper";
 
 // Highlight Helpers
 export {
   HighlightContainerHelper,
   getContentEditableErrorRects,
-  getInputErrorRects
-} from './highlight-helper';
-
+  getInputErrorRects,
+  getErrorTextRects,
+  getInputTextareaErrorRects,
+  getGoogleDocsErrorRects,
+} from "./highlight-helper";

@@ -1,12 +1,12 @@
 /**
  * UI Helper
  * Rewrite button, modal ve tooltip işlemleri için yardımcı fonksiyonlar
- * 
+ *
  * Bu dosya tüm UI elementlerinin oluşturulması, gösterilmesi ve gizlenmesi ile ilgilenir.
  * En basit developer bile anlayabilir: Button göster, modal aç, tooltip göster gibi.
  */
 
-import { GrammarError } from '../types';
+import { GrammarError } from "../types";
 
 /**
  * Rewrite Button Helper
@@ -23,9 +23,9 @@ export class RewriteButtonHelper {
       return this.button;
     }
 
-    const button = document.createElement('div');
-    button.id = 'rewordly-rewrite-button';
-    button.className = 'rewordly-rewrite-button';
+    const button = document.createElement("div");
+    button.id = "rewordly-rewrite-button";
+    button.className = "rewordly-rewrite-button";
     button.innerHTML = `
       <button class="rewordly-rewrite-btn" title="Rewrite with AI">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -97,7 +97,7 @@ export class RewriteButtonHelper {
 
     this.button.style.left = `${x}px`;
     this.button.style.top = `${y}px`;
-    this.button.classList.add('show');
+    this.button.classList.add("show");
   }
 
   /**
@@ -105,7 +105,7 @@ export class RewriteButtonHelper {
    */
   hide(): void {
     if (this.button) {
-      this.button.classList.remove('show');
+      this.button.classList.remove("show");
     }
   }
 
@@ -118,9 +118,9 @@ export class RewriteButtonHelper {
     }
 
     if (this.button) {
-      const btn = this.button.querySelector('.rewordly-rewrite-btn');
+      const btn = this.button.querySelector(".rewordly-rewrite-btn");
       if (btn) {
-        btn.addEventListener('click', callback);
+        btn.addEventListener("click", callback);
       }
     }
   }
@@ -151,9 +151,9 @@ export class ModalHelper {
       return this.modal;
     }
 
-    const modal = document.createElement('div');
-    modal.id = 'rewordly-modal';
-    modal.className = 'rewordly-modal';
+    const modal = document.createElement("div");
+    modal.id = "rewordly-modal";
+    modal.className = "rewordly-modal";
     modal.innerHTML = `
       <div class="rewordly-modal-content">
         <div class="rewordly-modal-header">
@@ -185,37 +185,52 @@ export class ModalHelper {
   /**
    * Modal'ı göster
    */
-  show(originalText: string, operation: 'rewrite' | 'grammar' = 'rewrite'): void {
+  show(
+    originalText: string,
+    operation: "rewrite" | "grammar" = "rewrite"
+  ): void {
     if (!this.modal) {
       this.create();
     }
 
     if (!this.modal) return;
 
-    const originalTextEl = this.modal.querySelector('.rewordly-original-text') as HTMLParagraphElement;
-    const rewrittenTextEl = this.modal.querySelector('.rewordly-rewritten-text') as HTMLParagraphElement;
-    const loadingEl = this.modal.querySelector('.rewordly-loading') as HTMLDivElement;
-    const modalTitle = this.modal.querySelector('.rewordly-modal-title') as HTMLHeadingElement;
-    const resultTitle = this.modal.querySelector('.rewordly-result-title') as HTMLHeadingElement;
-    const loadingText = this.modal.querySelector('.rewordly-loading-text') as HTMLParagraphElement;
+    const originalTextEl = this.modal.querySelector(
+      ".rewordly-original-text"
+    ) as HTMLParagraphElement;
+    const rewrittenTextEl = this.modal.querySelector(
+      ".rewordly-rewritten-text"
+    ) as HTMLParagraphElement;
+    const loadingEl = this.modal.querySelector(
+      ".rewordly-loading"
+    ) as HTMLDivElement;
+    const modalTitle = this.modal.querySelector(
+      ".rewordly-modal-title"
+    ) as HTMLHeadingElement;
+    const resultTitle = this.modal.querySelector(
+      ".rewordly-result-title"
+    ) as HTMLHeadingElement;
+    const loadingText = this.modal.querySelector(
+      ".rewordly-loading-text"
+    ) as HTMLParagraphElement;
 
     if (originalTextEl) originalTextEl.textContent = originalText;
-    if (rewrittenTextEl) rewrittenTextEl.textContent = '';
-    if (loadingEl) loadingEl.classList.add('show');
-    if (rewrittenTextEl) rewrittenTextEl.classList.remove('show');
+    if (rewrittenTextEl) rewrittenTextEl.textContent = "";
+    if (loadingEl) loadingEl.classList.add("show");
+    if (rewrittenTextEl) rewrittenTextEl.classList.remove("show");
 
     // Operation'a göre başlıkları ayarla
-    if (operation === 'grammar') {
-      if (modalTitle) modalTitle.textContent = 'Grammar Check';
-      if (resultTitle) resultTitle.textContent = 'Corrected Text:';
-      if (loadingText) loadingText.textContent = 'Fixing grammar...';
+    if (operation === "grammar") {
+      if (modalTitle) modalTitle.textContent = "Grammar Check";
+      if (resultTitle) resultTitle.textContent = "Corrected Text:";
+      if (loadingText) loadingText.textContent = "Fixing grammar...";
     } else {
-      if (modalTitle) modalTitle.textContent = 'Rewordly';
-      if (resultTitle) resultTitle.textContent = 'Rewritten Text:';
-      if (loadingText) loadingText.textContent = 'Rewriting...';
+      if (modalTitle) modalTitle.textContent = "Rewordly";
+      if (resultTitle) resultTitle.textContent = "Rewritten Text:";
+      if (loadingText) loadingText.textContent = "Rewriting...";
     }
 
-    this.modal.classList.add('show');
+    this.modal.classList.add("show");
   }
 
   /**
@@ -223,7 +238,7 @@ export class ModalHelper {
    */
   hide(): void {
     if (this.modal) {
-      this.modal.classList.remove('show');
+      this.modal.classList.remove("show");
     }
   }
 
@@ -233,13 +248,17 @@ export class ModalHelper {
   displayResult(text: string): void {
     if (!this.modal) return;
 
-    const rewrittenText = this.modal.querySelector('.rewordly-rewritten-text') as HTMLParagraphElement;
-    const loading = this.modal.querySelector('.rewordly-loading') as HTMLDivElement;
+    const rewrittenText = this.modal.querySelector(
+      ".rewordly-rewritten-text"
+    ) as HTMLParagraphElement;
+    const loading = this.modal.querySelector(
+      ".rewordly-loading"
+    ) as HTMLDivElement;
 
-    if (loading) loading.classList.remove('show');
+    if (loading) loading.classList.remove("show");
     if (rewrittenText) {
       rewrittenText.textContent = text;
-      rewrittenText.classList.add('show');
+      rewrittenText.classList.add("show");
     }
   }
 
@@ -249,14 +268,18 @@ export class ModalHelper {
   showError(message: string): void {
     if (!this.modal) return;
 
-    const rewrittenText = this.modal.querySelector('.rewordly-rewritten-text') as HTMLParagraphElement;
-    const loading = this.modal.querySelector('.rewordly-loading') as HTMLDivElement;
+    const rewrittenText = this.modal.querySelector(
+      ".rewordly-rewritten-text"
+    ) as HTMLParagraphElement;
+    const loading = this.modal.querySelector(
+      ".rewordly-loading"
+    ) as HTMLDivElement;
 
-    if (loading) loading.classList.remove('show');
+    if (loading) loading.classList.remove("show");
     if (rewrittenText) {
       rewrittenText.textContent = `Error: ${message}`;
-      rewrittenText.classList.add('show');
-      rewrittenText.classList.add('error');
+      rewrittenText.classList.add("show");
+      rewrittenText.classList.add("error");
     }
   }
 
@@ -269,15 +292,15 @@ export class ModalHelper {
     }
 
     if (this.modal) {
-      const copyBtn = this.modal.querySelector('.rewordly-copy-btn');
-      const closeBtn = this.modal.querySelector('.rewordly-modal-close');
-      
+      const copyBtn = this.modal.querySelector(".rewordly-copy-btn");
+      const closeBtn = this.modal.querySelector(".rewordly-modal-close");
+
       if (copyBtn) {
-        copyBtn.addEventListener('click', callback);
+        copyBtn.addEventListener("click", callback);
       }
-      
+
       if (closeBtn) {
-        closeBtn.addEventListener('click', () => this.hide());
+        closeBtn.addEventListener("click", () => this.hide());
       }
     }
   }
@@ -296,7 +319,7 @@ export class ModalHelper {
    * Modal açık mı?
    */
   isOpen(): boolean {
-    return this.modal?.classList.contains('show') || false;
+    return this.modal?.classList.contains("show") || false;
   }
 }
 
@@ -319,9 +342,9 @@ export class TooltipHelper {
     // Önceki tooltip'i kapat
     this.hide(error.id);
 
-    const tooltip = document.createElement('div');
-    tooltip.className = 'rewordly-tooltip';
-    tooltip.setAttribute('data-error-id', error.id);
+    const tooltip = document.createElement("div");
+    tooltip.className = "rewordly-tooltip";
+    tooltip.setAttribute("data-error-id", error.id);
     tooltip.style.cssText = `
       position: fixed;
       left: ${position.x}px;
@@ -336,18 +359,18 @@ export class TooltipHelper {
     `;
 
     // Error mesajı
-    const errorText = document.createElement('div');
+    const errorText = document.createElement("div");
     errorText.textContent = error.word;
-    errorText.style.fontWeight = 'bold';
+    errorText.style.fontWeight = "bold";
     tooltip.appendChild(errorText);
 
     // Öneriler
     if (error.suggestions && error.suggestions.length > 0) {
-      const suggestionsDiv = document.createElement('div');
-      suggestionsDiv.style.marginTop = '8px';
-      
-      error.suggestions.slice(0, 3).forEach(suggestion => {
-        const suggestionBtn = document.createElement('button');
+      const suggestionsDiv = document.createElement("div");
+      suggestionsDiv.style.marginTop = "8px";
+
+      error.suggestions.slice(0, 3).forEach((suggestion) => {
+        const suggestionBtn = document.createElement("button");
         suggestionBtn.textContent = suggestion;
         suggestionBtn.style.cssText = `
           display: block;
@@ -360,19 +383,19 @@ export class TooltipHelper {
           border-radius: 2px;
           cursor: pointer;
         `;
-        suggestionBtn.addEventListener('click', () => {
+        suggestionBtn.addEventListener("click", () => {
           onReplace(suggestion);
           this.hide(error.id);
         });
         suggestionsDiv.appendChild(suggestionBtn);
       });
-      
+
       tooltip.appendChild(suggestionsDiv);
     }
 
     // Dismiss butonu
-    const dismissBtn = document.createElement('button');
-    dismissBtn.textContent = 'Dismiss';
+    const dismissBtn = document.createElement("button");
+    dismissBtn.textContent = "Dismiss";
     dismissBtn.style.cssText = `
       margin-top: 8px;
       padding: 4px 8px;
@@ -382,7 +405,7 @@ export class TooltipHelper {
       border-radius: 2px;
       cursor: pointer;
     `;
-    dismissBtn.addEventListener('click', () => {
+    dismissBtn.addEventListener("click", () => {
       onDismiss();
       this.hide(error.id);
     });
@@ -422,4 +445,3 @@ export class TooltipHelper {
     this.hideAll();
   }
 }
-

@@ -26,66 +26,171 @@ export function mapInnerTextToTextNodes(
 ): TextNodeMapping | null {
   if (!element) return null;
 
-  // Element'in innerText'ini al
-  const innerText = element.innerText || element.textContent || '';
+  // Use text extraction that excludes signature to match error positions
+  const { text: extractedText } = extractTextExcludingSignature(element);
+  const innerText = extractedText;
   
-  if (start < 0 || end > innerText.length || start >= end) {
+  if (start >= innerText.length || end > innerText.length) {
     return null;
   }
 
-  // Text node'ları bul
+  // Find text nodes and map their positions to innerText
   const walker = document.createTreeWalker(
     element,
     NodeFilter.SHOW_TEXT,
     null
   );
 
-  let currentPos = 0;
-  let startNode: Text | null = null;
-  let startOffset = 0;
-  let endNode: Text | null = null;
-  let endOffset = 0;
+  const textNodes: Array<{ node: Text; innerTextStart: number; innerTextEnd: number }> = [];
+  let searchStart = 0;
 
-  let node: Node | null;
-  while ((node = walker.nextNode())) {
-    if (node.nodeType !== Node.TEXT_NODE) continue;
-
-    const textNode = node as Text;
-    const nodeText = textNode.textContent || '';
-    const nodeLength = nodeText.length;
-
-    // Start pozisyonu bu node'da mı?
-    if (!startNode && currentPos + nodeLength >= start) {
-      startNode = textNode;
-      startOffset = start - currentPos;
+  let node: Text | null;
+  while ((node = walker.nextNode() as Text | null)) {
+    if (!node || !node.textContent) continue;
+    
+    const parent = node.parentElement;
+    if (!parent) continue;
+    
+    // Skip signature elements (Gmail and other email clients)
+    // Check if this node is inside a signature block
+    const isInSignature = parent.closest('.gmail_signature, [class*="signature"], [id*="signature"]') !== null;
+    if (isInSignature) {
+      continue; // Skip signature text nodes
     }
-
-    // End pozisyonu bu node'da mı?
-    if (!endNode && currentPos + nodeLength >= end) {
-      endNode = textNode;
-      endOffset = end - currentPos;
-      break; // Her ikisini de bulduk
+    
+    // Check visibility
+    const style = window.getComputedStyle(parent);
+    if (style.display === 'none' || style.visibility === 'hidden') continue;
+    
+    const nodeText = node.textContent;
+    
+    // Find where this node's text appears in innerText
+    let foundIndex = -1;
+    let searchPos = searchStart;
+    
+    while (searchPos < innerText.length) {
+      // Skip \n characters in innerText
+      while (searchPos < innerText.length && innerText[searchPos] === '\n') {
+        searchPos++;
+      }
+      
+      if (searchPos >= innerText.length) break;
+      
+      // Try to match node text
+      let match = true;
+      let innerPos = searchPos;
+      let nodePos = 0;
+      
+      while (nodePos < nodeText.length && innerPos < innerText.length) {
+        const nodeChar = nodeText[nodePos];
+        const innerChar = innerText[innerPos];
+        
+        if (nodeChar === innerChar) {
+          innerPos++;
+          nodePos++;
+        } else if (innerChar === '\n') {
+          innerPos++;
+        } else if (nodeChar === '\r' || nodeChar === '\n') {
+          nodePos++;
+        } else {
+          match = false;
+          break;
+        }
+      }
+      
+      if (match && nodePos === nodeText.length) {
+        foundIndex = searchPos;
+        break;
+      }
+      
+      searchPos++;
     }
-
-    currentPos += nodeLength;
+    
+    if (foundIndex !== -1) {
+      // Calculate end position
+      let innerTextEnd = foundIndex;
+      let nodePos = 0;
+      
+      while (nodePos < nodeText.length && innerTextEnd < innerText.length) {
+        const nodeChar = nodeText[nodePos];
+        const innerChar = innerText[innerTextEnd];
+        
+        if (nodeChar === innerChar) {
+          innerTextEnd++;
+          nodePos++;
+        } else if (innerChar === '\n') {
+          innerTextEnd++;
+        } else if (nodeChar === '\r' || nodeChar === '\n') {
+          nodePos++;
+        } else {
+          break;
+        }
+      }
+      
+      textNodes.push({
+        node,
+        innerTextStart: foundIndex,
+        innerTextEnd: innerTextEnd
+      });
+      
+      searchStart = innerTextEnd;
+    }
   }
 
-  if (!startNode) {
+  // Find the node(s) containing the error
+  const startNodeInfo = textNodes.find(tn => start >= tn.innerTextStart && start < tn.innerTextEnd);
+  const endNodeInfo = textNodes.find(tn => end > tn.innerTextStart && end <= tn.innerTextEnd);
+
+  if (!startNodeInfo) {
     return null;
   }
 
-  // End node bulunamadıysa start node'u kullan
-  if (!endNode) {
-    endNode = startNode;
-    endOffset = startOffset + (end - start);
+  // Calculate local positions within the text nodes (skipping \n characters)
+  let startNodeLocalPos = 0;
+  let endNodeLocalPos = 0;
+  
+  // For start position: count characters from innerTextStart to start, skipping \n
+  let pos = startNodeInfo.innerTextStart;
+  while (pos < start && pos < innerText.length) {
+    if (innerText[pos] !== '\n') {
+      startNodeLocalPos++;
+    }
+    pos++;
   }
-
-  return {
-    startNode,
-    startOffset: Math.max(0, Math.min(startOffset, startNode.textContent?.length || 0)),
-    endNode,
-    endOffset: Math.max(0, Math.min(endOffset, endNode.textContent?.length || 0))
-  };
+  
+  if (endNodeInfo && endNodeInfo.node !== startNodeInfo.node) {
+    // Error spans multiple nodes
+    pos = endNodeInfo.innerTextStart;
+    while (pos < end && pos < innerText.length) {
+      if (innerText[pos] !== '\n') {
+        endNodeLocalPos++;
+      }
+      pos++;
+    }
+    
+    return {
+      startNode: startNodeInfo.node,
+      startOffset: startNodeLocalPos,
+      endNode: endNodeInfo.node,
+      endOffset: endNodeLocalPos
+    };
+  } else {
+    // Error is within a single node
+    pos = startNodeInfo.innerTextStart;
+    while (pos < end && pos < innerText.length) {
+      if (innerText[pos] !== '\n') {
+        endNodeLocalPos++;
+      }
+      pos++;
+    }
+    
+    return {
+      startNode: startNodeInfo.node,
+      startOffset: startNodeLocalPos,
+      endNode: startNodeInfo.node,
+      endOffset: endNodeLocalPos
+    };
+  }
 }
 
 /**
@@ -153,5 +258,52 @@ export function updateErrorPositions(
     // Pozisyon geçersiz
     return { ...error, start: -1, end: -1 };
   }).filter(error => error.start >= 0); // Sadece geçerli error'ları döndür
+}
+
+/**
+ * Adjust error positions for multi-word grammar errors to highlight only problematic word(s)
+ * For errors like "an important meetings", we should highlight only "meetings" (the noun)
+ */
+export function adjustErrorPositionsForMultiWord(_text: string, error: GrammarError): { start: number; end: number } {
+  // Always return original positions to highlight the entire error phrase
+  // This ensures multi-word grammar errors like "an important meetings" 
+  // are fully highlighted, not just the last word
+  return { start: error.start, end: error.end };
+}
+
+/**
+ * Escape HTML to prevent XSS
+ */
+export function escapeHtml(text: string): string {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+/**
+ * Format suggestion for display - makes whitespace-only suggestions visible
+ */
+export function formatSuggestionForDisplay(suggestion: string, errorWord: string): string {
+  // If suggestion is only whitespace, provide a descriptive message
+  if (/^\s+$/.test(suggestion)) {
+    const suggestionSpaceCount = suggestion.length;
+    
+    // If error word is also whitespace and has more spaces than suggestion
+    if (/^\s+$/.test(errorWord) && errorWord.length > suggestionSpaceCount) {
+      if (suggestionSpaceCount === 1) {
+        return 'Remove extra space';
+      } else {
+        return `Remove extra spaces (keep ${suggestionSpaceCount})`;
+      }
+    }
+    
+    // If suggestion is a single space
+    if (suggestionSpaceCount === 1) {
+      return 'Use single space';
+    } else {
+      return `Use ${suggestionSpaceCount} spaces`;
+    }
+  }
+  return suggestion;
 }
 

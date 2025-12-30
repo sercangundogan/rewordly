@@ -1,7 +1,7 @@
 /**
  * Element Helper
  * Editable element bulma, kontrol etme ve yönetme işlemleri
- * 
+ *
  * Bu dosya sayfadaki editable elementleri bulmak ve yönetmekle ilgilenir.
  * Basitçe: Element bul, kontrol et, ignore et gibi işlemler.
  */
@@ -15,7 +15,13 @@ export function isEditableElement(element: HTMLElement): boolean {
   // Input elementleri
   if (element instanceof HTMLInputElement) {
     const type = element.type.toLowerCase();
-    return type === 'text' || type === 'email' || type === 'search' || type === '' || type === 'url';
+    return (
+      type === "text" ||
+      type === "email" ||
+      type === "search" ||
+      type === "" ||
+      type === "url"
+    );
   }
 
   // Textarea
@@ -24,9 +30,12 @@ export function isEditableElement(element: HTMLElement): boolean {
   }
 
   // Contenteditable
-  const contentEditable = element.getAttribute('contenteditable');
-  if (contentEditable === 'true' || contentEditable === '' || 
-      (contentEditable !== null && contentEditable !== 'false')) {
+  const contentEditable = element.getAttribute("contenteditable");
+  if (
+    contentEditable === "true" ||
+    contentEditable === "" ||
+    (contentEditable !== null && contentEditable !== "false")
+  ) {
     return true;
   }
 
@@ -37,15 +46,18 @@ export function isEditableElement(element: HTMLElement): boolean {
  * Element'ten text çıkar
  */
 export function extractTextFromElement(element: HTMLElement): string {
-  if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-    return element.value || '';
+  if (
+    element instanceof HTMLInputElement ||
+    element instanceof HTMLTextAreaElement
+  ) {
+    return element.value || "";
   }
 
   if (isEditableElement(element)) {
-    return element.textContent || element.innerText || '';
+    return element.textContent || element.innerText || "";
   }
 
-  return '';
+  return "";
 }
 
 /**
@@ -58,7 +70,11 @@ export function isElementVisible(element: HTMLElement): boolean {
   const style = window.getComputedStyle(element);
 
   // Gizli mi?
-  if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+  if (
+    style.display === "none" ||
+    style.visibility === "hidden" ||
+    style.opacity === "0"
+  ) {
     return false;
   }
 
@@ -68,8 +84,11 @@ export function isElementVisible(element: HTMLElement): boolean {
   }
 
   // Viewport içinde mi?
-  const isInViewport = rect.top < window.innerHeight && rect.bottom > 0 && 
-                       rect.left < window.innerWidth && rect.right > 0;
+  const isInViewport =
+    rect.top < window.innerHeight &&
+    rect.bottom > 0 &&
+    rect.left < window.innerWidth &&
+    rect.right > 0;
 
   return isInViewport;
 }
@@ -78,7 +97,7 @@ export function isElementVisible(element: HTMLElement): boolean {
  * Element ID oluştur (benzersiz)
  */
 export function getElementId(element: HTMLElement): string {
-  if (!element) return '';
+  if (!element) return "";
 
   // Zaten ID varsa kullan
   if ((element as any).__rewordlyId) {
@@ -86,7 +105,9 @@ export function getElementId(element: HTMLElement): string {
   }
 
   // Yeni ID oluştur
-  const id = `rewordly-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const id = `rewordly-${Date.now()}-${Math.random()
+    .toString(36)
+    .substr(2, 9)}`;
   (element as any).__rewordlyId = id;
   return id;
 }
@@ -94,7 +115,9 @@ export function getElementId(element: HTMLElement): string {
 /**
  * Tüm editable elementleri bul
  */
-export function findAllEditableElements(root: HTMLElement = document.body): HTMLElement[] {
+export function findAllEditableElements(
+  root: HTMLElement = document.body
+): HTMLElement[] {
   const elements: HTMLElement[] = [];
 
   // Normal selector ile bul
@@ -117,12 +140,14 @@ export function findAllEditableElements(root: HTMLElement = document.body): HTML
   });
 
   // Tüm elementleri kontrol et (dinamik contenteditable için)
-  const allElements = root.querySelectorAll('*');
+  const allElements = root.querySelectorAll("*");
   allElements.forEach((el) => {
     const htmlEl = el as HTMLElement;
-    if (htmlEl.isContentEditable || 
-        htmlEl.getAttribute('contenteditable') === 'true' || 
-        htmlEl.getAttribute('contenteditable') === '') {
+    if (
+      htmlEl.isContentEditable ||
+      htmlEl.getAttribute("contenteditable") === "true" ||
+      htmlEl.getAttribute("contenteditable") === ""
+    ) {
       if (!elements.includes(htmlEl)) {
         elements.push(htmlEl);
       }
@@ -217,14 +242,16 @@ export function shouldIgnoreElement(element: HTMLElement): boolean {
   if (!element) return true;
 
   // Gmail "To" field kontrolü
-  const gmailToContainer = element.closest('.aoD.hl');
+  const gmailToContainer = element.closest(".aoD.hl");
   if (gmailToContainer) {
     const hasToName = element.closest('[name="to"]') !== null;
-    const hasToClasses = element.classList.contains('oL') && 
-                        element.classList.contains('aDm') && 
-                        element.classList.contains('az9');
-    const hasToSpan = element.querySelector('.aQ2') !== null || 
-                     element.closest('.aQ2') !== null;
+    const hasToClasses =
+      element.classList.contains("oL") &&
+      element.classList.contains("aDm") &&
+      element.classList.contains("az9");
+    const hasToSpan =
+      element.querySelector(".aQ2") !== null ||
+      element.closest(".aQ2") !== null;
 
     if (hasToName || hasToClasses || hasToSpan) {
       return true;
@@ -237,15 +264,19 @@ export function shouldIgnoreElement(element: HTMLElement): boolean {
   }
 
   // Gmail "To" field kendisi mi?
-  if (element.getAttribute('name') === 'to' || 
-      (element instanceof HTMLInputElement && element.name === 'to')) {
+  if (
+    element.getAttribute("name") === "to" ||
+    (element instanceof HTMLInputElement && element.name === "to")
+  ) {
     return true;
   }
 
   // Gmail "To" field span'ı mı?
-  if (element.classList.contains('aQ2') || 
-      element.closest('.aQ2') !== null ||
-      element.querySelector('.aQ2') !== null) {
+  if (
+    element.classList.contains("aQ2") ||
+    element.closest(".aQ2") !== null ||
+    element.querySelector(".aQ2") !== null
+  ) {
     return true;
   }
 
@@ -275,3 +306,207 @@ export function isNodeInDocument(node: Node): boolean {
   return current === document;
 }
 
+/**
+ * Find all scrollable parent containers for an element
+ * Also checks if the element itself is scrollable (e.g., textarea)
+ */
+export function findScrollableContainers(
+  element: HTMLElement
+): Set<HTMLElement> {
+  const scrollableContainers = new Set<HTMLElement>();
+
+  // Check if element itself is scrollable (e.g., textarea, contenteditable div)
+  const elementStyle = window.getComputedStyle(element);
+  const elementOverflowY = elementStyle.overflowY;
+  const elementOverflowX = elementStyle.overflowX;
+  const elementOverflow = elementStyle.overflow;
+
+  const isElementScrollable =
+    (elementOverflowY === "auto" ||
+      elementOverflowY === "scroll" ||
+      elementOverflow === "auto" ||
+      elementOverflow === "scroll") &&
+    element.scrollHeight > element.clientHeight;
+
+  const isElementScrollableX =
+    (elementOverflowX === "auto" ||
+      elementOverflowX === "scroll" ||
+      elementOverflow === "auto" ||
+      elementOverflow === "scroll") &&
+    element.scrollWidth > element.clientWidth;
+
+  if (isElementScrollable || isElementScrollableX) {
+    scrollableContainers.add(element);
+  }
+
+  // Check parent containers
+  let current: HTMLElement | null = element.parentElement;
+
+  while (
+    current &&
+    current !== document.body &&
+    current !== document.documentElement
+  ) {
+    const style = window.getComputedStyle(current);
+    const overflowY = style.overflowY;
+    const overflowX = style.overflowX;
+    const overflow = style.overflow;
+
+    // Check if element is scrollable
+    const isScrollable =
+      (overflowY === "auto" ||
+        overflowY === "scroll" ||
+        overflow === "auto" ||
+        overflow === "scroll") &&
+      current.scrollHeight > current.clientHeight;
+
+    // Also check for overflow-x scrollable containers
+    const isScrollableX =
+      (overflowX === "auto" ||
+        overflowX === "scroll" ||
+        overflow === "auto" ||
+        overflow === "scroll") &&
+      current.scrollWidth > current.clientWidth;
+
+    if (isScrollable || isScrollableX) {
+      scrollableContainers.add(current);
+    }
+
+    current = current.parentElement;
+  }
+
+  return scrollableContainers;
+}
+
+/**
+ * Check if element is single-line (approximately)
+ * Uses multiple heuristics for reliable detection across different platforms
+ */
+export function isSingleLineElement(element: HTMLElement): boolean {
+  const computedStyle = window.getComputedStyle(element);
+  const elementRect = element.getBoundingClientRect();
+
+  // Get line-height (can be 'normal', number, or pixel value)
+  let lineHeight: number;
+  const lineHeightValue = computedStyle.lineHeight;
+
+  if (lineHeightValue === "normal") {
+    // Normal line-height is typically 1.2-1.5x font-size
+    const fontSize = parseFloat(computedStyle.fontSize) || 16;
+    lineHeight = fontSize * 1.2; // Conservative estimate
+  } else if (lineHeightValue.includes("px")) {
+    lineHeight = parseFloat(lineHeightValue);
+  } else {
+    // Relative value (e.g., 1.5)
+    const fontSize = parseFloat(computedStyle.fontSize) || 16;
+    lineHeight = parseFloat(lineHeightValue) * fontSize;
+  }
+
+  // Get actual content height
+  const clientHeight = element.clientHeight;
+  const scrollHeight = element.scrollHeight;
+
+  // Heuristic 1: If element height is close to line-height (within 1.5x), likely single line
+  // Account for padding
+  const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
+  const paddingBottom = parseFloat(computedStyle.paddingBottom) || 0;
+  const contentHeight = clientHeight - paddingTop - paddingBottom;
+
+  // Heuristic 2: If scrollHeight equals clientHeight, no vertical scrolling (likely single line)
+  const hasNoVerticalScroll = Math.abs(scrollHeight - clientHeight) < 2;
+
+  // Heuristic 3: If content height is less than 1.8x line-height, likely single line
+  // Using 1.8x to account for various font sizes and padding
+  const isHeightCloseToLineHeight = contentHeight <= lineHeight * 1.8;
+
+  // Heuristic 4: For very small elements (e.g., input fields), if height < 60px, likely single line
+  const isSmallElement = elementRect.height < 60;
+
+  // Combine heuristics: element is single-line if:
+  // - Height is close to line-height AND no vertical scroll, OR
+  // - Very small element with no vertical scroll
+  return (
+    (isHeightCloseToLineHeight && hasNoVerticalScroll) ||
+    (isSmallElement && hasNoVerticalScroll)
+  );
+}
+
+/**
+ * Get selection rect for input/textarea elements
+ */
+export function getInputTextareaSelectionRect(
+  el: HTMLInputElement | HTMLTextAreaElement
+): DOMRect | null {
+  const end = el.selectionEnd;
+  if (end === null) return null;
+
+  const value = el.value.substring(0, end);
+  const elRect = el.getBoundingClientRect();
+  const style = window.getComputedStyle(el);
+
+  // Mirror element
+  const div = document.createElement("div");
+  const divStyle = div.style;
+
+  // Typography + spacing
+  divStyle.position = "absolute";
+  divStyle.visibility = "hidden";
+  divStyle.whiteSpace = el instanceof HTMLInputElement ? "pre" : "pre-wrap";
+  divStyle.fontFamily = style.fontFamily;
+  divStyle.fontSize = style.fontSize;
+  divStyle.fontWeight = style.fontWeight;
+  divStyle.fontStyle = style.fontStyle;
+  divStyle.letterSpacing = style.letterSpacing;
+  divStyle.lineHeight = style.lineHeight;
+  divStyle.textTransform = style.textTransform;
+
+  // Box model
+  divStyle.padding = style.padding;
+  divStyle.border = style.border;
+  divStyle.boxSizing = style.boxSizing;
+  divStyle.width = style.width; // Important for textarea wrapping
+
+  // Copy content
+  div.textContent = value;
+
+  // Marker to measure caret
+  const span = document.createElement("span");
+  span.textContent = "▌";
+  div.appendChild(span);
+
+  document.body.appendChild(div);
+
+  // Get positions - use offsetLeft/offsetTop for more accurate measurement
+  const spanRect = span.getBoundingClientRect();
+
+  // Caret position relative to the div (which mirrors the element)
+  // offsetLeft/offsetTop give position relative to offsetParent
+  const relX = span.offsetLeft;
+  const relY = span.offsetTop;
+
+  // Account for input/textarea scroll
+  const scrollLeft = el.scrollLeft || 0;
+  const scrollTop = el.scrollTop || 0;
+
+  // Get padding and border to adjust position correctly
+  const paddingLeft = parseFloat(style.paddingLeft) || 0;
+  const borderLeft = parseFloat(style.borderLeftWidth) || 0;
+  const paddingTop = parseFloat(style.paddingTop) || 0;
+  const borderTop = parseFloat(style.borderTopWidth) || 0;
+
+  // Calculate final caret position
+  // Element position + padding + border + relative caret position - scroll
+  const caretX = elRect.left + paddingLeft + borderLeft + relX - scrollLeft;
+  const caretY = elRect.top + paddingTop + borderTop + relY - scrollTop;
+  const caretHeight =
+    spanRect.height || parseFloat(style.lineHeight) || elRect.height;
+
+  document.body.removeChild(div);
+
+  return new DOMRect(
+    caretX,
+    caretY,
+    0, // width doesn't matter, we offset button ourselves
+    caretHeight
+  );
+}
