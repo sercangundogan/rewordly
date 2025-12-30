@@ -6,7 +6,24 @@
 
 import { createRewordlyAPIUtil, RewordlyAPIUtil } from './utils/api';
 import { RewordlyConfig, GrammarError, GrammarCheckResponse, IPlatformAdapter } from './types';
-import { createPlatformAdapter } from './adapters';
+import {
+  FloatingButtonHelper,
+  ModalHelper,
+  HighlightContainerHelper,
+  isEditableElement,
+  isElementVisible,
+  getElementId,
+  findAllEditableElements,
+  findEditableInElement,
+  findEditableInShadowDOM,
+  shouldIgnoreElement,
+  loadConfig,
+  isPageDisabled,
+  isGrammarCheckAllowedSite,
+  createPlatformAdapterForSite,
+  generateErrorId,
+  checkGrammarAPI,
+} from './helpers';
 
 class RewordlyContentScript {
   private config: RewordlyConfig = {
@@ -14,10 +31,17 @@ class RewordlyContentScript {
     rewriteEnabled: true
   };
   
+  // UI Helpers
+  private floatingButtonHelper: FloatingButtonHelper;
+  private modalHelper: ModalHelper;
+  
+  // Highlight Helper
+  private highlightHelper: HighlightContainerHelper;
+  
+  // Legacy references (deprecated - use helpers instead)
   private floatingButton: HTMLDivElement | null = null;
   private modal: HTMLDivElement | null = null;
   private selectedText: string = '';
-  private isProcessing: boolean = false;
   private isModalOpen: boolean = false; // Add flag to track modal state
   private currentOperation: 'rewrite' | 'grammar' = 'rewrite'; // Track current operation
   private observer: MutationObserver | null = null;
@@ -55,8 +79,7 @@ class RewordlyContentScript {
   private boundHandleFocus = this.handleFocus.bind(this);
   private boundHandleBlur = this.handleBlur.bind(this);
 
-  // Error ID counter for generating unique IDs
-  private errorIdCounter = 0;
+  // Error ID counter removed - use generateErrorId() from helpers instead
 
   // Platform adapter (handles Google Docs, Reddit, Notion, etc.)
   private platformAdapter: IPlatformAdapter | null = null;
@@ -97,48 +120,18 @@ class RewordlyContentScript {
     // Initialize WebSocket API (production server with WSS)
     // Using wss://rewordly.store with Let's Encrypt SSL certificate
     this.apiUtil = createRewordlyAPIUtil('wss://rewordly.store');
+    
+    // Initialize helpers
+    this.floatingButtonHelper = new FloatingButtonHelper();
+    this.modalHelper = new ModalHelper();
+    this.highlightHelper = new HighlightContainerHelper();
+    
     this.init();
-  }
-
-  /**
-   * Generate a unique ID for an error
-   */
-  private generateErrorId(): string {
-    return `error-${Date.now()}-${this.errorIdCounter++}`;
-  }
-
-  /**
-   * Check if the current page is disabled
-   */
-  private async isPageDisabled(): Promise<boolean> {
-    try {
-      const result = await chrome.storage.sync.get(['rewordlyDisabledPages']);
-      const disabledPages: string[] = result['rewordlyDisabledPages'] || [];
-      
-      const currentUrl = window.location.href;
-      const currentOrigin = window.location.origin;
-      
-      // Check if exact URL or origin is disabled
-      return disabledPages.some(disabledUrl => {
-        // Exact URL match
-        if (disabledUrl === currentUrl) {
-          return true;
-        }
-        // Origin match (for disabling entire domain)
-        if (disabledUrl === currentOrigin) {
-          return true;
-        }
-        return false;
-      });
-    } catch (error) {
-      console.error('Failed to check if page is disabled:', error);
-      return false;
-    }
   }
 
   private async init(): Promise<void> {
     // Check if this page is disabled - if so, don't initialize at all
-    const pageDisabled = await this.isPageDisabled();
+    const pageDisabled = await isPageDisabled();
     if (pageDisabled) {
       return;
     }
@@ -169,7 +162,7 @@ class RewordlyContentScript {
     }
     
     // Load configuration from storage
-    await this.loadConfig();
+    this.config = await loadConfig();
     
     // Set up event listeners
     this.setupEventListeners();
@@ -180,14 +173,14 @@ class RewordlyContentScript {
     // Set up platform-specific adapter
     this.setupPlatformAdapter();
     
-    // Create floating button (initially hidden)
-    this.createFloatingButton();
+    // Create UI elements using helpers
+    this.floatingButtonHelper.create();
+    this.modalHelper.create();
+    this.highlightHelper.create();
     
-    // Create modal (initially hidden)
-    this.createModal();
-    
-    // Create Grammarly-style highlights container
-    this.createHighlightsContainer();
+    // Legacy references for backward compatibility
+    this.floatingButton = this.floatingButtonHelper['button'];
+    this.modal = this.modalHelper['modal'];
     
     // Set up scroll/resize listeners for highlights
     this.setupHighlightsUpdateListeners();
@@ -199,17 +192,12 @@ class RewordlyContentScript {
     this.setupMessageListener();
   }
 
+  /**
+   * Load config
+   * @deprecated Use loadConfig() from helpers instead
+   */
   private async loadConfig(): Promise<void> {
-    try {
-      const result = await chrome.storage.sync.get(['rewordlyHighlightsEnabled', 'rewordlyRewriteEnabled']);
-      
-      // Use environment variables as defaults if not set in storage
-      this.config.highlightsEnabled = result['rewordlyHighlightsEnabled'] !== false;
-      this.config.rewriteEnabled = result['rewordlyRewriteEnabled'] !== false;
-
-    } catch (error) {
-      console.error('Failed to load Rewordly config:', error);
-    }
+    this.config = await loadConfig();
   }
 
   private setupEventListeners(): void {
@@ -366,134 +354,38 @@ class RewordlyContentScript {
 
   /**
    * Find editable elements within an element (including Shadow DOM)
+   * @deprecated Use findEditableInElement() from helpers instead
    */
   private findEditableInElement(element: HTMLElement): void {
-    // Regular querySelector
-    const editableChildren = element.querySelectorAll(`
-      input[type="text"], 
-      input[type="email"], 
-      input[type="search"], 
-      input:not([type]), 
-      input[type="url"],
-      textarea, 
-      [contenteditable="true"],
-      [contenteditable=""],
-      [contenteditable]
-    `);
-    
-    editableChildren.forEach((child) => {
-      this.attachToEditableElement(child as HTMLElement);
-    });
-    
-    // Check Shadow DOM
-    if (element.shadowRoot) {
-      const shadowEditable = element.shadowRoot.querySelectorAll(`
-        input[type="text"], 
-        input[type="email"], 
-        input[type="search"], 
-        input:not([type]), 
-        input[type="url"],
-        textarea, 
-        [contenteditable="true"],
-        [contenteditable=""],
-        [contenteditable]
-      `);
-      
-      shadowEditable.forEach((child) => {
-        this.attachToEditableElement(child as HTMLElement);
-      });
-    }
-    
-    // Recursively check for elements with shadow roots
-    const allElements = element.querySelectorAll('*');
-    allElements.forEach((el) => {
-      if ((el as HTMLElement).shadowRoot) {
-        this.findEditableInElement(el as HTMLElement);
-      }
+    const editableElements = findEditableInElement(element);
+    editableElements.forEach(el => {
+      this.attachToEditableElement(el);
     });
   }
 
   /**
    * Find all editable elements and attach listeners
+   * @deprecated Use findAllEditableElements() from helpers instead
    */
   private findAndAttachToEditableElements(): void {
-    // More comprehensive selector to catch all editable elements
-    const inputs = document.querySelectorAll(`
-      input[type="text"], 
-      input[type="email"], 
-      input[type="search"], 
-      input:not([type]), 
-      input[type="url"],
-      textarea, 
-      [contenteditable="true"],
-      [contenteditable=""],
-      [contenteditable]
-    `);
-    
-    // Also check all elements for contenteditable (some sites set it dynamically)
-    const allElements = document.querySelectorAll('*');
-    const contentEditableElements: HTMLElement[] = [];
-    allElements.forEach((el) => {
-      const htmlEl = el as HTMLElement;
-      if (htmlEl.isContentEditable || htmlEl.getAttribute('contenteditable') === 'true' || htmlEl.getAttribute('contenteditable') === '') {
-        contentEditableElements.push(htmlEl);
-      }
-    });
-    
-    // Combine and deduplicate
-    const allEditable = new Set([...inputs, ...contentEditableElements]);
-        
-    allEditable.forEach((element) => {
-      const el = element as HTMLElement;
-      this.attachToEditableElement(el);
+    const allEditable = findAllEditableElements();
+    allEditable.forEach(element => {
+      this.attachToEditableElement(element);
     });
     
     // Check Shadow DOM
-    this.findEditableInShadowDOM(document.body);
-  }
-
-  /**
-   * Find editable elements in Shadow DOM
-   */
-  private findEditableInShadowDOM(root: Node): void {
-    if (!root) return;
-    
-    // Walk the tree
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
-    let node: Node | null;
-    
-    while ((node = walker.nextNode())) {
-      const element = node as HTMLElement;
-      
-      // Check if element itself is editable
-      if (this.isEditableElement(element)) {
-        this.attachToEditableElement(element);
-      }
-      
-      // Check Shadow DOM
-      if (element.shadowRoot) {
-        this.findEditableInShadowDOM(element.shadowRoot);
-      }
-    }
+    const shadowEditable = findEditableInShadowDOM(document.body);
+    shadowEditable.forEach(element => {
+      this.attachToEditableElement(element);
+    });
   }
 
   /**
    * Check if element is editable
+   * @deprecated Use isEditableElement() from helpers instead
    */
   private isEditableElement(element: HTMLElement): boolean {
-    if (element instanceof HTMLInputElement) {
-      const type = element.type.toLowerCase();
-      return type === 'text' || type === 'email' || type === 'search' || type === '' || type === 'url';
-    }
-    if (element instanceof HTMLTextAreaElement) {
-      return true;
-    }
-    // Check for contenteditable (can be "true", "", or just present)
-    const contentEditable = element.getAttribute('contenteditable');
-    if (contentEditable === 'true' || contentEditable === '' || (contentEditable !== null && contentEditable !== 'false')) {
-      return true;
-    }
-    return false;
+    return isEditableElement(element);
   }
 
   /**
@@ -511,8 +403,8 @@ class RewordlyContentScript {
     this.editableElements.add(element);
     
     // Check if this element should be ignored (e.g., Gmail's "To" field)
-    if (this.shouldIgnoreElement(element)) {
-      const elementId = this.getElementId(element);
+    if (shouldIgnoreElement(element)) {
+      const elementId = getElementId(element);
       this.ignoredElementIds.add(elementId);
       return; // Don't attach grammar checking to ignored elements
     }
@@ -580,7 +472,7 @@ class RewordlyContentScript {
     }
     
     // Check if element is visible
-    const isVisible = this.isElementVisible(element);
+    const isVisible = isElementVisible(element);
     
     if (isVisible) {
       // Element is visible, queue grammar check
@@ -623,28 +515,10 @@ class RewordlyContentScript {
   
   /**
    * Check if element is visible in viewport
+   * @deprecated Use isElementVisible() from helpers instead
    */
   private isElementVisible(element: HTMLElement): boolean {
-    if (!element) return false;
-    
-    const rect = element.getBoundingClientRect();
-    const style = window.getComputedStyle(element);
-    
-    // Check if element has display: none or visibility: hidden
-    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
-      return false;
-    }
-    
-    // Check if element has dimensions
-    if (rect.width === 0 && rect.height === 0) {
-      return false;
-    }
-    
-    // Check if element is in viewport (at least partially)
-    const isInViewport = rect.top < window.innerHeight && rect.bottom > 0 && 
-                         rect.left < window.innerWidth && rect.right > 0;
-    
-    return isInViewport;
+    return isElementVisible(element);
   }
 
   /**
@@ -1218,7 +1092,7 @@ class RewordlyContentScript {
       
       // Map errors to include id field
       const errorsWithId: GrammarError[] = result.errors.map((error) => ({
-        id: this.generateErrorId(),
+        id: generateErrorId(),
         start: error.start,
         end: error.end,
         word: error.word,
@@ -1316,7 +1190,7 @@ class RewordlyContentScript {
       
       // Map errors to include id field (required by GrammarError interface)
       const errorsWithId: GrammarError[] = result.errors.map((error) => ({
-        id: this.generateErrorId(),
+        id: generateErrorId(),
         start: error.start,
         end: error.end,
         word: error.word,
@@ -1359,7 +1233,7 @@ class RewordlyContentScript {
       const start = text.indexOf(' goes ', goesIndex);
       if (start !== -1) {
         errors.push({
-          id: this.generateErrorId(),
+          id: generateErrorId(),
           start: start + 1,
           end: start + 5,
           word: 'goes',
@@ -1377,7 +1251,7 @@ class RewordlyContentScript {
       if (buyedIndex === -1) break;
       
       errors.push({
-        id: this.generateErrorId(),
+        id: generateErrorId(),
         start: buyedIndex,
         end: buyedIndex + 5,
         word: 'buyed',
@@ -1405,7 +1279,7 @@ class RewordlyContentScript {
           const start = text.indexOf(' have ', haveIndex);
           if (start !== -1) {
             errors.push({
-              id: this.generateErrorId(),
+              id: generateErrorId(),
               start: start + 1,
               end: start + 5,
               word: 'have',
@@ -1434,7 +1308,7 @@ class RewordlyContentScript {
           const start = text.indexOf(' was ', wasIndex);
           if (start !== -1) {
             errors.push({
-              id: this.generateErrorId(),
+              id: generateErrorId(),
               start: start + 1,
               end: start + 4,
               word: 'was',
@@ -1463,7 +1337,7 @@ class RewordlyContentScript {
           const start = text.indexOf(' do ', doIndex);
           if (start !== -1) {
             errors.push({
-              id: this.generateErrorId(),
+              id: generateErrorId(),
               start: start + 1,
               end: start + 3,
               word: 'do',
@@ -1492,7 +1366,7 @@ class RewordlyContentScript {
           const start = text.indexOf(' are ', areIndex);
           if (start !== -1) {
             errors.push({
-              id: this.generateErrorId(),
+              id: generateErrorId(),
               start: start + 1,
               end: start + 4,
               word: 'are',
@@ -1616,7 +1490,7 @@ class RewordlyContentScript {
     // Ensure all errors have unique IDs (assign if missing from API response)
     const errorsWithIds = errors.map(error => {
       if (!error.id) {
-        return { ...error, id: this.generateErrorId() };
+        return { ...error, id: generateErrorId() };
       }
       return error;
     });
@@ -1932,13 +1806,10 @@ class RewordlyContentScript {
 
   /**
    * Check if grammar check is allowed on the current site
-   * Delegates to platform adapter
+   * Delegates to helper function
    */
   private isGrammarCheckAllowedSite(): boolean {
-    if (this.platformAdapter) {
-      return this.platformAdapter.isGrammarCheckEnabled();
-    }
-    return false;
+    return isGrammarCheckAllowedSite();
   }
 
   /**
@@ -1948,30 +1819,23 @@ class RewordlyContentScript {
     // Create grammar check callback
     const onGrammarCheck = async (text: string): Promise<GrammarError[]> => {
       try {
-        const response = await this.checkGrammarAPI(text);
+        const response = await checkGrammarAPI(this.apiUtil, text);
         
         // Check if detected language is English
         if (response.detectedLanguage && !response.detectedLanguage.code.toLowerCase().startsWith('en')) {
           return [];
         }
         
-        // Map errors to include id field
-        return response.errors.map((error) => ({
-          id: this.generateErrorId(),
-          start: error.start,
-          end: error.end,
-          word: error.word,
-          suggestions: error.suggestions,
-          type: error.type,
-        }));
+        // Errors already have IDs from checkGrammarAPI
+        return response.errors;
       } catch (error) {
         console.error('Rewordly: Grammar check error:', error);
         return [];
       }
     };
 
-    // Create platform adapter
-    this.platformAdapter = createPlatformAdapter(onGrammarCheck);
+    // Create platform adapter using helper
+    this.platformAdapter = createPlatformAdapterForSite(onGrammarCheck);
     
     if (this.platformAdapter && this.platformAdapter.isGrammarCheckEnabled()) {
       console.log(`Rewordly: Initializing ${this.platformAdapter.platform} adapter`);
@@ -4019,18 +3883,11 @@ class RewordlyContentScript {
       
       return [errorFallbackRect];
     }
-
-    // This should never be reached, but just in case
-    console.error('Rewordly: All fallback methods failed, returning empty array');
-    return [];
+    
   }
 
   private isElementIgnored(element: HTMLElement): boolean {
     return this.ignoredElementIds.has(this.getElementId(element));
-  }
-
-  private shouldIgnoreElement(element: HTMLElement): boolean {
-    return this.isElementIgnored(element);
   }
   
   private isErrorDismissed(element: HTMLElement, error: GrammarError): boolean {
@@ -6477,125 +6334,6 @@ class RewordlyContentScript {
     }
   }
 
-  private createFloatingButton(): void {
-    this.floatingButton = document.createElement('div');
-    this.floatingButton.className = 'rewordly-floating-button-container';
-    this.floatingButton.innerHTML = `
-      <button class="rewordly-ai-btn">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 56 56" width="16" height="16">
-          <path d="M 26.6875 12.6602 C 26.9687 12.6602 27.1094 12.4961 27.1797 12.2383 C 27.9062 8.3242 27.8594 8.2305 31.9375 7.4570 C 32.2187 7.4102 32.3828 7.2461 32.3828 6.9648 C 32.3828 6.6836 32.2187 6.5195 31.9375 6.4726 C 27.8828 5.6524 28.0000 5.5586 27.1797 1.6914 C 27.1094 1.4336 26.9687 1.2695 26.6875 1.2695 C 26.4062 1.2695 26.2656 1.4336 26.1953 1.6914 C 25.3750 5.5586 25.5156 5.6524 21.4375 6.4726 C 21.1797 6.5195 20.9922 6.6836 20.9922 6.9648 C 20.9922 7.2461 21.1797 7.4102 21.4375 7.4570 C 25.5156 8.2774 25.4687 8.3242 26.1953 12.2383 C 26.2656 12.4961 26.4062 12.6602 26.6875 12.6602 Z M 15.3438 28.7852 C 15.7891 28.7852 16.0938 28.5039 16.1406 28.0821 C 16.9844 21.8242 17.1953 21.8242 23.6641 20.5821 C 24.0860 20.5117 24.3906 20.2305 24.3906 19.7852 C 24.3906 19.3633 24.0860 19.0586 23.6641 18.9883 C 17.1953 18.0977 16.9609 17.8867 16.1406 11.5117 C 16.0938 11.0899 15.7891 10.7852 15.3438 10.7852 C 14.9219 10.7852 14.6172 11.0899 14.5703 11.5352 C 13.7969 17.8164 13.4687 17.7930 7.0469 18.9883 C 6.6250 19.0821 6.3203 19.3633 6.3203 19.7852 C 6.3203 20.2539 6.6250 20.5117 7.1406 20.5821 C 13.5156 21.6133 13.7969 21.7774 14.5703 28.0352 C 14.6172 28.5039 14.9219 28.7852 15.3438 28.7852 Z M 31.2344 54.7305 C 31.8438 54.7305 32.2891 54.2852 32.4062 53.6524 C 34.0703 40.8086 35.8750 38.8633 48.5781 37.4570 C 49.2344 37.3867 49.6797 36.8945 49.6797 36.2852 C 49.6797 35.6758 49.2344 35.2070 48.5781 35.1133 C 35.8750 33.7070 34.0703 31.7617 32.4062 18.9180 C 32.2891 18.2852 31.8438 17.8633 31.2344 17.8633 C 30.6250 17.8633 30.1797 18.2852 30.0860 18.9180 C 28.4219 31.7617 26.5938 33.7070 13.9140 35.1133 C 13.2344 35.2070 12.7891 35.6758 12.7891 36.2852 C 12.7891 36.8945 13.2344 37.3867 13.9140 37.4570 C 26.5703 39.1211 28.3281 40.8321 30.0860 53.6524 C 30.1797 54.2852 30.6250 54.7305 31.2344 54.7305 Z"/>
-        </svg>
-      </button>
-    `;
-    
-    // Create tooltip element
-    const tooltip = document.createElement('span');
-    tooltip.className = 'rewordly-ai-tooltip';
-    tooltip.textContent = 'AI Rewrite';
-    document.body.appendChild(tooltip);
-    
-    const aiBtn = this.floatingButton.querySelector('.rewordly-ai-btn') as HTMLButtonElement;
-    
-    // Handle click - always trigger rewrite
-    // Use mousedown to prevent blur from hiding button before click
-    aiBtn.addEventListener('mousedown', (e) => {
-      e.preventDefault(); // Prevent blur
-      e.stopPropagation();
-    });
-    
-    aiBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      this.handleRewriteClick();
-    });
-    
-    // Tooltip functionality
-    const showTooltip = () => {
-      const rect = aiBtn.getBoundingClientRect();
-      const tooltipLeft = rect.left + (rect.width / 2);
-      const tooltipTop = rect.top - 5;
-      tooltip.style.left = `${tooltipLeft}px`;
-      tooltip.style.top = `${tooltipTop}px`;
-      tooltip.classList.add('show');
-    };
-    
-    const hideTooltip = () => {
-      tooltip.classList.remove('show');
-    };
-    
-    aiBtn.addEventListener('mouseenter', showTooltip);
-    aiBtn.addEventListener('mouseleave', hideTooltip);
-    
-    // Update tooltip position on scroll/resize
-    const updateTooltipPosition = () => {
-      if (tooltip.classList.contains('show')) {
-        const rect = aiBtn.getBoundingClientRect();
-        const tooltipLeft = rect.left + (rect.width / 2);
-        const tooltipTop = rect.top - 5;
-        tooltip.style.left = `${tooltipLeft}px`;
-        tooltip.style.top = `${tooltipTop}px`;
-      }
-    };
-    
-    window.addEventListener('scroll', updateTooltipPosition, true);
-    window.addEventListener('resize', updateTooltipPosition);
-    
-    document.body.appendChild(this.floatingButton);
-  }
-
-  private createModal(): void {
-    this.modal = document.createElement('div');
-    this.modal.className = 'rewordly-modal';
-    this.modal.innerHTML = `
-      <div class="rewordly-modal-content">
-        <div class="rewordly-modal-header">
-          <h3 class="rewordly-modal-title">Rewordly</h3>
-          <button class="rewordly-close-btn">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
-              <path d="M7 17L16.8995 7.10051" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M7 7.00001L16.8995 16.8995" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
-        </div>
-        <div class="rewordly-modal-body">
-          <div class="rewordly-original">
-            <h4>Original Text:</h4>
-            <p class="rewordly-original-text"></p>
-          </div>
-          <div class="rewordly-rewritten">
-            <h4 class="rewordly-result-title">Rewritten Text:</h4>
-            <div class="rewordly-loading" style="display: none;">
-              <div class="rewordly-spinner"></div>
-              <p class="rewordly-loading-text">Processing...</p>
-            </div>
-            <p class="rewordly-rewritten-text"></p>
-          </div>
-        </div>
-        <div class="rewordly-modal-footer">
-          <button class="rewordly-copy-btn">Copy</button>
-          <!-- <button class="rewordly-replace-btn">Replace</button> -->
-        </div>
-      </div>
-    `;
-    
-    // Add event listeners
-    const closeBtn = this.modal.querySelector('.rewordly-close-btn') as HTMLButtonElement;
-    const copyBtn = this.modal.querySelector('.rewordly-copy-btn') as HTMLButtonElement;
-    
-    closeBtn.addEventListener('click', this.hideModal.bind(this));
-    copyBtn.addEventListener('click', this.copyRewrittenText.bind(this));
-    
-    // Add click handler to modal backdrop to close when clicking outside content
-    this.modal.addEventListener('click', (event) => {
-      // Only close if clicking on the backdrop itself, not on the content
-      if (event.target === this.modal) {
-        this.hideModal();
-      }
-    });
-    
-    document.body.appendChild(this.modal);
-  }
-
   /**
    * Check if element is single-line (approximately)
    * Uses multiple heuristics for reliable detection across different platforms
@@ -7232,47 +6970,6 @@ class RewordlyContentScript {
     );
   }
 
-  private async handleRewriteClick(): Promise<void> {
-    if (this.isProcessing) {
-      return;
-    }
-
-    // Get text from current editable element
-    let textToRewrite = '';
-    const currentElement = (this.floatingButton as any)?.__currentElement as HTMLElement | undefined;
-    
-    if (currentElement) {
-      if (currentElement instanceof HTMLInputElement || currentElement instanceof HTMLTextAreaElement) {
-        textToRewrite = currentElement.value;
-      } else if (currentElement.getAttribute('contenteditable') === 'true' || currentElement.isContentEditable) {
-        textToRewrite = currentElement.innerText || currentElement.textContent || '';
-      }
-    } else {
-      // Fallback to selectedText if no element
-      textToRewrite = this.selectedText;
-    }
-
-    if (!textToRewrite || textToRewrite.trim().length < 3) {
-      return;
-    }
-
-    this.currentOperation = 'rewrite';
-    this.selectedText = textToRewrite;
-    // Don't hide button immediately - let blur handle it if needed
-    this.showModal();
-    this.isProcessing = true;
-
-    try {
-      const rewrittenText = await this.rewriteText(textToRewrite);
-      this.displayRewrittenText(rewrittenText);
-    } catch (error) {
-      console.error('Rewordly: Error rewriting text:', error);
-      this.showError('Failed to rewrite text. Please try again.');
-    } finally {
-      this.isProcessing = false;
-    }
-  }
-
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   // @ts-ignore - Kept for compatibility, no longer used
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -7293,7 +6990,6 @@ class RewordlyContentScript {
     this.currentOperation = 'rewrite';
     this.selectedText = selectedText;
     this.showModal();
-    this.isProcessing = true;
 
     try {
       const rewrittenText = await this.rewriteText(selectedText);
@@ -7301,8 +6997,6 @@ class RewordlyContentScript {
     } catch (error) {
       console.error('Rewordly: Error rewriting text:', error);
       this.showError('Failed to rewrite text. Please try again.');
-    } finally {
-      this.isProcessing = false;
     }
   }
 
@@ -7317,7 +7011,6 @@ class RewordlyContentScript {
     this.currentOperation = 'grammar';
     this.selectedText = selectedText;
     this.showModal();
-    this.isProcessing = true;
 
     try {
       const correctedText = await this.grammarText(selectedText);
@@ -7326,7 +7019,6 @@ class RewordlyContentScript {
       console.error('Rewordly: Error checking grammar:', error);
       this.showError('Failed to check grammar. Please try again.');
     } finally {
-      this.isProcessing = false;
     }
   }
 
@@ -7466,34 +7158,6 @@ class RewordlyContentScript {
       modalTitle.textContent = 'Rewordly';
       resultTitle.textContent = 'Rewritten Text:';
       loadingText.textContent = 'Rewriting...';
-    }
-  }
-
-  private copyRewrittenText(): void {
-    if (!this.modal) return;
-
-    const rewrittenText = this.modal.querySelector('.rewordly-rewritten-text') as HTMLParagraphElement;
-    const text = rewrittenText.textContent;
-
-    if (text && text !== '') {
-      // Clean the text by removing quotes from start and end
-      const cleanText = text.trim().replace(/^["']|["']$/g, '');
-      
-      navigator.clipboard.writeText(cleanText).then(() => {
-        // Show success feedback
-        const copyBtn = this.modal?.querySelector('.rewordly-copy-btn') as HTMLButtonElement;
-        if (copyBtn) {
-          const originalText = copyBtn.textContent;
-          copyBtn.textContent = 'Copied!';
-          copyBtn.style.background = '#10b981';
-          setTimeout(() => {
-            copyBtn.textContent = originalText;
-            copyBtn.style.background = '';
-          }, 2000);
-        }
-      }).catch(err => {
-        console.error('Failed to copy text:', err);
-      });
     }
   }
 }
