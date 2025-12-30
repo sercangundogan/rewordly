@@ -5,33 +5,8 @@
  */
 
 import { createRewordlyAPIUtil, RewordlyAPIUtil } from './utils/api';
-
-interface RewordlyConfig {
-  highlightsEnabled: boolean;
-  rewriteEnabled: boolean;
-}
-
-/**
- * Grammar error with unique ID for reliable tracking.
- * The ID persists across position updates, enabling correct handling of duplicate words.
- */
-interface GrammarError {
-  id: string; // Unique identifier for this error instance (persists across replacements)
-  start: number; // Start position in text (may be updated after other replacements)
-  end: number; // End position in text (may be updated after other replacements)
-  word: string; // The error word/phrase
-  suggestions: string[]; // Correction suggestions
-  type: 'grammar' | 'spelling'; // Error type
-}
-
-interface GrammarCheckResponse {
-  errors: GrammarError[];
-  corrected: string;
-  detectedLanguage?: {
-    code: string;
-    name: string;
-  };
-}
+import { RewordlyConfig, GrammarError, GrammarCheckResponse, IPlatformAdapter } from './types';
+import { createPlatformAdapter } from './adapters';
 
 class RewordlyContentScript {
   private config: RewordlyConfig = {
@@ -83,6 +58,9 @@ class RewordlyContentScript {
   // Error ID counter for generating unique IDs
   private errorIdCounter = 0;
 
+  // Platform adapter (handles Google Docs, Reddit, Notion, etc.)
+  private platformAdapter: IPlatformAdapter | null = null;
+
   // Track if we're currently performing a replace operation (to prevent blur from hiding highlights)
   private isPerformingReplace = false;
   
@@ -113,6 +91,7 @@ class RewordlyContentScript {
 
   // WebSocket API instance
   private apiUtil: RewordlyAPIUtil;
+
 
   constructor() {
     // Initialize WebSocket API (production server with WSS)
@@ -197,6 +176,9 @@ class RewordlyContentScript {
     
     // Set up real-time grammar checking for editable elements
     this.setupRealtimeGrammarCheck();
+    
+    // Set up platform-specific adapter
+    this.setupPlatformAdapter();
     
     // Create floating button (initially hidden)
     this.createFloatingButton();
@@ -668,69 +650,20 @@ class RewordlyContentScript {
   /**
    * Remove Gmail's spell check markers (spans with aria-invalid)
    */
-  private removeGmailSpellCheckMarkers(element: HTMLElement): void {
-    // Find all spans with aria-invalid attribute (Gmail's spell check markers)
-    const spellCheckSpans = element.querySelectorAll('span[aria-invalid]');
-    spellCheckSpans.forEach((span) => {
-      const parent = span.parentNode;
-      if (parent) {
-        // Replace span with its text content
-        const textNode = document.createTextNode(span.textContent || '');
-        parent.replaceChild(textNode, span);
-        // Normalize adjacent text nodes
-        parent.normalize();
-      }
-    });
+  /**
+   * Remove Gmail spell check markers
+   * @deprecated Moved to GmailAdapter. This method is kept for backward compatibility.
+   */
+  private removeGmailSpellCheckMarkers(_element: HTMLElement): void {
+    // Moved to GmailAdapter
   }
 
   /**
    * Set up observer to watch for Gmail adding spell check markers
+   * @deprecated Moved to GmailAdapter. This method is kept for backward compatibility.
    */
-  private setupGmailSpellCheckObserver(element: HTMLElement): void {
-    // Only set up observer once per element
-    if ((element as any).__rewordlyGmailObserver) {
-      return;
-    }
-
-    const observer = new MutationObserver((mutations) => {
-      mutations.forEach((mutation) => {
-        mutation.addedNodes.forEach((node) => {
-          if (node.nodeType === Node.ELEMENT_NODE) {
-            const el = node as HTMLElement;
-            // Check if it's a spell check span
-            if (el.tagName === 'SPAN' && el.hasAttribute('aria-invalid')) {
-              // Remove the spell check marker
-              const parent = el.parentNode;
-              if (parent) {
-                const textNode = document.createTextNode(el.textContent || '');
-                parent.replaceChild(textNode, el);
-                parent.normalize();
-              }
-            }
-            // Also check children
-            const spellCheckSpans = el.querySelectorAll('span[aria-invalid]');
-            spellCheckSpans.forEach((span) => {
-              const parent = span.parentNode;
-              if (parent) {
-                const textNode = document.createTextNode(span.textContent || '');
-                parent.replaceChild(textNode, span);
-                parent.normalize();
-              }
-            });
-          }
-        });
-      });
-    });
-
-    observer.observe(element, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['aria-invalid', 'class']
-    });
-
-    // Store observer reference for cleanup
-    (element as any).__rewordlyGmailObserver = observer;
+  private setupGmailSpellCheckObserver(_element: HTMLElement): void {
+    // Moved to GmailAdapter
   }
 
   /**
@@ -1127,8 +1060,20 @@ class RewordlyContentScript {
    * This prevents grammar checking on email signatures which contain formatting
    * that can trigger false positives (like whitespace, special characters, etc.)
    * Preserves line breaks by using innerText which properly handles <br> tags and block elements.
+   * Also handles Google Docs virtual elements specially.
    */
   private extractTextExcludingSignature(element: HTMLElement): { text: string; textSource: 'value' | 'textContent' | 'innerText' } {
+    // Check if this is a Google Docs virtual element
+    if ((element as any).__rewordlyIsGoogleDocs && (element as any).__rewordlyGoogleDocsContainer) {
+      // For Google Docs, use the textContent that was set on the virtual element
+      // This text was already filtered by getGoogleDocsText() function
+      const text = element.textContent || element.innerText || '';
+      return {
+        text: text,
+        textSource: 'textContent'
+      };
+    }
+    
     if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
       return {
         text: element.value,
@@ -1657,12 +1602,15 @@ class RewordlyContentScript {
    * Display grammar errors on an element using Grammarly-style highlights
    */
   private displayGrammarErrors(element: HTMLElement, errors: GrammarError[]): void {
+    const isGoogleDocsElement = (element as any).__rewordlyIsGoogleDocs === true;
     console.log('Rewordly: displayGrammarErrors called', {
       errorsCount: errors.length,
       errors: errors,
       element: element.tagName,
       elementId: this.getElementId(element),
-      stackTrace: new Error().stack
+      isGoogleDocs: isGoogleDocsElement,
+      hasContainer: !!(element as any).__rewordlyGoogleDocsContainer,
+      elementTextPreview: (element.textContent || element.innerText || '').substring(0, 100)
     });
     
     // Ensure all errors have unique IDs (assign if missing from API response)
@@ -1947,6 +1895,8 @@ class RewordlyContentScript {
     });
 
     // If element has text, ensure all highlights are visible (even if not focused)
+    // For Google Docs, always show highlights
+    const isGoogleDocs = (element as any).__rewordlyIsGoogleDocs === true;
     let hasText = false;
     if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
       hasText = element.value.trim().length > 0;
@@ -1954,166 +1904,21 @@ class RewordlyContentScript {
       hasText = (element.innerText || element.textContent || '').trim().length > 0;
     }
     
-    if (hasText && this.highlightsContent) {
+    if ((isGoogleDocs || hasText) && this.highlightsContent) {
       const elementId = this.getElementId(element);
       const allHighlights = this.highlightsContent.querySelectorAll(`[data-element-id="${elementId}"]`);
       allHighlights.forEach(highlight => {
         (highlight as HTMLElement).style.display = '';
+        (highlight as HTMLElement).style.opacity = '1';
         (highlight as HTMLElement).removeAttribute('data-hidden-by-blur');
+        (highlight as HTMLElement).removeAttribute('data-hidden-by-modal');
+        (highlight as HTMLElement).removeAttribute('data-hidden-by-scroll');
       });
     }
 
     // Update highlights on scroll/resize
     this.updateHighlightsPosition(element);
   }
-
-  /**
-   * Create error overlay for input/textarea elements
-   * @deprecated Use Grammarly-style highlights instead
-   */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  // private createErrorOverlay(element: HTMLInputElement | HTMLTextAreaElement, errors: GrammarError[]): void {
-  //   // Remove existing overlay
-  //   const existingOverlay = document.querySelector(`.rewordly-grammar-overlay[data-element-id="${this.getElementId(element)}"]`);
-  //   if (existingOverlay) {
-  //     existingOverlay.remove();
-  //   }
-
-  //   // Create overlay
-  //   const overlay = document.createElement('div');
-  //   overlay.className = 'rewordly-grammar-overlay';
-  //   overlay.setAttribute('data-element-id', this.getElementId(element));
-    
-  //   // Copy ALL relevant styles from the element to ensure perfect alignment
-  //   const styles = window.getComputedStyle(element);
-    
-  //   // Get all CSS properties that affect text rendering
-  //   const cssProperties = [
-  //     'direction', 'text-align', 'text-indent', 'text-decoration', 'text-shadow',
-  //     'font-family', 'font-size', 'font-weight', 'font-style', 'font-variant',
-  //     'font-stretch', 'font-size-adjust', 'line-height', 'letter-spacing', 
-  //     'word-spacing', 'text-transform', 'white-space', 'word-wrap', 'word-break',
-  //     'overflow-wrap', 'hyphens', 'tab-size', 'text-rendering',
-  //     'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
-  //     'border', 'border-top', 'border-right', 'border-bottom', 'border-left',
-  //     'box-sizing', 'width', 'min-width', 'max-width'
-  //   ];
-    
-  //   let overlayStyles = 'position: absolute !important; pointer-events: none !important; z-index: 2147483645 !important; color: transparent !important; background: transparent !important; border-color: transparent !important;';
-    
-  //   cssProperties.forEach(prop => {
-  //     const value = styles.getPropertyValue(prop);
-  //     if (value) {
-  //       overlayStyles += `${prop}: ${value} !important; `;
-  //     }
-  //   });
-    
-  //   // Ensure white-space matches element
-  //   const whiteSpace = element instanceof HTMLInputElement ? 'pre' : (styles.whiteSpace || 'pre-wrap');
-  //   overlayStyles += `white-space: ${whiteSpace} !important; `;
-  //   overlayStyles += `word-wrap: ${styles.wordWrap || 'break-word'} !important; `;
-  //   overlayStyles += `overflow: hidden !important; `;
-    
-  //   overlay.style.cssText = overlayStyles;
-
-  //   // Position overlay exactly over the element using absolute positioning
-  //   // Find the best parent container for the overlay
-  //   const parentContainer = this.findOverlayParent(element);
-    
-  //   // Ensure parent has position: relative
-  //   const parentStyles = window.getComputedStyle(parentContainer);
-  //   if (parentStyles.position === 'static') {
-  //     parentContainer.style.position = 'relative';
-  //   }
-    
-  //   // Calculate position relative to parent
-  //   const elementRect = element.getBoundingClientRect();
-  //   const parentRect = parentContainer.getBoundingClientRect();
-    
-  //   // Use scrollWidth to ensure overlay covers all text
-  //   const scrollWidth = element.scrollWidth || elementRect.width;
-  //   const scrollHeight = element.scrollHeight || elementRect.height;
-    
-  //   // Position relative to parent
-  //   overlay.style.top = `${elementRect.top - parentRect.top}px`;
-  //   overlay.style.left = `${elementRect.left - parentRect.left}px`;
-  //   overlay.style.width = `${Math.max(elementRect.width, scrollWidth)}px`;
-  //   overlay.style.height = `${Math.max(elementRect.height, scrollHeight)}px`;
-  //   overlay.style.minHeight = `${Math.max(elementRect.height, scrollHeight)}px`;
-
-  //   // Create text with error highlights
-  //   const text = element.value;
-  //   const errorSpans: string[] = [];
-    
-  //   // Sort errors by position
-  //   const sortedErrors = [...errors].sort((a, b) => a.start - b.start);
-    
-  //   let lastIndex = 0;
-  //   for (const error of sortedErrors) {
-  //     // Add text before error
-  //     errorSpans.push(this.escapeHtml(text.substring(lastIndex, error.start)));
-      
-  //     // Add error word with underline - use exact substring
-  //     const errorWord = text.substring(error.start, error.end);
-  //     errorSpans.push(`<span class="rewordly-grammar-error" style="border-bottom: 2px solid #ef4444 !important; cursor: pointer !important; background: rgba(239, 68, 68, 0.1) !important; display: inline !important;" data-error="${this.escapeHtml(JSON.stringify(error))}">${this.escapeHtml(errorWord)}</span>`);
-      
-  //     lastIndex = error.end;
-  //   }
-    
-  //   // Add remaining text
-  //   errorSpans.push(this.escapeHtml(text.substring(lastIndex)));
-    
-  //   overlay.innerHTML = errorSpans.join('');
-    
-  //   // Enable pointer events on error spans for hover interaction
-  //   const errorSpansElements = overlay.querySelectorAll('.rewordly-grammar-error');
-  //   errorSpansElements.forEach(span => {
-  //     (span as HTMLElement).style.pointerEvents = 'auto';
-  //     (span as HTMLElement).style.cursor = 'pointer';
-  //   });
-    
-  //   // Attach hover event listeners to error spans
-  //   this.attachGrammarErrorHoverListeners(overlay, element);
-    
-  //   // Append to parent container (not body) for absolute positioning
-  //   parentContainer.appendChild(overlay);
-    
-  //   // Force a reflow to ensure styles are applied
-  //   void overlay.offsetHeight;
-    
-  //   // Update overlay position on scroll/resize
-  //   // For absolute positioning, calculate relative to parent
-  //   const updatePosition = () => {
-  //     const parentContainer = overlay.parentElement || this.findOverlayParent(element);
-  //     const newElementRect = element.getBoundingClientRect();
-  //     const newParentRect = parentContainer.getBoundingClientRect();
-  //     const newScrollWidth = element.scrollWidth || newElementRect.width;
-  //     const newScrollHeight = element.scrollHeight || newElementRect.height;
-      
-  //     // Calculate position relative to parent, accounting for scroll
-  //     const parentScrollTop = parentContainer.scrollTop || 0;
-  //     const parentScrollLeft = parentContainer.scrollLeft || 0;
-      
-  //     // Position relative to parent (accounting for parent's scroll position)
-  //     const topOffset = newElementRect.top - newParentRect.top + parentScrollTop;
-  //     const leftOffset = newElementRect.left - newParentRect.left + parentScrollLeft;
-      
-  //     overlay.style.top = `${topOffset}px`;
-  //     overlay.style.left = `${leftOffset}px`;
-  //     overlay.style.width = `${Math.max(newElementRect.width, newScrollWidth)}px`;
-  //     overlay.style.height = `${Math.max(newElementRect.height, newScrollHeight)}px`;
-  //     overlay.style.minHeight = `${Math.max(newElementRect.height, newScrollHeight)}px`;
-  //   };
-    
-  //   window.addEventListener('scroll', updatePosition, true);
-  //   window.addEventListener('resize', updatePosition);
-    
-  //   // Store cleanup function
-  //   (overlay as any).__cleanup = () => {
-  //     window.removeEventListener('scroll', updatePosition, true);
-  //     window.removeEventListener('resize', updatePosition);
-  //   };
-  // }
 
   /**
    * Get unique ID for an element
@@ -2127,622 +1932,52 @@ class RewordlyContentScript {
 
   /**
    * Check if grammar check is allowed on the current site
-   * Only Twitter, Gmail, Reddit, and Medium are allowed for real-time grammar checking
+   * Delegates to platform adapter
    */
   private isGrammarCheckAllowedSite(): boolean {
-    const hostname = window.location.hostname.toLowerCase();
-    
-    // Twitter
-    if (hostname.includes('twitter.com') || hostname.includes('x.com')) {
-      return true;
+    if (this.platformAdapter) {
+      return this.platformAdapter.isGrammarCheckEnabled();
     }
-    
-    // Gmail
-    if (hostname.includes('mail.google.com') || hostname.includes('gmail.com')) {
-      return true;
-    }
-    
-    // Reddit
-    if (hostname.includes('reddit.com')) {
-      return true;
-    }
-    
-    // Medium
-    if (hostname.includes('medium.com')) {
-      return true;
-    }
-    
     return false;
   }
 
   /**
-   * Check if an element should be ignored for grammar checking
-   * Returns true if the element matches ignore patterns (e.g., Gmail's "To" field)
+   * Set up platform-specific adapter
    */
-  private shouldIgnoreElement(element: HTMLElement): boolean {
-    // Check if element is Gmail's "To" field
-    // Gmail's "To" field has specific structure:
-    // - Container with class "aoD hl" (the main container)
-    // - Input with name="to" attribute
-    // - Contenteditable div with class "oL aDm az9" containing span with class "aQ2"
-    
-    // Check for Gmail's "To" field container
-    const gmailToContainer = element.closest('.aoD.hl');
-    if (gmailToContainer) {
-      // Check if this is the actual input/editable element within the "To" field
-      const hasToName = element.closest('[name="to"]') !== null;
-      const hasToClasses = element.classList.contains('oL') && 
-                          element.classList.contains('aDm') && 
-                          element.classList.contains('az9');
-      const hasToSpan = element.querySelector('.aQ2') !== null || 
-                       element.closest('.aQ2') !== null ||
-                       (element.parentElement && element.parentElement.querySelector('.aQ2') !== null);
-      
-      if (hasToName || hasToClasses || hasToSpan) {
-        return true;
-      }
-    }
-    
-    // Check if element is inside a Gmail "To" field input
-    if (element.closest('[name="to"]') !== null) {
-      return true;
-    }
-    
-    // Check if element is the Gmail "To" field input itself
-    if (element.getAttribute('name') === 'to' || 
-        (element instanceof HTMLInputElement && element.name === 'to')) {
-      return true;
-    }
-    
-    // Check if element contains or is inside the Gmail "To" field span
-    if (element.classList.contains('aQ2') || 
-        element.closest('.aQ2') !== null ||
-        element.querySelector('.aQ2') !== null) {
-      // Make sure it's actually the "To" field, not just any element with aQ2 class
-      const toContainer = element.closest('.aoD.hl');
-      if (toContainer) {
-        return true;
-      }
-    }
-    
-    return false;
-  }
-
-  /**
-   * Check if an element is in the ignore list
-   */
-  private isElementIgnored(element: HTMLElement): boolean {
-    const elementId = this.getElementId(element);
-    
-    // Check if element ID is in ignore list
-    if (this.ignoredElementIds.has(elementId)) {
-      return true;
-    }
-    
-    // Also check if element should be ignored based on patterns
-    // (in case element was added to DOM after initial check)
-    if (this.shouldIgnoreElement(element)) {
-      this.ignoredElementIds.add(elementId);
-      return true;
-    }
-    
-    return false;
-  }
-
-  /**
-   * Add an element to the ignore list (for future user customization)
-   */
-  public addElementToIgnoreList(element: HTMLElement): void {
-    const elementId = this.getElementId(element);
-    this.ignoredElementIds.add(elementId);
-    
-    // Clear any existing highlights for this element
-    this.clearElementHighlights(element);
-    this.grammarErrors.delete(element);
-  }
-
-  /**
-   * Remove an element from the ignore list (for future user customization)
-   */
-  public removeElementFromIgnoreList(element: HTMLElement): void {
-    const elementId = this.getElementId(element);
-    this.ignoredElementIds.delete(elementId);
-    
-    // Re-attach to element if it's still editable
-    if (this.isEditableElement(element)) {
-      this.attachToEditableElement(element);
-    }
-  }
-
-  /**
-   * Generate a unique key for dismissing an error
-   * Uses elementId + word + context to handle position changes
-   * Context includes surrounding text to uniquely identify the word location
-   */
-  private getDismissKey(elementId: string, error: GrammarError, text: string): string {
-    // Get context around the word (30 chars before and after)
-    const contextBefore = Math.max(0, error.start - 30);
-    const contextAfter = Math.min(text.length, error.end + 30);
-    const beforeText = text.substring(contextBefore, error.start).toLowerCase().trim();
-    const afterText = text.substring(error.end, contextAfter).toLowerCase().trim();
-    const wordText = error.word.toLowerCase().trim();
-    
-    // Create a stable key based on word + context (not position)
-    // This allows dismiss to persist even when text is added/removed above
-    return `${elementId}:${wordText}:${beforeText.slice(-20)}:${afterText.slice(0, 20)}`;
-  }
-
-  /**
-   * Check if an error is dismissed
-   * Uses word + context instead of position to handle text updates
-   * If word at location changes, dismiss is automatically cleared
-   */
-  private isErrorDismissed(element: HTMLElement, error: GrammarError): boolean {
-    const elementId = this.getElementId(element);
-    
-    // Get current text to verify position is still valid
-    let text = '';
-    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-      text = element.value;
-    } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
-      text = element.innerText || element.textContent || '';
-    }
-    
-    // If position is invalid, try to find the word by matching context from dismiss keys
-    // This handles cases where text was added/removed above the error
-    if (error.start < 0 || error.end > text.length || error.start >= error.end) {
-      const wordLower = error.word.toLowerCase().trim();
-      const elementIdPrefix = `${elementId}:${wordLower}:`;
-      const searchText = text.toLowerCase();
-      let foundMatch = false;
-      
-      // Check all dismiss keys for this element and word
-      for (const [dismissKey, _] of this.dismissedErrors.entries()) {
-        if (!dismissKey.startsWith(elementIdPrefix)) continue;
+  private setupPlatformAdapter(): void {
+    // Create grammar check callback
+    const onGrammarCheck = async (text: string): Promise<GrammarError[]> => {
+      try {
+        const response = await this.checkGrammarAPI(text);
         
-        // Extract context from dismiss key (format: elementId:word:before:after)
-        // Note: context may contain colons, so we need to be careful
-        const afterPrefix = dismissKey.substring(elementIdPrefix.length);
-        const lastColonIndex = afterPrefix.lastIndexOf(':');
-        if (lastColonIndex === -1) continue;
-        
-        const beforeContext = afterPrefix.substring(0, lastColonIndex);
-        const afterContext = afterPrefix.substring(lastColonIndex + 1);
-        
-        // Search for word with matching context
-        let searchIndex = 0;
-        while (true) {
-          const wordIndex = searchText.indexOf(wordLower, searchIndex);
-          if (wordIndex === -1) break;
-          
-          // Get context around this occurrence
-          const beforeText = searchText.substring(Math.max(0, wordIndex - 30), wordIndex).trim();
-          const afterText = searchText.substring(wordIndex + wordLower.length, Math.min(text.length, wordIndex + wordLower.length + 30)).trim();
-          
-          // Check if context matches (using last 20 chars of before and first 20 chars of after)
-          if (beforeText.endsWith(beforeContext.slice(-20)) && afterText.startsWith(afterContext.slice(0, 20))) {
-            // Found matching word with context, update position
-            error.start = wordIndex;
-            error.end = wordIndex + wordLower.length;
-            foundMatch = true;
-            break;
-          }
-          
-          searchIndex = wordIndex + 1;
+        // Check if detected language is English
+        if (response.detectedLanguage && !response.detectedLanguage.code.toLowerCase().startsWith('en')) {
+          return [];
         }
         
-        if (foundMatch) break;
+        // Map errors to include id field
+        return response.errors.map((error) => ({
+          id: this.generateErrorId(),
+          start: error.start,
+          end: error.end,
+          word: error.word,
+          suggestions: error.suggestions,
+          type: error.type,
+        }));
+      } catch (error) {
+        console.error('Rewordly: Grammar check error:', error);
+        return [];
       }
-      
-      // If still invalid, word not found or context doesn't match
-      if (!foundMatch || error.start < 0 || error.end > text.length || error.start >= error.end) {
-        return false;
-      }
+    };
+
+    // Create platform adapter
+    this.platformAdapter = createPlatformAdapter(onGrammarCheck);
+    
+    if (this.platformAdapter && this.platformAdapter.isGrammarCheckEnabled()) {
+      console.log(`Rewordly: Initializing ${this.platformAdapter.platform} adapter`);
+      this.platformAdapter.initialize();
     }
-    
-    // Generate dismiss key using word + context (not position)
-    const dismissKey = this.getDismissKey(elementId, error, text);
-    
-    if (!this.dismissedErrors.has(dismissKey)) {
-      return false;
-    }
-    
-    // Verify the word at current position still matches
-    const currentWord = text.substring(error.start, error.end);
-    const originalWord = error.word;
-    
-    // If word changed significantly, clear dismiss
-    if (currentWord.toLowerCase().trim() !== originalWord.toLowerCase().trim()) {
-      this.dismissedErrors.delete(dismissKey);
-      return false;
-    }
-    
-    // Still dismissed
-    return true;
   }
-
-  /**
-   * Create error overlay for contenteditable elements
-   * This avoids DOM manipulation which can cause text loss
-   * @deprecated Use Grammarly-style highlights instead
-   */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  // private createErrorOverlayForContentEditable(element: HTMLElement, errors: GrammarError[]): void {
-  //   // Remove existing overlay
-  //   const existingOverlay = document.querySelector(`.rewordly-grammar-overlay[data-element-id="${this.getElementId(element)}"]`);
-  //   if (existingOverlay) {
-  //     existingOverlay.remove();
-  //   }
-
-  //   // Get text content - use the same source as grammar check
-  //   const textSource = (element as any).__rewordlyTextSource || 'innerText';
-  //   let text = '';
-    
-  //   if (textSource === 'innerText') {
-  //     text = element.innerText || element.textContent || '';
-  //   } else if (textSource === 'textContent') {
-  //     text = element.textContent || element.innerText || '';
-  //   } else {
-  //     // Fallback
-  //     text = element.innerText || element.textContent || '';
-  //   }
-    
-  //   // If we have stored text from grammar check, use it for exact matching
-  //   if ((element as any).__rewordlyText) {
-  //     text = (element as any).__rewordlyText;
-  //   }
-    
-  //   if (!text) return;
-    
-
-  //   // Create overlay
-  //   const overlay = document.createElement('div');
-  //   overlay.className = 'rewordly-grammar-overlay';
-  //   overlay.setAttribute('data-element-id', this.getElementId(element));
-    
-  //   // Copy ALL relevant styles from the element to ensure perfect alignment
-  //   const styles = window.getComputedStyle(element);
-    
-  //   // Get all CSS properties that affect text rendering
-  //   const cssProperties = [
-  //     'direction', 'text-align', 'text-indent', 'text-decoration', 'text-shadow',
-  //     'font-family', 'font-size', 'font-weight', 'font-style', 'font-variant',
-  //     'font-stretch', 'font-size-adjust', 'line-height', 'letter-spacing', 
-  //     'word-spacing', 'text-transform', 'white-space', 'word-wrap', 'word-break',
-  //     'overflow-wrap', 'hyphens', 'tab-size', 'text-rendering',
-  //     'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
-  //     'border', 'border-top', 'border-right', 'border-bottom', 'border-left',
-  //     'box-sizing', 'width', 'min-width', 'max-width',
-  //     'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left'
-  //   ];
-    
-  //   let overlayStyles = 'position: absolute !important; pointer-events: none !important; z-index: 2147483645 !important; color: transparent !important; background: transparent !important; border-color: transparent !important;';
-    
-  //   cssProperties.forEach(prop => {
-  //     const value = styles.getPropertyValue(prop);
-  //     if (value) {
-  //       overlayStyles += `${prop}: ${value} !important; `;
-  //     }
-  //   });
-    
-  //   // Ensure white-space matches element
-  //   overlayStyles += `white-space: ${styles.whiteSpace || 'pre-wrap'} !important; `;
-  //   overlayStyles += `word-wrap: ${styles.wordWrap || 'break-word'} !important; `;
-  //   overlayStyles += `overflow: hidden !important; `;
-    
-  //   overlay.style.cssText = overlayStyles;
-
-  //   // Position overlay exactly over the element using absolute positioning
-  //   // Find the best parent container for the overlay
-  //   const parentContainer = this.findOverlayParent(element);
-    
-  //   // Ensure parent has position: relative
-  //   const parentStyles = window.getComputedStyle(parentContainer);
-  //   if (parentStyles.position === 'static') {
-  //     parentContainer.style.position = 'relative';
-  //   }
-    
-  //   // Calculate position relative to parent
-  //   const elementRect = element.getBoundingClientRect();
-  //   const parentRect = parentContainer.getBoundingClientRect();
-    
-  //   // Use scrollWidth to ensure overlay covers all text, especially for contenteditable
-  //   const scrollWidth = element.scrollWidth || elementRect.width;
-  //   const scrollHeight = element.scrollHeight || elementRect.height;
-    
-  //   // Calculate position relative to parent, accounting for scroll
-  //   const parentScrollTop = parentContainer.scrollTop || 0;
-  //   const parentScrollLeft = parentContainer.scrollLeft || 0;
-    
-  //   // Position relative to parent (accounting for parent's scroll position)
-  //   const topOffset = elementRect.top - parentRect.top + parentScrollTop;
-  //   const leftOffset = elementRect.left - parentRect.left + parentScrollLeft;
-    
-  //   overlay.style.top = `${topOffset}px`;
-  //   overlay.style.left = `${leftOffset}px`;
-  //   overlay.style.width = `${Math.max(elementRect.width, scrollWidth)}px`;
-  //   overlay.style.height = `${Math.max(elementRect.height, scrollHeight)}px`;
-  //   overlay.style.minHeight = `${Math.max(elementRect.height, scrollHeight)}px`;
-  //   overlay.style.maxHeight = `${Math.max(elementRect.height, scrollHeight)}px`;
-
-  //   // Universal approach: Clone element structure, make all text transparent, add only underlines for errors
-  //   const sortedErrors = [...errors].sort((a, b) => a.start - b.start);
-    
-  //   // Clone the element to preserve all formatting structure
-  //   // But remove Twitter's own highlights (background-color spans)
-  //   const clone = element.cloneNode(true) as HTMLElement;
-    
-  //   // Remove Twitter's highlight spans (they have background-color style)
-  //   // Also remove any spans with inline background-color styles
-  //   const allSpans = clone.querySelectorAll('span');
-  //   allSpans.forEach(span => {
-  //     const spanElement = span as HTMLElement;
-  //     const style = spanElement.getAttribute('style');
-  //     if (style && style.includes('background-color')) {
-  //       const parent = span.parentNode;
-  //       if (parent) {
-  //         // Replace highlight span with just its text content
-  //         const textNode = document.createTextNode(span.textContent || '');
-  //         parent.replaceChild(textNode, span);
-  //         parent.normalize();
-  //       }
-  //     }
-  //   });
-    
-  //   // Remove any existing grammar error markers from clone
-  //   const existingErrors = clone.querySelectorAll('.rewordly-grammar-error');
-  //   existingErrors.forEach(err => {
-  //     const parent = err.parentNode;
-  //     if (parent) {
-  //       parent.replaceChild(document.createTextNode(err.textContent || ''), err);
-  //       parent.normalize();
-  //     }
-  //   });
-    
-  //   // Build a map of error positions for quick lookup
-  //   const errorMap = new Map<number, GrammarError>();
-  //   sortedErrors.forEach(error => {
-  //     for (let i = error.start; i < error.end; i++) {
-  //       errorMap.set(i, error);
-  //     }
-  //   });
-    
-  //   // First pass: Make all text transparent
-  //   const allTextNodes: { node: Text; startIndex: number; endIndex: number }[] = [];
-  //   const walker = document.createTreeWalker(
-  //     clone,
-  //     NodeFilter.SHOW_TEXT,
-  //     null
-  //   );
-    
-  //   let textIndex = 0;
-  //   let node: Text | null;
-  //   while ((node = walker.nextNode() as Text | null)) {
-  //     if (node && node.textContent) {
-  //       const nodeText = node.textContent;
-  //       const startIndex = textIndex;
-  //       const endIndex = textIndex + nodeText.length;
-  //       allTextNodes.push({ node, startIndex, endIndex });
-  //       textIndex = endIndex;
-  //     }
-  //   }
-    
-  //   // Make all text transparent
-  //   allTextNodes.forEach(({ node: textNode }) => {
-  //     if (textNode && textNode.textContent) {
-  //       const transparentSpan = document.createElement('span');
-  //       transparentSpan.style.cssText = 'color: transparent !important; display: inline !important;';
-  //       const parent = textNode.parentNode;
-  //       if (parent) {
-  //         parent.replaceChild(transparentSpan, textNode);
-  //         transparentSpan.appendChild(textNode);
-  //       }
-  //     }
-  //   });
-    
-  //   // Second pass: Insert error underlines at correct positions
-  //   // Process in reverse order to avoid index shifting
-  //   for (let i = allTextNodes.length - 1; i >= 0; i--) {
-  //     const item = allTextNodes[i];
-  //     if (!item) continue;
-      
-  //     const { node: textNode, startIndex } = item;
-  //     if (!textNode || !textNode.textContent) continue;
-      
-  //     // Find the transparent span that now contains this text node
-  //     let transparentSpan = textNode.parentElement;
-  //     while (transparentSpan && !transparentSpan.style.color.includes('transparent')) {
-  //       transparentSpan = transparentSpan.parentElement;
-  //     }
-      
-  //     if (!transparentSpan) continue;
-      
-  //     const nodeText = textNode.textContent;
-  //     const fragments: (Text | HTMLElement)[] = [];
-  //     let lastPos = 0;
-      
-  //     // Check for errors in this text node
-  //     for (let j = 0; j < nodeText.length; j++) {
-  //       const globalIndex = startIndex + j;
-  //       const error = errorMap.get(globalIndex);
-        
-  //       if (error && error.start === globalIndex) {
-  //         // Add text before error (already transparent)
-  //         if (j > lastPos) {
-  //           const beforeText = nodeText.substring(lastPos, j);
-  //           const beforeNode = document.createTextNode(beforeText);
-  //           fragments.push(beforeNode);
-  //         }
-          
-  //         // Add error underline span (NO TEXT, just underline)
-  //         const errorWord = text.substring(error.start, error.end);
-  //         const errorSpan = document.createElement('span');
-  //         errorSpan.className = 'rewordly-grammar-error';
-  //         errorSpan.setAttribute('data-error', JSON.stringify(error));
-          
-  //         // Get the actual element's text node at this position to copy its styles
-  //         const originalTextNodes: { node: Text; startIndex: number; endIndex: number }[] = [];
-  //         const originalWalker = document.createTreeWalker(
-  //           element,
-  //           NodeFilter.SHOW_TEXT,
-  //           null
-  //         );
-          
-  //         let originalIndex = 0;
-  //         let originalNode: Text | null;
-  //         while ((originalNode = originalWalker.nextNode() as Text | null)) {
-  //           if (originalNode && originalNode.textContent) {
-  //             const originalText = originalNode.textContent;
-  //             const origStart = originalIndex;
-  //             const origEnd = originalIndex + originalText.length;
-  //             originalTextNodes.push({ node: originalNode, startIndex: origStart, endIndex: origEnd });
-  //             originalIndex = origEnd;
-  //           }
-  //         }
-          
-  //         // Find the original text node that contains this error
-  //         let originalParent: HTMLElement | null = null;
-  //         for (const { node: origNode, startIndex: origStart, endIndex: origEnd } of originalTextNodes) {
-  //           if (error.start >= origStart && error.start < origEnd) {
-  //             originalParent = origNode.parentElement;
-  //             break;
-  //           }
-  //         }
-          
-  //         // Calculate width using the original element's styles
-  //         const tempSpan = document.createElement('span');
-  //         tempSpan.style.cssText = 'position: absolute !important; visibility: hidden !important; white-space: pre !important; pointer-events: none !important; top: -9999px !important; left: -9999px !important;';
-          
-  //         if (originalParent) {
-  //           const parentStyles = window.getComputedStyle(originalParent);
-  //           const relevantStyles = [
-  //             'font-size', 'font-weight', 'font-style', 'font-family',
-  //             'line-height', 'letter-spacing', 'text-decoration',
-  //             'text-transform', 'font-variant', 'font-stretch'
-  //           ];
-            
-  //           relevantStyles.forEach(prop => {
-  //             const value = parentStyles.getPropertyValue(prop);
-  //             if (value && value !== 'normal' && value !== 'none' && value !== 'auto') {
-  //               tempSpan.style.setProperty(prop, value, 'important');
-  //             }
-  //           });
-  //         }
-          
-  //         tempSpan.textContent = errorWord;
-  //         document.body.appendChild(tempSpan);
-  //         const width = Math.max(1, tempSpan.offsetWidth);
-  //         const height = Math.max(1, tempSpan.offsetHeight);
-  //         document.body.removeChild(tempSpan);
-          
-  //         // Create style string with calculated width and only underline (no text)
-  //         let styleString = `border-bottom: 2px solid #ef4444 !important; cursor: pointer !important; display: inline-block !important; position: relative !important; width: ${width}px !important; min-width: ${width}px !important; height: ${height}px !important; vertical-align: baseline !important; overflow: visible !important; line-height: ${height}px !important;`;
-          
-  //         if (originalParent) {
-  //           const parentStyles = window.getComputedStyle(originalParent);
-  //           const relevantStyles = [
-  //             'font-size', 'font-weight', 'font-style', 'font-family',
-  //             'letter-spacing', 'text-decoration', 'text-transform', 'font-variant'
-  //           ];
-            
-  //           relevantStyles.forEach(prop => {
-  //             const value = parentStyles.getPropertyValue(prop);
-  //             if (value && value !== 'normal' && value !== 'none' && value !== 'auto') {
-  //               styleString += `${prop}: ${value} !important; `;
-  //             }
-  //           });
-  //         }
-          
-  //         errorSpan.setAttribute('style', styleString);
-  //         fragments.push(errorSpan);
-          
-  //         lastPos = j + errorWord.length;
-  //         j += errorWord.length - 1; // Skip processed characters
-  //       }
-  //     }
-      
-  //     // Add remaining text (already transparent)
-  //     if (lastPos < nodeText.length) {
-  //       const afterText = nodeText.substring(lastPos);
-  //       fragments.push(document.createTextNode(afterText));
-  //     }
-      
-  //     // Replace the transparent span's content with fragments
-  //     if (fragments.length > 0 && transparentSpan) {
-  //       // Clear the span and add fragments
-  //       transparentSpan.innerHTML = '';
-  //       fragments.forEach(fragment => {
-  //         transparentSpan.appendChild(fragment);
-  //       });
-  //     }
-  //   }
-    
-  //   overlay.innerHTML = clone.innerHTML;
-    
-  //   // Enable pointer events on error spans for hover interaction
-  //   const errorSpans = overlay.querySelectorAll('.rewordly-grammar-error');
-  //   errorSpans.forEach(span => {
-  //     (span as HTMLElement).style.pointerEvents = 'auto';
-  //     (span as HTMLElement).style.cursor = 'pointer';
-  //   });
-    
-  //   // Attach hover event listeners to error spans
-  //   this.attachGrammarErrorHoverListeners(overlay, element);
-    
-  //   // Ensure overlay is visible and properly positioned
-  //   overlay.style.display = 'block';
-  //   overlay.style.visibility = 'visible';
-  //   overlay.style.opacity = '1';
-  //   overlay.style.pointerEvents = 'none';
-    
-  //   // Remove any hidden attributes
-  //   overlay.removeAttribute('data-hidden-by-blur');
-  //   overlay.removeAttribute('data-hidden-by-modal');
-    
-  //   // Append to parent container (not body) for absolute positioning
-  //   parentContainer.appendChild(overlay);
-    
-  //   // Force a reflow to ensure styles are applied
-  //   void overlay.offsetHeight;
-    
-  //   // Debug: Check if overlay is actually visible
-  //   const overlayRect = overlay.getBoundingClientRect();
-  //   const computedStyle = window.getComputedStyle(overlay);
-    
-  //   // Additional check: verify overlay is actually in DOM and visible
-  //   if (!document.body.contains(overlay)) {
-  //     console.error('Rewordly: Overlay not in DOM!');
-  //   }
-  //   if (overlayRect.width === 0 || overlayRect.height === 0) {
-  //     console.warn('Rewordly: Overlay has zero dimensions!');
-  //   }
-    
-  //     // Update overlay position on scroll/resize
-  //     // Note: position: fixed uses viewport coordinates, getBoundingClientRect() already gives viewport coords
-  //     const updatePosition = () => {
-  //       const newRect = element.getBoundingClientRect();
-  //       const newScrollWidth = element.scrollWidth || newRect.width;
-  //       const newScrollHeight = element.scrollHeight || newRect.height;
-        
-  //       // For position: fixed, use viewport coordinates directly (no scroll offset needed)
-  //       overlay.style.top = `${newRect.top}px`;
-  //       overlay.style.left = `${newRect.left}px`;
-  //       overlay.style.width = `${Math.max(newRect.width, newScrollWidth)}px`;
-  //       overlay.style.height = `${Math.max(newRect.height, newScrollHeight)}px`;
-  //       overlay.style.minHeight = `${Math.max(newRect.height, newScrollHeight)}px`;
-  //       overlay.style.maxHeight = `${Math.max(newRect.height, newScrollHeight)}px`;
-  //     };
-    
-  //   window.addEventListener('scroll', updatePosition, true);
-  //   window.addEventListener('resize', updatePosition);
-    
-  //   // Store cleanup function
-  //   (overlay as any).__cleanup = () => {
-  //     window.removeEventListener('scroll', updatePosition, true);
-  //     window.removeEventListener('resize', updatePosition);
-  //   };
-  // }
-
 
 
   /**
@@ -2815,82 +2050,6 @@ class RewordlyContentScript {
       this.updateHighlightsPosition(element);
     }
   }
-
-  /**
-   * Find the best parent container for overlay positioning
-   */
-  // private findOverlayParent(element: HTMLElement): HTMLElement {
-  //   // For Draft.js editors (Twitter), use the editor container
-  //   if (element.classList.contains('public-DraftEditor-content')) {
-  //     const editorContainer = element.closest('.DraftEditor-editorContainer');
-  //     if (editorContainer) {
-  //       return editorContainer as HTMLElement;
-  //     }
-  //     const draftRoot = element.closest('.DraftEditor-root');
-  //     if (draftRoot) {
-  //       return draftRoot as HTMLElement;
-  //     }
-  //   }
-    
-  //   // For Gmail, use the contenteditable wrapper
-  //   if (element.classList.contains('Am') && element.classList.contains('aiL') && element.classList.contains('Al')) {
-  //     // Gmail's contenteditable is inside .aO7 or .Ar.Au
-  //     const gmailWrapper = element.closest('.aO7') || element.closest('.Ar.Au') || element.closest('.Ar');
-  //     if (gmailWrapper) {
-  //       return gmailWrapper as HTMLElement;
-  //     }
-  //   }
-    
-  //   // Try to find a suitable parent with positioning context
-  //   let parent = element.parentElement;
-    
-  //   // Look for a parent with position: relative, absolute, or fixed
-  //   while (parent && parent !== document.body) {
-  //     const styles = window.getComputedStyle(parent);
-  //     if (styles.position !== 'static') {
-  //       return parent;
-  //     }
-  //     parent = parent.parentElement;
-  //   }
-    
-  //   // If no positioned parent found, use the element's immediate parent
-  //   const immediateParent = element.parentElement;
-  //   if (immediateParent && immediateParent !== document.body) {
-  //     return immediateParent;
-  //   }
-    
-  //   // Fallback to body (shouldn't happen often)
-  //   return document.body;
-  // }
-
-  /**
-   * Update overlay position
-   * @deprecated Use updateHighlightsPosition instead
-   */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  // private updateOverlayPosition(element: HTMLElement, overlay: HTMLElement): void {
-  //   // For absolute positioning, calculate relative to parent
-  //   const parentContainer = overlay.parentElement || this.findOverlayParent(element);
-  //   const elementRect = element.getBoundingClientRect();
-  //   const parentRect = parentContainer.getBoundingClientRect();
-  //   const scrollWidth = element.scrollWidth || elementRect.width;
-  //   const scrollHeight = element.scrollHeight || elementRect.height;
-    
-  //   // Calculate position relative to parent, accounting for scroll
-  //   const parentScrollTop = parentContainer.scrollTop || 0;
-  //   const parentScrollLeft = parentContainer.scrollLeft || 0;
-    
-  //   // Position relative to parent (accounting for parent's scroll position)
-  //   const topOffset = elementRect.top - parentRect.top + parentScrollTop;
-  //   const leftOffset = elementRect.left - parentRect.left + parentScrollLeft;
-    
-  //   overlay.style.top = `${topOffset}px`;
-  //   overlay.style.left = `${leftOffset}px`;
-  //   overlay.style.width = `${Math.max(elementRect.width, scrollWidth)}px`;
-  //   overlay.style.height = `${Math.max(elementRect.height, scrollHeight)}px`;
-  //   overlay.style.minHeight = `${Math.max(elementRect.height, scrollHeight)}px`;
-  //   overlay.style.maxHeight = `${Math.max(elementRect.height, scrollHeight)}px`;
-  // }
 
   /**
    * Clear grammar errors from an element (permanently remove)
@@ -3055,12 +2214,16 @@ class RewordlyContentScript {
     // Get all rects for multi-line support (one rect per line)
     const highlightRects = this.getErrorTextRects(element, highlightStart, highlightEnd);
     if (highlightRects.length === 0) {
+      const isGoogleDocs = (element as any).__rewordlyIsGoogleDocs === true;
       console.warn('Rewordly: No highlight rects found', {
         error,
         highlightStart,
         highlightEnd,
         textLength: text.length,
-        elementType: element instanceof HTMLInputElement ? 'input' : element instanceof HTMLTextAreaElement ? 'textarea' : 'contenteditable'
+        elementType: element instanceof HTMLInputElement ? 'input' : element instanceof HTMLTextAreaElement ? 'textarea' : 'contenteditable',
+        isGoogleDocs,
+        errorText: text.substring(Math.max(0, highlightStart - 10), Math.min(text.length, highlightEnd + 10)),
+        elementTextPreview: (element.textContent || element.innerText || '').substring(0, 100)
       });
       return;
     }
@@ -3069,7 +2232,14 @@ class RewordlyContentScript {
       error,
       highlightRects: highlightRects.length,
       highlightStart,
-      highlightEnd
+      highlightEnd,
+      firstRect: highlightRects[0] ? {
+        left: highlightRects[0].left,
+        top: highlightRects[0].top,
+        width: highlightRects[0].width,
+        height: highlightRects[0].height
+      } : null,
+      isGoogleDocs: (element as any).__rewordlyIsGoogleDocs === true
     });
 
     // Create a highlight element for each rect (each line)
@@ -3173,6 +2343,11 @@ class RewordlyContentScript {
    * Returns an array of DOMRects, one for each line the error spans
    */
   private getErrorTextRects(element: HTMLElement, start: number, end: number): DOMRect[] {
+    // Special handling for Google Docs virtual elements
+    if ((element as any).__rewordlyIsGoogleDocs && (element as any).__rewordlyGoogleDocsContainer) {
+      return this.getGoogleDocsErrorRects(element, start, end);
+    }
+    
     if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
       return this.getInputTextareaErrorRects(element, start, end);
     } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
@@ -3498,6 +2673,1455 @@ class RewordlyContentScript {
   }
 
   /**
+   * Get error rects for Google Docs virtual elements
+   * Google Docs uses canvas for rendering, but has an accessibility layer with text nodes.
+   * Enhanced with canvas overlay support and better text node mapping.
+   */
+  private getGoogleDocsErrorRects(element: HTMLElement, start: number, end: number): DOMRect[] {
+    // Get the text from the virtual element (this is the extracted text from DOCS_modelChunk)
+    const extractedText = element.textContent || element.innerText || '';
+    if (start >= extractedText.length || end > extractedText.length) {
+      return [];
+    }
+
+    // Extract the error word/phrase
+    const errorText = extractedText.substring(start, end).trim();
+    if (!errorText) {
+      return [];
+    }
+
+    try {
+      // Get the Google Docs container
+      const container = (element as any).__rewordlyGoogleDocsContainer as HTMLElement;
+      if (!container) {
+        console.warn('Rewordly: Google Docs container not found');
+        return [];
+      }
+
+      // Find the editor area
+      const editorArea = container.querySelector('.kix-appview-editor') || 
+                        container.querySelector('.kix-scrollareadocumentplugin') ||
+                        container.querySelector('#kix-appview') ||
+                        container;
+      
+      if (!editorArea) {
+        console.warn('Rewordly: Google Docs editor area not found');
+        return [];
+      }
+      
+      // Get canvas elements for overlay positioning
+      const canvases = Array.from(editorArea.querySelectorAll('canvas.kix-canvas-tile-content')) as HTMLCanvasElement[];
+      const canvasRects = canvases.map(c => c.getBoundingClientRect());
+      
+      // Get scroll position for accurate positioning
+      const scrollContainer = editorArea.closest('.kix-scrollareadocumentplugin') || editorArea;
+      const scrollTop = scrollContainer.scrollTop || 0;
+      const scrollLeft = scrollContainer.scrollLeft || 0;
+
+      // Method 0: Use window.find() to programmatically select text and get position
+      // This works with Google Docs because it uses the browser's find functionality
+      // which works with the accessibility layer
+      const selection = window.getSelection();
+      if (selection) {
+        // Save current selection
+        const savedRanges: Range[] = [];
+        if (selection.rangeCount > 0) {
+          for (let i = 0; i < selection.rangeCount; i++) {
+            savedRanges.push(selection.getRangeAt(i).cloneRange());
+          }
+        }
+        
+        try {
+          // Clear current selection
+          selection.removeAllRanges();
+          
+          // Reset to start of document
+          if (document.body) {
+            const range = document.createRange();
+            range.selectNodeContents(document.body);
+            range.collapse(true); // Collapse to start
+            selection.addRange(range);
+            selection.removeAllRanges();
+          }
+          
+          // Try to find the error text using window.find()
+          // window.find() searches in the accessibility layer which Google Docs maintains
+          let found = false;
+          let foundRange: Range | null = null;
+          
+          // Strategy 1: Try exact match (case-sensitive)
+          found = (window as any).find(errorText, false, false, false);
+          if (found && selection.rangeCount > 0) {
+            foundRange = selection.getRangeAt(0);
+          }
+          
+          // Strategy 2: If not found, try case-insensitive
+          if (!found) {
+            // Reset selection
+            selection.removeAllRanges();
+            if (document.body) {
+              const range = document.createRange();
+              range.selectNodeContents(document.body);
+              range.collapse(true);
+              selection.addRange(range);
+              selection.removeAllRanges();
+            }
+            
+            const errorTextLower = errorText.toLowerCase().trim();
+            found = (window as any).find(errorTextLower, false, false, false);
+            if (found && selection.rangeCount > 0) {
+              foundRange = selection.getRangeAt(0);
+            }
+          }
+          
+          // Strategy 3: If still not found, try finding just the first word (for multi-word errors)
+          if (!found && errorText.includes(' ')) {
+            const firstWord = errorText.trim().split(/\s+/)[0];
+            if (firstWord && firstWord.length > 2) {
+              selection.removeAllRanges();
+              if (document.body) {
+                const range = document.createRange();
+                range.selectNodeContents(document.body);
+                range.collapse(true);
+                selection.addRange(range);
+                selection.removeAllRanges();
+              }
+              
+              found = (window as any).find(firstWord, false, false, false);
+              if (found && selection.rangeCount > 0) {
+                foundRange = selection.getRangeAt(0);
+                // If we found the first word, try to extend the range to include the full error text
+                try {
+                  const range = foundRange.cloneRange();
+                  const rangeText = range.toString().toLowerCase();
+                  const errorTextLower = errorText.toLowerCase().trim();
+                  
+                  // Check if the found text matches or contains the error text
+                  if (rangeText.includes(errorTextLower)) {
+                    // Try to extend range to match full error text
+                    const startOffset = rangeText.indexOf(errorTextLower);
+                    if (startOffset >= 0) {
+                      range.setStart(range.startContainer, range.startOffset + startOffset);
+                      range.setEnd(range.startContainer, range.startOffset + startOffset + errorTextLower.length);
+                      foundRange = range;
+                    }
+                  }
+                } catch (e) {
+                  // If extension fails, use the first word range
+                  console.warn('Rewordly: Could not extend range for multi-word error', e);
+                }
+              }
+            }
+          }
+          
+          if (found && foundRange) {
+            const clientRects = foundRange.getClientRects();
+            const rects: DOMRect[] = [];
+            
+            for (let i = 0; i < clientRects.length; i++) {
+              const clientRect = clientRects[i];
+              if (clientRect && clientRect.width > 0 && clientRect.height > 0) {
+                // Adjust for scroll position and verify visibility
+                const adjustedRect = new DOMRect(
+                  clientRect.left,
+                  clientRect.top,
+                  clientRect.width,
+                  clientRect.height
+                );
+                
+                // Verify rect is within visible canvas area (more lenient check)
+                const isVisible = canvasRects.length === 0 || canvasRects.some(canvasRect => {
+                  return adjustedRect.left >= canvasRect.left - 100 && 
+                         adjustedRect.left <= canvasRect.right + 100 &&
+                         adjustedRect.top >= canvasRect.top - 100 && 
+                         adjustedRect.top <= canvasRect.bottom + 100;
+                });
+                
+                if (isVisible || canvasRects.length === 0) {
+                  rects.push(adjustedRect);
+                }
+              }
+            }
+            
+            if (rects.length > 0 && rects[0]) {
+              console.log('Rewordly: Google Docs highlight found via window.find()', {
+                rects: rects.length,
+                firstRect: { left: rects[0].left, top: rects[0].top, width: rects[0].width, height: rects[0].height },
+                errorText: errorText.substring(0, 30),
+                scrollTop,
+                scrollLeft,
+                canvasCount: canvases.length,
+                foundText: foundRange.toString().substring(0, 30)
+              });
+              
+              // Restore original selection
+              selection.removeAllRanges();
+              savedRanges.forEach(r => {
+                try {
+                  selection.addRange(r);
+                } catch (e) {
+                  // Ignore errors
+                }
+              });
+              
+              return rects;
+            }
+          }
+          
+          // Restore original selection
+          selection.removeAllRanges();
+          savedRanges.forEach(r => {
+            try {
+              selection.addRange(r);
+            } catch (e) {
+              // Ignore errors
+            }
+          });
+        } catch (e) {
+          console.warn('Rewordly: window.find() method failed', e);
+          // Restore selection on error
+          if (selection) {
+            selection.removeAllRanges();
+            savedRanges.forEach(r => {
+              try {
+                selection.addRange(r);
+              } catch (e) {
+                // Ignore errors
+              }
+            });
+          }
+        }
+      }
+
+      // Method 1: Walk through text nodes and match by text content (more reliable than position)
+      // This is the most reliable method for Google Docs
+      const textNodes: Array<{ node: Text; element: HTMLElement; text: string }> = [];
+      
+      console.log('Rewordly: getGoogleDocsErrorRects called', {
+        errorText: errorText.substring(0, 50),
+        start,
+        end,
+        extractedTextLength: extractedText.length,
+        container: container ? container.className : 'null'
+      });
+
+      // First, try to find contenteditable element directly (most reliable)
+      const contentEditableElement = editorArea.querySelector('[contenteditable="true"]') as HTMLElement;
+      let searchRoot = contentEditableElement || editorArea;
+      
+      // Create a tree walker to find all text nodes - use more permissive filter
+      const walker = document.createTreeWalker(
+        searchRoot,
+        NodeFilter.SHOW_TEXT,
+        {
+          acceptNode: (node) => {
+            const parent = node.parentElement;
+            if (!parent) return NodeFilter.FILTER_REJECT;
+
+            // Skip UI elements
+            const isUIElement = parent.closest('[role="button"], [role="menu"], [role="toolbar"], [role="dialog"], [role="textbox"]') !== null;
+            // But allow textbox if it's the main editor
+            if (isUIElement && parent.getAttribute('role') !== 'textbox') {
+              return NodeFilter.FILTER_REJECT;
+            }
+
+            // Skip hidden elements
+            const style = window.getComputedStyle(parent);
+            if (style.display === 'none' || style.visibility === 'hidden') {
+              return NodeFilter.FILTER_REJECT;
+            }
+
+            // More permissive: accept if in any document structure OR if parent is contenteditable
+            const isInDocumentStructure = parent.closest('.kix-paragraphrenderer, .kix-lineview, .kix-page-content, .kix-lineview-text-block, [contenteditable="true"]') !== null;
+            if (!isInDocumentStructure) {
+              // Also check if parent itself is contenteditable
+              if (parent.getAttribute('contenteditable') !== 'true') {
+              return NodeFilter.FILTER_REJECT;
+              }
+            }
+
+            return NodeFilter.FILTER_ACCEPT;
+          }
+        }
+      );
+
+      let node: Node | null;
+      let nodeCount = 0;
+      while ((node = walker.nextNode())) {
+        if (node.nodeType === Node.TEXT_NODE) {
+          const textNode = node as Text;
+          const nodeText = textNode.textContent || '';
+          
+          if (nodeText.trim().length > 0) {
+            nodeCount++;
+            
+            // Find the parent element for this text node (for positioning)
+            const parentElement = textNode.parentElement;
+            if (parentElement) {
+              textNodes.push({
+                node: textNode,
+                element: parentElement,
+                text: nodeText
+              });
+            }
+          }
+        }
+      }
+      
+      console.log('Rewordly: Text nodes collected for Google Docs', {
+        nodeCount,
+        textNodesCount: textNodes.length,
+        extractedTextLength: extractedText.length,
+        errorText: errorText.substring(0, 30),
+        searchRoot: searchRoot.tagName,
+        hasContentEditable: !!contentEditableElement
+      });
+
+      // Method 1a: Try to find error text directly in text nodes (most reliable)
+        // Build full DOM text for matching
+        const fullDOMText = textNodes.map(n => n.text || '').join('');
+      const errorTextLower = errorText.toLowerCase().trim();
+        const domTextLower = fullDOMText.toLowerCase();
+        
+        // Try to find error text in DOM text
+        let foundIndex = domTextLower.indexOf(errorTextLower);
+        
+        // If exact match fails, try word-by-word matching
+        if (foundIndex === -1) {
+          const errorWords = errorTextLower.split(/\s+/).filter(w => w.length > 0);
+          if (errorWords.length > 0 && errorWords[0]) {
+            const firstWord = errorWords[0];
+            const firstWordIndex = domTextLower.indexOf(firstWord);
+            if (firstWordIndex !== -1) {
+              // Check if subsequent words match
+              let allMatch = true;
+              let currentIndex = firstWordIndex + firstWord.length;
+              
+              for (let i = 1; i < errorWords.length; i++) {
+                const word = errorWords[i];
+                if (!word) {
+                  allMatch = false;
+                  break;
+                }
+                
+                while (currentIndex < domTextLower.length && /\s/.test(domTextLower[currentIndex] || '')) {
+                  currentIndex++;
+                }
+                
+                if (domTextLower.substring(currentIndex, currentIndex + word.length) !== word) {
+                  allMatch = false;
+                  break;
+                }
+                
+                currentIndex += word.length;
+              }
+              
+              if (allMatch) {
+                foundIndex = firstWordIndex;
+              }
+            }
+          }
+        }
+      
+      // Now find the text nodes that contain our error
+      let startNode: Text | null = null;
+      let startOffset = 0;
+      let endNode: Text | null = null;
+      let endOffset = 0;
+        
+        if (foundIndex !== -1) {
+          // Found the error text, now map back to text nodes
+          let domCumulativePos = 0;
+          
+          for (const nodeInfo of textNodes) {
+            const nodeText = nodeInfo.node.textContent || '';
+            const nodeStart = domCumulativePos;
+            const nodeEnd = domCumulativePos + nodeText.length;
+            
+            if (foundIndex >= nodeStart && foundIndex < nodeEnd && !startNode) {
+              startNode = nodeInfo.node;
+              startOffset = foundIndex - nodeStart;
+            console.log('Rewordly: Found start node by text matching', {
+              foundIndex,
+              nodeStart,
+              nodeEnd,
+              startOffset,
+              nodeText: nodeText.substring(0, 50)
+            });
+            }
+            
+            const errorEndIndex = foundIndex + errorText.length;
+            if (errorEndIndex > nodeStart && errorEndIndex <= nodeEnd && !endNode) {
+              endNode = nodeInfo.node;
+              endOffset = errorEndIndex - nodeStart;
+            console.log('Rewordly: Found end node by text matching', {
+              errorEndIndex,
+              nodeStart,
+              nodeEnd,
+              endOffset,
+              nodeText: nodeText.substring(0, 50)
+            });
+              break;
+            }
+            
+            domCumulativePos = nodeEnd;
+          }
+      } else {
+        console.warn('Rewordly: Could not find error text in DOM', {
+          errorText: errorText.substring(0, 30),
+          errorTextLower,
+          domTextLength: domTextLower.length,
+          domTextPreview: domTextLower.substring(0, 100),
+          textNodesCount: textNodes.length
+        });
+      }
+
+      if (startNode) {
+        try {
+          const range = document.createRange();
+          
+          // Ensure offsets are within node bounds
+          const startNodeText = startNode.textContent || '';
+          const safeStartOffset = Math.min(startOffset, startNodeText.length);
+          
+          if (endNode && endNode !== startNode) {
+            const endNodeText = endNode.textContent || '';
+            const safeEndOffset = Math.min(endOffset, endNodeText.length);
+            range.setStart(startNode, safeStartOffset);
+            range.setEnd(endNode, safeEndOffset);
+          } else {
+            // Error is within a single node
+            const safeEndOffset = Math.min(endOffset || (startOffset + errorText.length), startNodeText.length);
+            range.setStart(startNode, safeStartOffset);
+            range.setEnd(startNode, safeEndOffset);
+          }
+
+          const clientRects = range.getClientRects();
+          const rects: DOMRect[] = [];
+
+          for (let i = 0; i < clientRects.length; i++) {
+            const clientRect = clientRects[i];
+            if (clientRect && clientRect.width > 0 && clientRect.height > 0) {
+              // Adjust for scroll position
+              const adjustedRect = new DOMRect(
+                clientRect.left,
+                clientRect.top,
+                clientRect.width,
+                clientRect.height
+              );
+              
+              // Verify rect is within visible canvas area
+              const isVisible = canvasRects.length === 0 || canvasRects.some(canvasRect => {
+                return adjustedRect.left >= canvasRect.left - 50 && 
+                       adjustedRect.left <= canvasRect.right + 50 &&
+                       adjustedRect.top >= canvasRect.top - 50 && 
+                       adjustedRect.top <= canvasRect.bottom + 50;
+              });
+              
+              if (isVisible || canvasRects.length === 0) {
+                rects.push(adjustedRect);
+              }
+            }
+          }
+
+          if (rects.length > 0 && rects[0]) {
+            console.log('Rewordly: Google Docs highlight found via text node matching', {
+              rects: rects.length,
+              firstRect: { left: rects[0].left, top: rects[0].top, width: rects[0].width, height: rects[0].height },
+              errorText: errorText.substring(0, 30),
+              start,
+              end,
+              scrollTop,
+              scrollLeft,
+              canvasCount: canvases.length
+            });
+            return rects;
+          }
+        } catch (e) {
+          console.warn('Rewordly: Range creation failed', e);
+        }
+      }
+
+      // Method 2: Fallback - try to find text by searching in contenteditable
+      // This is less reliable but can work as a fallback
+      const contentEditableFallback = editorArea.querySelector('[contenteditable="true"]') as HTMLElement;
+      if (contentEditableFallback) {
+        const editableText = contentEditableFallback.textContent || contentEditableFallback.innerText || '';
+        
+        // Try to find the error text by matching context around the position
+        // Since extracted text might differ slightly, we try to find a match near the expected position
+        const searchStart = Math.max(0, Math.floor(start * 0.9)); // Search slightly before
+        const searchEnd = Math.min(editableText.length, Math.ceil(end * 1.1)); // Search slightly after
+        const searchText = editableText.substring(searchStart, searchEnd);
+        
+        // Try exact match first
+        let errorIndex = searchText.indexOf(errorText);
+        if (errorIndex === -1) {
+          // Try case-insensitive match
+          const lowerSearchText = searchText.toLowerCase();
+          const lowerErrorText = errorText.toLowerCase();
+          errorIndex = lowerSearchText.indexOf(lowerErrorText);
+        }
+        
+        if (errorIndex !== -1) {
+          const actualIndex = searchStart + errorIndex;
+          try {
+            const fallbackWalker = document.createTreeWalker(
+              contentEditableFallback,
+              NodeFilter.SHOW_TEXT,
+              null
+            );
+            
+            let cumulativePos = 0;
+            let startNode: Text | null = null;
+            let startOffset = 0;
+            let endNode: Text | null = null;
+            let endOffset = 0;
+            
+            let node: Node | null;
+            while ((node = fallbackWalker.nextNode())) {
+              if (node.nodeType === Node.TEXT_NODE) {
+                const textNode = node as Text;
+                const nodeText = textNode.textContent || '';
+                const nodeStart = cumulativePos;
+                const nodeEnd = cumulativePos + nodeText.length;
+                
+                if (!startNode && nodeStart <= actualIndex && actualIndex < nodeEnd) {
+                  startNode = textNode;
+                  startOffset = actualIndex - nodeStart;
+                }
+                
+                if (startNode && nodeStart < actualIndex + errorText.length && actualIndex + errorText.length <= nodeEnd) {
+                  endNode = textNode;
+                  endOffset = actualIndex + errorText.length - nodeStart;
+                  break;
+                }
+                
+                cumulativePos += nodeText.length;
+              }
+            }
+            
+            if (startNode && endNode) {
+              const range = document.createRange();
+              range.setStart(startNode, startOffset);
+              range.setEnd(endNode, endOffset);
+              
+              const clientRects = range.getClientRects();
+              const rects: DOMRect[] = [];
+              
+              for (let i = 0; i < clientRects.length; i++) {
+                const clientRect = clientRects[i];
+                if (clientRect && clientRect.width > 0 && clientRect.height > 0) {
+                  // Adjust for scroll position and verify visibility
+                  const adjustedRect = new DOMRect(
+                    clientRect.left,
+                    clientRect.top,
+                    clientRect.width,
+                    clientRect.height
+                  );
+                  
+                  // Verify rect is within visible canvas area
+                  const isVisible = canvasRects.length === 0 || canvasRects.some(canvasRect => {
+                    return adjustedRect.left >= canvasRect.left - 50 && 
+                           adjustedRect.left <= canvasRect.right + 50 &&
+                           adjustedRect.top >= canvasRect.top - 50 && 
+                           adjustedRect.top <= canvasRect.bottom + 50;
+                  });
+                  
+                  if (isVisible || canvasRects.length === 0) {
+                    rects.push(adjustedRect);
+                  }
+                }
+              }
+              
+              if (rects.length > 0) {
+                console.log('Rewordly: Google Docs highlight found via contenteditable fallback', {
+                  rects: rects.length,
+                  errorText: errorText.substring(0, 30),
+                  scrollTop,
+                  scrollLeft,
+                  canvasCount: canvases.length
+                });
+                return rects;
+              }
+            }
+          } catch (e) {
+            console.warn('Rewordly: Contenteditable fallback failed', e);
+          }
+        }
+      }
+      
+      console.warn('Rewordly: Could not find error text in Google Docs', {
+        errorText: errorText.substring(0, 30),
+        textLength: extractedText.length,
+        start,
+        end,
+        textNodesFound: textNodes.length,
+        extractedTextPreview: extractedText.substring(Math.max(0, start - 20), Math.min(extractedText.length, end + 20)),
+        hasContentEditable: !!contentEditableElement,
+        editorAreaRect: editorArea ? editorArea.getBoundingClientRect() : null
+      });
+      
+      // Fallback 1: Try to use window.find() with context (more reliable)
+      if (selection) {
+        try {
+          // Clear selection
+          selection.removeAllRanges();
+          
+          // Build context around error text for more reliable finding
+          const contextBefore = extractedText.substring(Math.max(0, start - 10), start).trim();
+          const contextAfter = extractedText.substring(end, Math.min(extractedText.length, end + 10)).trim();
+          const searchText = contextBefore + errorText + contextAfter;
+          
+          // Try finding with context first
+          let found = false;
+          let foundRange: Range | null = null;
+          
+          // Try 1: Full context + error text
+          if (searchText.length > 0) {
+            found = (window as any).find(searchText, false, false, false);
+            if (found && selection.rangeCount > 0) {
+              foundRange = selection.getRangeAt(0);
+            }
+          }
+          
+          // Try 2: Just error text
+          if (!found) {
+            selection.removeAllRanges();
+            if (document.body) {
+              const range = document.createRange();
+              range.selectNodeContents(document.body);
+              range.collapse(true);
+              selection.addRange(range);
+              selection.removeAllRanges();
+            }
+            found = (window as any).find(errorText.trim(), false, false, false);
+            if (found && selection.rangeCount > 0) {
+              foundRange = selection.getRangeAt(0);
+            }
+          }
+          
+          // Try 3: First word only
+          if (!found) {
+            const errorWords = errorText.trim().split(/\s+/).filter(w => w.length > 0);
+            if (errorWords.length > 0) {
+              const firstWord = errorWords[0];
+              selection.removeAllRanges();
+              if (document.body) {
+                const range = document.createRange();
+                range.selectNodeContents(document.body);
+                range.collapse(true);
+                selection.addRange(range);
+                selection.removeAllRanges();
+              }
+              found = (window as any).find(firstWord, false, false, false);
+              if (found && selection.rangeCount > 0) {
+                foundRange = selection.getRangeAt(0);
+                
+                // Try to extend range to include full error text
+                try {
+                  const range = foundRange.cloneRange();
+                  const rangeText = range.toString().toLowerCase();
+                  const errorTextLower = errorText.toLowerCase().trim();
+                  
+                  // Check if we can extend
+                  if (rangeText.includes(errorTextLower)) {
+                    const startOffset = rangeText.indexOf(errorTextLower);
+                    range.setStart(range.startContainer, range.startOffset + startOffset);
+                    range.setEnd(range.startContainer, range.startOffset + startOffset + errorTextLower.length);
+                    foundRange = range;
+                  }
+                } catch (e) {
+                  // Keep original range if extension fails
+                }
+              }
+            }
+          }
+          
+          if (found && foundRange) {
+            const rect = foundRange.getBoundingClientRect();
+            
+            if (rect.width > 0 && rect.height > 0) {
+              // For multi-word errors, ensure width covers full error text
+              const estimatedWidth = errorText.length * 7; // More accurate character width
+              const fallbackRect = new DOMRect(
+                rect.left,
+                rect.top,
+                Math.max(rect.width, estimatedWidth),
+                rect.height
+              );
+              
+              console.warn('Rewordly: Using window.find() fallback rect for Google Docs highlight', {
+                errorText: errorText.substring(0, 30),
+                searchText: searchText.substring(0, 50),
+                foundText: foundRange.toString().substring(0, 30),
+                fallbackRect: {
+                  left: fallbackRect.left,
+                  top: fallbackRect.top,
+                  width: fallbackRect.width,
+                  height: fallbackRect.height
+                }
+              });
+              
+              selection.removeAllRanges();
+              return [fallbackRect];
+            }
+          }
+        } catch (e) {
+          console.warn('Rewordly: window.find() fallback failed', e);
+        }
+      }
+      
+      // Fallback 2: If window.find() failed, try to find contenteditable and use its text
+      if (!contentEditableElement) {
+        // Try to find it again with different selectors
+        const altContentEditable = editorArea.querySelector('[contenteditable="true"]') as HTMLElement ||
+                                  document.querySelector('[contenteditable="true"][role="textbox"]') as HTMLElement ||
+                                  editorArea.querySelector('[role="textbox"]') as HTMLElement;
+        
+        if (altContentEditable) {
+          const editableText = altContentEditable.textContent || altContentEditable.innerText || '';
+          const errorIndex = editableText.toLowerCase().indexOf(errorText.toLowerCase());
+          
+          if (errorIndex !== -1) {
+            try {
+              // Create a simple range based on character position
+              const walker = document.createTreeWalker(
+                altContentEditable,
+                NodeFilter.SHOW_TEXT,
+                null
+              );
+              
+              let cumulativePos = 0;
+              let startNode: Text | null = null;
+              let startOffset = 0;
+              let endNode: Text | null = null;
+              let endOffset = 0;
+              
+              let node: Node | null;
+              while ((node = walker.nextNode())) {
+                if (node.nodeType === Node.TEXT_NODE) {
+                  const textNode = node as Text;
+                  const nodeText = textNode.textContent || '';
+                  const nodeStart = cumulativePos;
+                  const nodeEnd = cumulativePos + nodeText.length;
+                  
+                  if (errorIndex >= nodeStart && errorIndex < nodeEnd && !startNode) {
+                    startNode = textNode;
+                    startOffset = errorIndex - nodeStart;
+                  }
+                  
+                  const errorEndIndex = errorIndex + errorText.length;
+                  if (errorEndIndex > nodeStart && errorEndIndex <= nodeEnd && !endNode) {
+                    endNode = textNode;
+                    endOffset = errorEndIndex - nodeStart;
+                    break;
+                  }
+                  
+                  cumulativePos = nodeEnd;
+                }
+              }
+              
+              if (startNode) {
+                const startNodeText = startNode.textContent || '';
+                const range = document.createRange();
+                range.setStart(startNode, Math.min(startOffset, startNodeText.length));
+                if (endNode && endNode !== startNode) {
+                  const endNodeText = endNode.textContent || '';
+                  range.setEnd(endNode, Math.min(endOffset, endNodeText.length));
+                } else {
+                  range.setEnd(startNode, Math.min(endOffset || (startOffset + errorText.length), startNodeText.length));
+                }
+                
+                const rects = Array.from(range.getClientRects());
+                if (rects.length > 0 && rects[0] && rects[0].width > 0 && rects[0].height > 0) {
+                  console.warn('Rewordly: Using alt contenteditable-based rect for Google Docs highlight', {
+                    errorText: errorText.substring(0, 30),
+                    rect: {
+                      left: rects[0].left,
+                      top: rects[0].top,
+                      width: rects[0].width,
+                      height: rects[0].height
+                    }
+                  });
+                  
+                  return Array.from(rects).map(r => r ? new DOMRect(r.left, r.top, r.width, r.height) : null).filter((r): r is DOMRect => r !== null);
+                }
+              }
+            } catch (e) {
+              console.warn('Rewordly: Alt contenteditable range creation failed', e);
+            }
+          }
+        }
+      }
+      
+      // Last resort: Try to create a rect based on contenteditable element position
+      // Use the contenteditable element's position if available
+      if (contentEditableElement) {
+        const editableRect = contentEditableElement.getBoundingClientRect();
+        if (editableRect.width > 0 && editableRect.height > 0) {
+          // Try to estimate position based on text position in extracted text
+          // Get all text from contenteditable
+          const editableText = contentEditableElement.textContent || '';
+          const errorIndex = editableText.toLowerCase().indexOf(errorText.toLowerCase());
+          
+          if (errorIndex !== -1) {
+            // Try to create a range at this position
+            try {
+              const editableWalker = document.createTreeWalker(
+                contentEditableElement,
+                NodeFilter.SHOW_TEXT,
+                null
+              );
+              
+              let cumulativePos = 0;
+              let startNode: Text | null = null;
+              let startOffset = 0;
+              let endNode: Text | null = null;
+              let endOffset = 0;
+              
+              let node: Node | null;
+              while ((node = editableWalker.nextNode())) {
+                if (node.nodeType === Node.TEXT_NODE) {
+                  const textNode = node as Text;
+                  const nodeText = textNode.textContent || '';
+                  const nodeStart = cumulativePos;
+                  const nodeEnd = cumulativePos + nodeText.length;
+                  
+                  if (errorIndex >= nodeStart && errorIndex < nodeEnd && !startNode) {
+                    startNode = textNode;
+                    startOffset = errorIndex - nodeStart;
+                  }
+                  
+                  const errorEndIndex = errorIndex + errorText.length;
+                  if (errorEndIndex > nodeStart && errorEndIndex <= nodeEnd && !endNode) {
+                    endNode = textNode;
+                    endOffset = errorEndIndex - nodeStart;
+                    break;
+                  }
+                  
+                  cumulativePos = nodeEnd;
+                }
+              }
+              
+              if (startNode) {
+                const startNodeText = startNode.textContent || '';
+                const range = document.createRange();
+                range.setStart(startNode, Math.min(startOffset, startNodeText.length));
+                if (endNode && endNode !== startNode) {
+                  const endNodeText = endNode.textContent || '';
+                  range.setEnd(endNode, Math.min(endOffset, endNodeText.length));
+                } else {
+                  range.setEnd(startNode, Math.min(endOffset || (startOffset + errorText.length), startNodeText.length));
+                }
+                
+                const rects = Array.from(range.getClientRects());
+                if (rects.length > 0 && rects[0] && rects[0].width > 0 && rects[0].height > 0) {
+                  console.warn('Rewordly: Using contenteditable-based rect for Google Docs highlight', {
+                    errorText: errorText.substring(0, 30),
+                    rect: {
+                      left: rects[0].left,
+                      top: rects[0].top,
+                      width: rects[0].width,
+                      height: rects[0].height
+                    }
+                  });
+                  
+                  return Array.from(rects).map(r => r ? new DOMRect(r.left, r.top, r.width, r.height) : null).filter((r): r is DOMRect => r !== null);
+                }
+              }
+            } catch (e) {
+              console.warn('Rewordly: Contenteditable range creation failed', e);
+            }
+          }
+          
+          // Ultimate fallback: use editor area position with approximate offset
+          const fallbackRect = new DOMRect(
+            editableRect.left + 50,
+            editableRect.top + 50,
+            Math.min(200, errorText.length * 8),
+            20
+          );
+          
+          console.warn('Rewordly: Using ultimate fallback rect for Google Docs highlight', {
+            errorText: errorText.substring(0, 30),
+            fallbackRect: {
+              left: fallbackRect.left,
+              top: fallbackRect.top,
+              width: fallbackRect.width,
+              height: fallbackRect.height
+            }
+          });
+          
+          return [fallbackRect];
+        }
+      }
+      
+      // Ultimate fallback: Search for error text directly in DOM and use element positions
+      // This MUST work - if we reach here, we need to return at least one rect
+      if (editorArea) {
+        // Strategy 1: Search for error text in all text-containing elements
+        const allElements = editorArea.querySelectorAll('*');
+        let foundElement: HTMLElement | null = null;
+        let foundTextIndex = -1;
+        
+        // Search for error text in element text content
+        for (const el of Array.from(allElements)) {
+          const element = el as HTMLElement;
+          const elementText = element.textContent || element.innerText || '';
+          const errorTextLower = errorText.toLowerCase().trim();
+          const elementTextLower = elementText.toLowerCase();
+          
+          // Try to find error text in element
+          const index = elementTextLower.indexOf(errorTextLower);
+          if (index !== -1) {
+            foundElement = element;
+            foundTextIndex = index;
+            break;
+          }
+          
+          // Also try finding first word if multi-word error
+          if (errorText.includes(' ')) {
+            const firstWord = errorTextLower.split(/\s+/)[0];
+            if (firstWord && firstWord.length > 2) {
+              const wordIndex = elementTextLower.indexOf(firstWord);
+              if (wordIndex !== -1) {
+                foundElement = element;
+                foundTextIndex = wordIndex;
+                break;
+              }
+            }
+          }
+        }
+        
+        if (foundElement) {
+          const elementRect = foundElement.getBoundingClientRect();
+          const computedStyle = window.getComputedStyle(foundElement);
+          const fontSize = parseFloat(computedStyle.fontSize) || 11;
+          const fontFamily = computedStyle.fontFamily || 'Arial';
+          const isMonospace = fontFamily.includes('monospace') || fontFamily.includes('Courier');
+          const estimatedCharWidth = isMonospace ? fontSize * 0.6 : fontSize * 0.55;
+          
+          // Calculate position within element
+          // Get text before error in this element
+          const elementText = foundElement.textContent || foundElement.innerText || '';
+          const textBeforeErrorInElement = elementText.substring(0, foundTextIndex);
+          
+          // Estimate left position: element left + text before error width
+          const estimatedLeft = elementRect.left + (textBeforeErrorInElement.length * estimatedCharWidth);
+          const estimatedWidth = Math.max(errorText.length * estimatedCharWidth, 30);
+          
+          const domSearchRect = new DOMRect(
+            estimatedLeft,
+            elementRect.top,
+            estimatedWidth,
+            fontSize * 1.2
+          );
+          
+          console.warn('Rewordly: Using DOM search-based rect for Google Docs highlight', {
+            errorText: errorText.substring(0, 30),
+            foundTextIndex,
+            elementText: elementText.substring(0, 50),
+            elementTag: foundElement.tagName,
+            elementClass: foundElement.className,
+            fontSize,
+            elementRect: { left: elementRect.left, top: elementRect.top, width: elementRect.width, height: elementRect.height },
+            fallbackRect: {
+              left: domSearchRect.left,
+              top: domSearchRect.top,
+              width: domSearchRect.width,
+              height: domSearchRect.height
+            }
+          });
+          
+          return [domSearchRect];
+        }
+        
+        // Strategy 2: Try to find text blocks and match by content
+        const textBlocks = editorArea.querySelectorAll('.kix-lineview-text-block, .kix-paragraphrenderer, .kix-lineview, [role="textbox"]');
+        const textBeforeError = extractedText.substring(0, start);
+        const linesBefore = textBeforeError.split('\n');
+        const currentLineIndex = linesBefore.length - 1;
+        
+        // Build text from DOM blocks and try to match error text
+        const domTextBlocks: Array<{ element: HTMLElement; text: string; index: number }> = [];
+        textBlocks.forEach((block, index) => {
+          const blockText = (block as HTMLElement).textContent || (block as HTMLElement).innerText || '';
+          if (blockText.trim().length > 0) {
+            domTextBlocks.push({ element: block as HTMLElement, text: blockText, index });
+          }
+        });
+        
+        // Try to find block containing error text
+        let matchedBlock: HTMLElement | null = null;
+        let matchedBlockText = '';
+        let matchedBlockIndex = -1;
+        let errorIndexInBlock = -1;
+        
+        for (const blockInfo of domTextBlocks) {
+          const blockTextLower = blockInfo.text.toLowerCase();
+          const errorTextLower = errorText.toLowerCase().trim();
+          const index = blockTextLower.indexOf(errorTextLower);
+          
+          if (index !== -1) {
+            matchedBlock = blockInfo.element;
+            matchedBlockText = blockInfo.text;
+            matchedBlockIndex = blockInfo.index;
+            errorIndexInBlock = index;
+            break;
+          }
+        }
+        
+        // If not found, try matching by line index
+        if (!matchedBlock && currentLineIndex >= 0 && currentLineIndex < domTextBlocks.length) {
+          const blockInfo = domTextBlocks[currentLineIndex];
+          if (blockInfo) {
+            matchedBlock = blockInfo.element;
+            matchedBlockText = blockInfo.text;
+            matchedBlockIndex = currentLineIndex;
+            const charsInLine = linesBefore[linesBefore.length - 1]?.length || 0;
+            errorIndexInBlock = Math.min(charsInLine, blockInfo.text.length);
+          }
+        }
+        
+        if (matchedBlock) {
+          const blockRect = matchedBlock.getBoundingClientRect();
+          const computedStyle = window.getComputedStyle(matchedBlock);
+          const fontSize = parseFloat(computedStyle.fontSize) || 11;
+          const fontFamily = computedStyle.fontFamily || 'Arial';
+          const isMonospace = fontFamily.includes('monospace') || fontFamily.includes('Courier');
+          const estimatedCharWidth = isMonospace ? fontSize * 0.6 : fontSize * 0.55;
+          
+          // Use error index in block if found, otherwise use chars in line
+          const charsBeforeError = errorIndexInBlock >= 0 ? errorIndexInBlock : (linesBefore[linesBefore.length - 1]?.length || 0);
+          const estimatedLeft = blockRect.left + (charsBeforeError * estimatedCharWidth);
+          const estimatedWidth = Math.max(errorText.length * estimatedCharWidth, 30);
+          
+          const blockBasedRect = new DOMRect(
+            estimatedLeft,
+            blockRect.top,
+            estimatedWidth,
+            fontSize * 1.2
+          );
+          
+          console.warn('Rewordly: Using block-based fallback rect for Google Docs highlight', {
+            errorText: errorText.substring(0, 30),
+            currentLine: currentLineIndex,
+            matchedBlockIndex,
+            errorIndexInBlock,
+            charsBeforeError,
+            blockText: matchedBlockText.substring(0, 50),
+            fontSize,
+            blockRect: { left: blockRect.left, top: blockRect.top, width: blockRect.width, height: blockRect.height },
+            fallbackRect: {
+              left: blockBasedRect.left,
+              top: blockBasedRect.top,
+              width: blockBasedRect.width,
+              height: blockBasedRect.height
+            }
+          });
+          
+          return [blockBasedRect];
+        }
+        
+        // Strategy 3: Use canvas position and Google Docs layout structure
+        // Google Docs uses canvas for rendering, so we need to use canvas position
+        const canvas = editorArea.querySelector('canvas.kix-canvas-tile-content') as HTMLCanvasElement;
+        const rotatingTileManager = editorArea.querySelector('.kix-rotatingtilemanager') as HTMLElement;
+        const pagePaginated = editorArea.querySelector('.kix-page-paginated') as HTMLElement;
+        
+        // Get page margins dynamically from ruler elements
+        // Try to find the top margin element in the vertical ruler
+        const topMarginElement = document.querySelector('#kix-vertical-ruler .docs-ruler-margin-start') as HTMLElement;
+        let topMargin = 97; // Default fallback
+        if (topMarginElement) {
+          const marginRect = topMarginElement.getBoundingClientRect();
+          if (marginRect.height > 0) {
+            topMargin = marginRect.height;
+          }
+        }
+        
+        // Text start offset - additional padding inside the page where text actually starts
+        // Removed: textStartOffset is not needed as text baseline is already accounted for in baseTop
+        const textStartOffset = 0;
+        
+        // Get font and page properties from toolbar
+        const getToolbarFontSize = (): number => {
+          const fontSizeSelect = document.querySelector('#fontSizeSelect .goog-toolbar-combo-button-caption') as HTMLElement;
+          if (fontSizeSelect) {
+            const fontSizeText = fontSizeSelect.textContent?.trim() || '';
+            // Remove % if present and parse
+            const fontSizeValue = parseFloat(fontSizeText.replace('%', ''));
+            if (!isNaN(fontSizeValue) && fontSizeValue > 0) {
+              return fontSizeValue;
+            }
+          }
+          return 13; // Default fallback
+        };
+        
+        const getToolbarFontFamily = (): string => {
+          const fontFamilySelect = document.querySelector('#docs-font-family .goog-toolbar-menu-button-caption') as HTMLElement;
+          if (fontFamilySelect) {
+            const fontFamilyText = fontFamilySelect.textContent?.trim() || '';
+            if (fontFamilyText) {
+              return fontFamilyText;
+            }
+          }
+          return 'Arial'; // Default fallback
+        };
+        
+        const getToolbarLineSpacing = (): number => {
+          // Line spacing is typically stored as a multiplier (1.0, 1.15, 1.5, 2.0, etc.)
+          // We can try to get it from the line spacing menu button
+          const lineSpacingButton = document.querySelector('#lineSpacingMenuButton') as HTMLElement;
+          if (lineSpacingButton) {
+            // The actual line spacing value might be in a data attribute or computed style
+            // For now, we'll use the computed line height from text elements
+            // This is a fallback - the actual line spacing might need to be extracted differently
+          }
+          // Return default multiplier (will be multiplied by fontSize later)
+          return 1.538; // Google Docs default line height multiplier
+        };
+        
+        let baseLeft = 0;
+        let baseTop = 0;
+        
+        // Get font properties from toolbar first, then fallback to computed styles
+        const toolbarFontSize = getToolbarFontSize();
+        const toolbarFontFamily = getToolbarFontFamily();
+        
+        let fontSize = toolbarFontSize;
+        let fontFamily = toolbarFontFamily;
+        let lineHeight = 20; // Will be calculated based on fontSize
+        let charWidth = 7.5; // Will be calculated based on fontSize and fontFamily
+        
+        // Priority 1: Use page-paginated element (most accurate for text positioning)
+        if (pagePaginated) {
+          const pageRect = pagePaginated.getBoundingClientRect();
+          if (pageRect.width > 0 && pageRect.height > 0) {
+            // Page has position: absolute; top: 5px; left: 5px; from HTML
+            const pageStyles = window.getComputedStyle(pagePaginated);
+            const pageTop = parseFloat(pageStyles.top) || 5;
+            const pageLeft = parseFloat(pageStyles.left) || 5;
+            
+            baseLeft = pageRect.left + pageLeft;
+            // baseTop should be the text baseline position, not the page top
+            // Text starts at page top + topMargin, but baseline is slightly lower
+            baseTop = pageRect.top + pageTop + topMargin;
+          }
+        }
+        
+        // Priority 2: Use rotating tile manager position
+        if (baseLeft === 0 && baseTop === 0 && rotatingTileManager) {
+          const managerRect = rotatingTileManager.getBoundingClientRect();
+          const managerStyles = window.getComputedStyle(rotatingTileManager);
+          
+          // Get padding-top and left from style
+          const paddingTop = parseFloat(managerStyles.paddingTop) || 11;
+          const leftOffset = parseFloat(managerStyles.left) || 89;
+          
+          if (managerRect.width > 0 && managerRect.height > 0) {
+            baseLeft = managerRect.left + leftOffset;
+            baseTop = managerRect.top + paddingTop + topMargin;
+          }
+        }
+        
+        // Priority 3: Use canvas position directly
+        if (baseLeft === 0 && baseTop === 0 && canvas) {
+          const canvasRect = canvas.getBoundingClientRect();
+          if (canvasRect.width > 0 && canvasRect.height > 0) {
+            baseLeft = canvasRect.left;
+            baseTop = canvasRect.top + topMargin;
+          }
+        }
+        
+        // Priority 4: Use editor area with typical margins
+        if (baseLeft === 0 && baseTop === 0) {
+          const editorRect = editorArea.getBoundingClientRect();
+          baseLeft = editorRect.left;
+          baseTop = editorRect.top;
+          
+          // Google Docs typical margins from HTML structure
+          const leftMargin = 89; // From HTML: left: 89px
+          const editorPaddingTop = 11; // From HTML: padding-top: 11px
+          
+          baseLeft += leftMargin;
+          baseTop += editorPaddingTop + topMargin;
+        }
+        
+        // Get font metrics - use toolbar values first, then fallback to computed styles
+        // Try to find a text element in Google Docs to get real line height and letter spacing
+        const textElement = editorArea.querySelector('.kix-lineview-text-block, .kix-paragraphrenderer, [role="textbox"]') as HTMLElement;
+        let fontStyles: CSSStyleDeclaration;
+        
+        if (textElement) {
+          fontStyles = window.getComputedStyle(textElement);
+        } else {
+          fontStyles = window.getComputedStyle(editorArea);
+        }
+        
+        // Use toolbar fontSize and fontFamily (already set above), but get lineHeight and letterSpacing from computed styles
+        // fontSize and fontFamily are already set from toolbar above
+        const computedLineHeight = parseFloat(fontStyles.lineHeight);
+        lineHeight = computedLineHeight || (fontSize * getToolbarLineSpacing()); // Use toolbar line spacing multiplier or computed
+        
+        // Get letter spacing for more accurate character width calculation
+        const letterSpacing = parseFloat(fontStyles.letterSpacing) || 0;
+        
+        // Calculate character width based on font family from toolbar
+        // Different fonts have different character widths
+        const isMonospace = fontFamily.toLowerCase().includes('monospace') || 
+                           fontFamily.toLowerCase().includes('courier') ||
+                           fontFamily.toLowerCase().includes('consolas');
+        
+        if (isMonospace) {
+          charWidth = fontSize * 0.6 + letterSpacing;
+        } else if (fontFamily.toLowerCase().includes('arial')) {
+          // Arial: average character width is ~0.6 * fontSize
+          charWidth = fontSize * 0.6 + letterSpacing;
+        } else if (fontFamily.toLowerCase().includes('times') || fontFamily.toLowerCase().includes('serif')) {
+          // Times/Serif fonts: narrower characters
+          charWidth = fontSize * 0.5 + letterSpacing;
+        } else if (fontFamily.toLowerCase().includes('roboto')) {
+          // Roboto font: more accurate character width calculation
+          // For 13px Roboto, average character width is ~7.5px (0.577 * fontSize)
+          charWidth = fontSize * 0.577 + letterSpacing;
+        } else {
+          // Default for other proportional fonts (Calibri, Verdana, etc.)
+          charWidth = fontSize * 0.577 + letterSpacing;
+        }
+        
+        // Calculate position based on text position in extracted text
+        const charsInLine = linesBefore[linesBefore.length - 1]?.length || 0;
+        const estimatedLeft = baseLeft + (charsInLine * charWidth);
+        // For top position: baseTop is the page top + margin, but text baseline is slightly lower
+        // Highlight should be at text baseline, which is approximately fontSize * 0.8 from the top of the line
+        // For first line: baseTop + fontSize * 0.8
+        // For subsequent lines: baseTop + fontSize * 0.8 + (currentLineIndex * lineHeight)
+        const baselineOffset = fontSize * 0.8; // Approximate baseline offset from line top
+        const estimatedTop = baseTop + baselineOffset + (currentLineIndex * lineHeight);
+        const estimatedWidth = Math.max(errorText.length * charWidth, 30);
+        
+        const ultimateFallbackRect = new DOMRect(
+          estimatedLeft,
+          estimatedTop,
+          estimatedWidth,
+          fontSize * 1.2
+        );
+        
+        // Log key values separately for better visibility
+        console.warn('Rewordly: Using canvas-based fallback rect for Google Docs highlight', {
+          errorText: errorText.substring(0, 30),
+          currentLine: currentLineIndex,
+          charsInLine,
+          fontSize,
+          fontFamily,
+          lineHeight,
+          charWidth,
+          letterSpacing,
+          baseLeft,
+          baseTop,
+          topMargin,
+          textStartOffset,
+          baselineOffset: fontSize * 0.8,
+          toolbarFontSize,
+          toolbarFontFamily,
+          hasCanvas: !!canvas,
+          hasRotatingTileManager: !!rotatingTileManager,
+          hasPagePaginated: !!pagePaginated,
+          hasTopMarginElement: !!topMarginElement,
+          topMarginElementHeight: topMarginElement ? topMarginElement.getBoundingClientRect().height : null,
+          pagePaginatedRect: pagePaginated ? {
+            left: pagePaginated.getBoundingClientRect().left,
+            top: pagePaginated.getBoundingClientRect().top,
+            width: pagePaginated.getBoundingClientRect().width,
+            height: pagePaginated.getBoundingClientRect().height
+          } : null,
+          managerRect: rotatingTileManager ? {
+            left: rotatingTileManager.getBoundingClientRect().left,
+            top: rotatingTileManager.getBoundingClientRect().top,
+            width: rotatingTileManager.getBoundingClientRect().width,
+            height: rotatingTileManager.getBoundingClientRect().height
+          } : null,
+          canvasRect: canvas ? {
+            left: canvas.getBoundingClientRect().left,
+            top: canvas.getBoundingClientRect().top,
+            width: canvas.getBoundingClientRect().width,
+            height: canvas.getBoundingClientRect().height
+          } : null,
+          editorRect: {
+            left: editorArea.getBoundingClientRect().left,
+            top: editorArea.getBoundingClientRect().top,
+            width: editorArea.getBoundingClientRect().width,
+            height: editorArea.getBoundingClientRect().height
+          },
+          fallbackRect: {
+            left: ultimateFallbackRect.left,
+            top: ultimateFallbackRect.top,
+            width: ultimateFallbackRect.width,
+            height: ultimateFallbackRect.height
+          }
+        });
+        
+        // Also log key values separately for easier debugging
+        console.log('Rewordly: Canvas fallback key values', {
+          topMargin,
+          textStartOffset,
+          baseTop,
+          baseLeft,
+          hasTopMarginElement: !!topMarginElement,
+          topMarginElementHeight: topMarginElement ? topMarginElement.getBoundingClientRect().height : 'N/A'
+        });
+        
+        return [ultimateFallbackRect];
+      } else {
+        // No editor area found, use viewport center
+        const viewportFallbackRect = new DOMRect(
+          window.innerWidth / 2 - 100,
+          window.innerHeight / 2,
+          200,
+          20
+        );
+        
+        console.warn('Rewordly: Using viewport fallback rect (no editor area found)', {
+          errorText: errorText.substring(0, 30),
+          fallbackRect: {
+            left: viewportFallbackRect.left,
+            top: viewportFallbackRect.top,
+            width: viewportFallbackRect.width,
+            height: viewportFallbackRect.height
+          }
+        });
+        
+        return [viewportFallbackRect];
+      }
+    } catch (e) {
+      console.error('Rewordly: Error getting Google Docs error rects:', e);
+      
+      // Even on error, return a fallback rect so highlights are visible
+      const errorFallbackRect = new DOMRect(
+        window.innerWidth / 2 - 100,
+        window.innerHeight / 2,
+        200,
+        20
+      );
+      
+      console.warn('Rewordly: Using error fallback rect', {
+        errorText: errorText.substring(0, 30),
+        error: e,
+        fallbackRect: {
+          left: errorFallbackRect.left,
+          top: errorFallbackRect.top,
+          width: errorFallbackRect.width,
+          height: errorFallbackRect.height
+        }
+      });
+      
+      return [errorFallbackRect];
+    }
+
+    // This should never be reached, but just in case
+    console.error('Rewordly: All fallback methods failed, returning empty array');
+    return [];
+  }
+
+  private isElementIgnored(element: HTMLElement): boolean {
+    return this.ignoredElementIds.has(this.getElementId(element));
+  }
+
+  private shouldIgnoreElement(element: HTMLElement): boolean {
+    return this.isElementIgnored(element);
+  }
+  
+  private isErrorDismissed(element: HTMLElement, error: GrammarError): boolean {
+    const elementId = this.getElementId(element);
+    
+    // Get current text to verify position is still valid
+    let text = '';
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+      text = element.value;
+    } else if (element.getAttribute('contenteditable') === 'true' || element.isContentEditable) {
+      text = element.innerText || element.textContent || '';
+    }
+    
+    // If position is invalid, try to find the word by matching context from dismiss keys
+    // This handles cases where text was added/removed above the error
+    if (error.start < 0 || error.end > text.length || error.start >= error.end) {
+      const wordLower = error.word.toLowerCase().trim();
+      const elementIdPrefix = `${elementId}:${wordLower}:`;
+      const searchText = text.toLowerCase();
+      let foundMatch = false;
+      
+      // Check all dismiss keys for this element and word
+      for (const [dismissKey, _] of this.dismissedErrors.entries()) {
+        if (!dismissKey.startsWith(elementIdPrefix)) continue;
+        
+        // Extract context from dismiss key (format: elementId:word:before:after)
+        // Note: context may contain colons, so we need to be careful
+        const afterPrefix = dismissKey.substring(elementIdPrefix.length);
+        const lastColonIndex = afterPrefix.lastIndexOf(':');
+        if (lastColonIndex === -1) continue;
+        
+        const beforeContext = afterPrefix.substring(0, lastColonIndex);
+        const afterContext = afterPrefix.substring(lastColonIndex + 1);
+        
+        // Search for word with matching context
+        let searchIndex = 0;
+        while (true) {
+          const wordIndex = searchText.indexOf(wordLower, searchIndex);
+          if (wordIndex === -1) break;
+          
+          // Get context around this occurrence
+          const beforeText = searchText.substring(Math.max(0, wordIndex - 30), wordIndex).trim();
+          const afterText = searchText.substring(wordIndex + wordLower.length, Math.min(text.length, wordIndex + wordLower.length + 30)).trim();
+          
+          // Check if context matches (using last 20 chars of before and first 20 chars of after)
+          if (beforeText.endsWith(beforeContext.slice(-20)) && afterText.startsWith(afterContext.slice(0, 20))) {
+            // Found matching word with context, update position
+            error.start = wordIndex;
+            error.end = wordIndex + wordLower.length;
+            foundMatch = true;
+            break;
+          }
+          
+          searchIndex = wordIndex + 1;
+        }
+        
+        if (foundMatch) break;
+      }
+      
+      // If still invalid, word not found or context doesn't match
+      if (!foundMatch || error.start < 0 || error.end > text.length || error.start >= error.end) {
+        return false;
+      }
+    }
+    
+    // Generate dismiss key using word + context (not position)
+    const dismissKey = this.getDismissKey(elementId, error, text);
+    
+    if (!this.dismissedErrors.has(dismissKey)) {
+      return false;
+    }
+    
+    // Verify the word at current position still matches
+    const currentWord = text.substring(error.start, error.end);
+    const originalWord = error.word;
+    
+    // If word changed significantly, clear dismiss
+    if (currentWord.toLowerCase().trim() !== originalWord.toLowerCase().trim()) {
+      this.dismissedErrors.delete(dismissKey);
+      return false;
+    }
+    
+    // Still dismissed
+    return true;
+  }
+
+  private getDismissKey(elementId: string, error: GrammarError, text: string): string {
+    return `${elementId}:${error.word}:${text.substring(error.start, error.end)}`;
+  }
+
+  /**
    * Get error rect for contenteditable elements
    */
 
@@ -3704,12 +4328,16 @@ class RewordlyContentScript {
         highlight.style.height = `${highlightRect.height}px`;
         
         // Show or hide highlight based on visibility
-        if (isHighlightWithinElement && isWithinScrollableContainer) {
+        // For Google Docs, always show highlights (canvas-based, visibility checks don't work)
+        const isGoogleDocs = (element as any).__rewordlyIsGoogleDocs === true;
+        
+        if (isGoogleDocs || (isHighlightWithinElement && isWithinScrollableContainer)) {
           // Ensure highlight is visible (may have been hidden by blur/modal)
           highlight.style.display = '';
           highlight.style.opacity = '1'; // Restore opacity if it was faded
           highlight.removeAttribute('data-hidden-by-blur');
           highlight.removeAttribute('data-hidden-by-modal');
+          highlight.removeAttribute('data-hidden-by-scroll');
         } else {
           // Hide highlight if element is not visible or highlight is outside bounds
           highlight.style.display = 'none';
@@ -4271,133 +4899,6 @@ class RewordlyContentScript {
     // Clear the active tooltips map
     this.activeTooltips.clear();
   }
-
-  /**
-   * Attach hover event listeners to grammar error spans
-   */
-  // private attachGrammarErrorHoverListeners(overlay: HTMLElement, element: HTMLElement): void {
-  //   const errorSpans = overlay.querySelectorAll('.rewordly-grammar-error');
-  //   let currentTooltip: HTMLElement | null = null;
-  //   let tooltipTimeout: number | null = null;
-    
-  //   // Helper function to close tooltip
-  //   const closeTooltip = () => {
-  //     if (tooltipTimeout !== null) {
-  //       clearTimeout(tooltipTimeout);
-  //       tooltipTimeout = null;
-  //     }
-  //     if (currentTooltip) {
-  //       currentTooltip.remove();
-  //       currentTooltip = null;
-  //     }
-  //   };
-    
-  //   errorSpans.forEach(span => {
-  //     const errorSpan = span as HTMLElement;
-      
-  //     errorSpan.addEventListener('mouseenter', (_e) => {
-  //       // Remove existing tooltip
-  //       closeTooltip();
-        
-  //       // Get error data
-  //       const errorData = errorSpan.getAttribute('data-error');
-  //       if (!errorData) return;
-        
-  //       try {
-  //         const error: GrammarError = JSON.parse(errorData);
-          
-  //         // Create tooltip
-  //         const tooltip = document.createElement('div');
-  //         tooltip.className = 'rewordly-grammar-tooltip';
-          
-  //         // Get error span position
-  //         const spanRect = errorSpan.getBoundingClientRect();
-          
-  //         // Create suggestions list
-  //         const suggestionsHtml = error.suggestions && error.suggestions.length > 0
-  //           ? error.suggestions.map((suggestion) => 
-  //               `<button class="rewordly-grammar-suggestion" data-suggestion="${this.escapeHtml(suggestion)}" data-error-start="${error.start}" data-error-end="${error.end}">${this.escapeHtml(suggestion)}</button>`
-  //             ).join('')
-  //           : '<div class="rewordly-grammar-no-suggestions">No suggestions available</div>';
-          
-  //         tooltip.innerHTML = `
-  //           <div class="rewordly-grammar-tooltip-content">
-  //             <div class="rewordly-grammar-tooltip-word">${this.escapeHtml(error.word)}</div>
-  //             <div class="rewordly-grammar-tooltip-suggestions">${suggestionsHtml}</div>
-  //           </div>
-  //         `;
-          
-  //         document.body.appendChild(tooltip);
-          
-  //         // Position tooltip above the error span
-  //         const tooltipRect = tooltip.getBoundingClientRect();
-  //         const tooltipTop = spanRect.top - tooltipRect.height - 8;
-  //         const tooltipLeft = spanRect.left + (spanRect.width / 2) - (tooltipRect.width / 2);
-          
-  //         // Adjust if tooltip goes off screen
-  //         const adjustedLeft = Math.max(8, Math.min(tooltipLeft, window.innerWidth - tooltipRect.width - 8));
-  //         const adjustedTop = tooltipTop < 8 ? spanRect.bottom + 8 : tooltipTop;
-          
-  //         tooltip.style.top = `${adjustedTop}px`;
-  //         tooltip.style.left = `${adjustedLeft}px`;
-          
-  //         currentTooltip = tooltip;
-          
-  //         // Attach mouseleave to tooltip itself
-  //         tooltip.addEventListener('mouseleave', () => {
-  //           tooltipTimeout = window.setTimeout(() => {
-  //             if (currentTooltip === tooltip && !errorSpan.matches(':hover')) {
-  //               closeTooltip();
-  //             }
-  //           }, 100);
-  //         });
-          
-  //         // Attach click handlers to suggestions
-  //         const suggestionButtons = tooltip.querySelectorAll('.rewordly-grammar-suggestion');
-  //         suggestionButtons.forEach(button => {
-  //           button.addEventListener('click', (e) => {
-  //             e.stopPropagation();
-  //             e.preventDefault();
-              
-  //             const suggestion = (button as HTMLElement).getAttribute('data-suggestion');
-  //             const errorStart = parseInt((button as HTMLElement).getAttribute('data-error-start') || '0');
-  //             const errorEnd = parseInt((button as HTMLElement).getAttribute('data-error-end') || '0');
-              
-  //             if (suggestion) {
-  //               // Close tooltip immediately before replacement
-  //               closeTooltip();
-  //               // Also close all tooltips as a safety measure
-  //               this.closeAllGrammarTooltips();
-                
-  //               // Replace the error
-  //               this.replaceGrammarError(element, errorStart, errorEnd, suggestion);
-  //             }
-  //           });
-  //         });
-  //       } catch (err) {
-  //         console.error('Rewordly: Error parsing error data:', err);
-  //       }
-  //     });
-      
-  //     errorSpan.addEventListener('mouseleave', () => {
-  //       // Small delay to allow moving to tooltip
-  //       tooltipTimeout = window.setTimeout(() => {
-  //         if (currentTooltip && !currentTooltip.matches(':hover') && !errorSpan.matches(':hover')) {
-  //           closeTooltip();
-  //         }
-  //       }, 100);
-  //     });
-  //   });
-    
-  //   // Also handle overlay mouseleave to close tooltip
-  //   overlay.addEventListener('mouseleave', () => {
-  //     tooltipTimeout = window.setTimeout(() => {
-  //       if (currentTooltip && !currentTooltip.matches(':hover')) {
-  //         closeTooltip();
-  //       }
-  //     }, 200);
-  //   });
-  // }
 
   /**
    * Replace grammar error by error ID (most reliable - handles duplicate words perfectly)
@@ -6995,92 +7496,8 @@ class RewordlyContentScript {
       });
     }
   }
-
-  // private replaceOriginalText(): void {
-  //   if (!this.modal) return;
-
-  //   const rewrittenText = this.modal.querySelector('.rewordly-rewritten-text') as HTMLParagraphElement;
-  //   const newText = rewrittenText.textContent;
-
-  //   if (newText && newText !== '' && !newText.startsWith('Error:')) {
-  //     // Find the original selection and replace it
-  //     const selection = window.getSelection();
-  //     if (selection && selection.rangeCount > 0) {
-  //       const range = selection.getRangeAt(0);
-        
-  //       // Create a container for the text and badge
-  //       const container = document.createElement('span');
-  //       container.style.cssText = `
-  //         position: relative;
-  //         display: inline-block;
-  //         margin: 0 2px;
-  //       `;
-        
-  //       // Create the text node - ensure no quotes
-  //       const cleanText = newText.trim().replace(/^["']|["']$/g, ''); // Remove quotes from start/end
-  //       const textNode = document.createTextNode(cleanText);
-  //       container.appendChild(textNode);
-        
-  //       // Create a separate badge element
-  //       const badge = document.createElement('span');
-  //       badge.className = 'rewordly-replace-badge';
-  //       badge.textContent = 'Replaced';
-  //       badge.style.cssText = `
-  //         position: fixed;
-  //         top: ${range.getBoundingClientRect().top - 20}px;
-  //         left: ${range.getBoundingClientRect().right + 5}px;
-  //         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  //         color: white;
-  //         font-size: 10px;
-  //         font-weight: 600;
-  //         padding: 2px 6px;
-  //         border-radius: 10px;
-  //         box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
-  //         opacity: 0;
-  //         transform: scale(0.8);
-  //         transition: all 0.3s ease;
-  //         z-index: 10000;
-  //         white-space: nowrap;
-  //         pointer-events: none;
-  //         user-select: none;
-  //         -webkit-user-select: none;
-  //         -moz-user-select: none;
-  //         -ms-user-select: none;
-  //       `;
-        
-  //       // Add badge to body
-  //       document.body.appendChild(badge);
-        
-  //       // Replace the selected text with the new text and badge
-  //       range.deleteContents();
-  //       range.insertNode(container);
-        
-  //       // Clear the selection
-  //       selection.removeAllRanges();
-        
-  //       // Show the badge with animation
-  //       setTimeout(() => {
-  //         badge.style.opacity = '1';
-  //         badge.style.transform = 'scale(1)';
-  //       }, 100);
-        
-  //       // Hide the badge after 2 seconds
-  //       setTimeout(() => {
-  //         badge.style.opacity = '0';
-  //         badge.style.transform = 'scale(0.8)';
-  //         setTimeout(() => {
-  //           if (badge.parentNode) {
-  //             badge.remove();
-  //           }
-  //         }, 300);
-  //       }, 2000);
-  //     }
-  //   }
-    
-  //   // Close the modal after replacement
-  //   this.hideModal();
-  // }
 }
 
 // Initialize the content script
+new RewordlyContentScript();
 new RewordlyContentScript();
