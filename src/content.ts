@@ -993,98 +993,6 @@ class RewordlyContentScript {
   }
 
   /**
-   * Extract text from element excluding signature blocks
-   * This prevents grammar checking on email signatures which contain formatting
-   * that can trigger false positives (like whitespace, special characters, etc.)
-   * Preserves line breaks by using innerText which properly handles <br> tags and block elements.
-   * Also handles Google Docs virtual elements specially.
-   */
-  private extractTextExcludingSignature(element: HTMLElement): {
-    text: string;
-    textSource: "value" | "textContent" | "innerText";
-  } {
-    // Check if this is a Google Docs virtual element
-    if (
-      (element as any).__rewordlyIsGoogleDocs &&
-      (element as any).__rewordlyGoogleDocsContainer
-    ) {
-      // For Google Docs, use the textContent that was set on the virtual element
-      // This text was already filtered by getGoogleDocsText() function
-      const text = element.textContent || element.innerText || "";
-      return {
-        text: text,
-        textSource: "textContent",
-      };
-    }
-
-    if (
-      element instanceof HTMLInputElement ||
-      element instanceof HTMLTextAreaElement
-    ) {
-      return {
-        text: element.value,
-        textSource: "value",
-      };
-    } else if (
-      element.getAttribute("contenteditable") === "true" ||
-      element.isContentEditable
-    ) {
-      // Temporarily hide signature elements to exclude them from innerText
-      // This preserves line breaks and formatting while excluding signature
-      const signatureElements = element.querySelectorAll(
-        '.gmail_signature, [class*="signature"], [id*="signature"]'
-      );
-      const signaturePrefix = element.querySelector(".gmail_signature_prefix");
-
-      const hiddenElements: Array<{
-        el: HTMLElement;
-        originalDisplay: string;
-      }> = [];
-
-      // Hide signature elements
-      signatureElements.forEach((sigEl) => {
-        const htmlEl = sigEl as HTMLElement;
-        const originalDisplay = htmlEl.style.display;
-        htmlEl.style.display = "none";
-        hiddenElements.push({ el: htmlEl, originalDisplay });
-      });
-
-      // Hide signature prefix
-      if (signaturePrefix) {
-        const htmlEl = signaturePrefix as HTMLElement;
-        const originalDisplay = htmlEl.style.display;
-        htmlEl.style.display = "none";
-        hiddenElements.push({ el: htmlEl, originalDisplay });
-      }
-
-      // Get text with innerText (preserves line breaks from <br> and block elements)
-      let text = element.innerText || element.textContent || "";
-
-      // Restore original display styles
-      hiddenElements.forEach(({ el, originalDisplay }) => {
-        if (originalDisplay) {
-          el.style.display = originalDisplay;
-        } else {
-          el.style.removeProperty("display");
-        }
-      });
-
-      // Don't trim trailing whitespace - it's needed to maintain correct error positions
-      // Signature exclusion is already handled by hiding signature elements above
-
-      const textSource = "innerText";
-
-      return { text, textSource };
-    }
-
-    // Fallback for other element types
-    return {
-      text: element.textContent || "",
-      textSource: "textContent",
-    };
-  }
-
-  /**
    * Perform grammar check directly (new optimized method with request cancellation)
    */
   private async performGrammarCheckDirect(element: HTMLElement): Promise<void> {
@@ -1541,13 +1449,13 @@ class RewordlyContentScript {
     }
 
     // Get current text (excluding signature to match error positions)
-    const { text } = this.extractTextExcludingSignature(element);
+    const { text } = extractTextExcludingSignature(element);
 
     if (!this.highlightsContent) {
       return;
     }
 
-    const elementId = this.getElementId(element);
+    const elementId = getElementId(element);
     const highlights = this.highlightsContent.querySelectorAll(
       `[data-element-id="${elementId}"]`
     );
@@ -1620,7 +1528,7 @@ class RewordlyContentScript {
       errorsCount: errors.length,
       errors: errors,
       element: element.tagName,
-      elementId: this.getElementId(element),
+      elementId: getElementId(element),
       isGoogleDocs: isGoogleDocsElement,
       hasContainer: !!(element as any).__rewordlyGoogleDocsContainer,
       elementTextPreview: (
@@ -1659,7 +1567,7 @@ class RewordlyContentScript {
     }
 
     // Get existing highlights to compare by error ID and position/word (for matching after replace)
-    const elementId = this.getElementId(element);
+    const elementId = getElementId(element);
     const existingHighlights = this.highlightsContent.querySelectorAll(
       `[data-element-id="${elementId}"]`
     );
@@ -1811,9 +1719,9 @@ class RewordlyContentScript {
           if (!this.highlightsContent) return;
           const errorHighlights = Array.from(
             this.highlightsContent.querySelectorAll(
-              `[data-element-id="${this.getElementId(
-                element
-              )}"][data-error-id="${error.id}"]`
+              `[data-element-id="${getElementId(element)}"][data-error-id="${
+                error.id
+              }"]`
             )
           ) as HTMLElement[];
           errorHighlights.forEach((h) => h.remove());
@@ -1849,7 +1757,7 @@ class RewordlyContentScript {
         if (!this.highlightsContent) return;
         const errorHighlights = Array.from(
           this.highlightsContent.querySelectorAll(
-            `[data-element-id="${this.getElementId(element)}"][data-error-id="${
+            `[data-element-id="${getElementId(element)}"][data-error-id="${
               error.id
             }"]`
           )
@@ -1869,10 +1777,7 @@ class RewordlyContentScript {
               highlight.setAttribute("data-rewordly-part", "highlight");
               highlight.setAttribute("data-highlight-format", "underline");
               highlight.setAttribute("data-highlight-color-name", "red");
-              highlight.setAttribute(
-                "data-element-id",
-                this.getElementId(element)
-              );
+              highlight.setAttribute("data-element-id", getElementId(element));
               highlight.setAttribute("data-error-index", index.toString());
               highlight.setAttribute("data-error-id", error.id);
               highlight.setAttribute("data-line-index", lineIndex.toString());
@@ -2004,7 +1909,7 @@ class RewordlyContentScript {
     }
 
     if ((isGoogleDocs || hasText) && this.highlightsContent) {
-      const elementId = this.getElementId(element);
+      const elementId = getElementId(element);
       const allHighlights = this.highlightsContent.querySelectorAll(
         `[data-element-id="${elementId}"]`
       );
@@ -2024,18 +1929,6 @@ class RewordlyContentScript {
       (error: GrammarError) =>
         getErrorTextRects(element, error.start, error.end)
     );
-  }
-
-  /**
-   * Get unique ID for an element
-   */
-  private getElementId(element: HTMLElement): string {
-    if (!(element as any).__rewordlyId) {
-      (element as any).__rewordlyId = `rewordly-${Date.now()}-${Math.random()
-        .toString(36)
-        .substr(2, 9)}`;
-    }
-    return (element as any).__rewordlyId;
   }
 
   /**
@@ -2099,7 +1992,7 @@ class RewordlyContentScript {
       return;
     }
 
-    const elementId = this.getElementId(element);
+    const elementId = getElementId(element);
     const highlights = this.highlightsContent.querySelectorAll(
       `[data-element-id="${elementId}"]`
     );
@@ -2356,7 +2249,7 @@ class RewordlyContentScript {
       highlight.setAttribute("data-rewordly-part", "highlight");
       highlight.setAttribute("data-highlight-format", "underline");
       highlight.setAttribute("data-highlight-color-name", "red");
-      highlight.setAttribute("data-element-id", this.getElementId(element));
+      highlight.setAttribute("data-element-id", getElementId(element));
       highlight.setAttribute("data-error-index", index.toString());
       highlight.setAttribute("data-error-id", error.id); // Store error ID for quick lookup
       highlight.setAttribute("data-line-index", lineIndex.toString()); // Track which line this highlight is for
@@ -2487,7 +2380,7 @@ class RewordlyContentScript {
   private clearElementHighlights(element: HTMLElement): void {
     if (!this.highlightsContent) return;
 
-    const elementId = this.getElementId(element);
+    const elementId = getElementId(element);
     const highlights = this.highlightsContent.querySelectorAll(
       `[data-element-id="${elementId}"]`
     );
@@ -2797,7 +2690,7 @@ class RewordlyContentScript {
           if (error) {
             // Add to dismissed list
             // Dismiss based on word + context (handles position changes)
-            const elementId = this.getElementId(element);
+            const elementId = getElementId(element);
 
             // Get current text to generate context-based key
             let text = "";
@@ -3127,7 +3020,7 @@ class RewordlyContentScript {
     // Remove only the replaced error's highlight (not all highlights) - match by ID
     // Do this AFTER updating grammarErrors to ensure consistency
     if (this.highlightsContent) {
-      const elementId = this.getElementId(element);
+      const elementId = getElementId(element);
       const highlights = this.highlightsContent.querySelectorAll(
         `[data-element-id="${elementId}"]`
       );
@@ -3179,7 +3072,7 @@ class RewordlyContentScript {
       // This ensures all highlights have the most up-to-date error data
       // IMPORTANT: Do this BEFORE updateHighlightsPosition to ensure highlights have correct data
       if (this.highlightsContent) {
-        const elementId = this.getElementId(element);
+        const elementId = getElementId(element);
         const highlights = this.highlightsContent.querySelectorAll(
           `[data-element-id="${elementId}"]`
         );
@@ -3307,7 +3200,7 @@ class RewordlyContentScript {
 
           // Update all highlight data-error attributes with new positions - match by ID
           if (this.highlightsContent) {
-            const elementId = this.getElementId(element);
+            const elementId = getElementId(element);
             const highlights = this.highlightsContent.querySelectorAll(
               `[data-element-id="${elementId}"]`
             );
@@ -3428,7 +3321,7 @@ class RewordlyContentScript {
 
         // Update all highlight data-error attributes with new positions - match by ID
         if (this.highlightsContent) {
-          const elementId = this.getElementId(element);
+          const elementId = getElementId(element);
           const highlights = this.highlightsContent.querySelectorAll(
             `[data-element-id="${elementId}"]`
           );
