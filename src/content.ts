@@ -23,7 +23,8 @@ import {
   findEditableInElement,
   findEditableInShadowDOM,
   shouldIgnoreElement,
-  findScrollableContainers,
+  setupElementScrollListeners,
+  removeElementScrollListeners,
   isSingleLineElement,
   loadConfig,
   isPageDisabled,
@@ -35,6 +36,8 @@ import {
   isErrorDismissed,
   performGrammarCheckDirect,
   performGrammarCheck,
+  queueGrammarCheck,
+  processGrammarCheckQueue,
   mapInnerTextToTextNodes,
   adjustErrorPositionsForMultiWord,
   replaceGrammarError as replaceGrammarErrorHelper,
@@ -445,7 +448,19 @@ class RewordlyContentScript {
     this.checkAndPerformGrammarCheckForExistingText(element);
 
     // Set up scroll listeners for scrollable containers
-    this.setupElementScrollListeners(element);
+    setupElementScrollListeners(element, {
+      scrollableContainers: this.scrollableContainers,
+      scrollListeners: this.scrollListeners,
+      grammarErrors: this.grammarErrors,
+      highlightHelper: this.highlightHelper,
+      getErrorTextRects: (el: HTMLElement, start: number, end: number) =>
+        getErrorTextRects(el, start, end),
+      removeElementScrollListeners: (el: HTMLElement) =>
+        removeElementScrollListeners(el, {
+          scrollableContainers: this.scrollableContainers,
+          scrollListeners: this.scrollListeners,
+        }),
+    });
   }
 
   /**
@@ -917,76 +932,35 @@ class RewordlyContentScript {
    * Add element to grammar check queue
    */
   private queueGrammarCheck(element: HTMLElement, priority: number = 0): void {
-    // Only queue grammar check on allowed sites (Twitter, Gmail, Reddit, Medium)
-    if (!this.isGrammarCheckAllowedSite()) {
-      return;
-    }
-
-    // Check if element is already in queue
-    const existingIndex = this.grammarCheckQueue.findIndex(
-      (item) => item.element === element
-    );
-
-    if (existingIndex !== -1) {
-      // Update priority if new priority is higher
-      const existingItem = this.grammarCheckQueue[existingIndex];
-      if (existingItem && priority > (existingItem.priority || 0)) {
-        existingItem.priority = priority;
-      }
-      return;
-    }
-
-    // Add to queue
-    this.grammarCheckQueue.push({ element, priority });
-
-    // Sort queue by priority (higher priority first)
-    this.grammarCheckQueue.sort(
-      (a, b) => (b.priority || 0) - (a.priority || 0)
-    );
-
-    // Start processing queue if not already processing
-    if (!this.isProcessingQueue) {
-      this.processGrammarCheckQueue();
-    }
+    queueGrammarCheck(element, priority, {
+      isGrammarCheckAllowedSite: () => this.isGrammarCheckAllowedSite(),
+      grammarCheckQueue: this.grammarCheckQueue,
+      isProcessingQueue: {
+        get: () => this.isProcessingQueue,
+        set: (value: boolean) => {
+          this.isProcessingQueue = value;
+        },
+      },
+      processGrammarCheckQueue: () => this.processGrammarCheckQueue(),
+    });
   }
 
   /**
    * Process grammar check queue in batches
    */
   private async processGrammarCheckQueue(): Promise<void> {
-    if (this.isProcessingQueue || this.grammarCheckQueue.length === 0) {
-      return;
-    }
-
-    this.isProcessingQueue = true;
-
-    while (this.grammarCheckQueue.length > 0) {
-      // Get next batch
-      const batch = this.grammarCheckQueue.splice(0, this.BATCH_SIZE);
-
-      // Process batch in parallel
-      const promises = batch.map((item) => {
-        // Check if element still exists and is valid
-        if (!item.element || !item.element.isConnected) {
-          return Promise.resolve();
-        }
-        return this.performGrammarCheck(item.element).catch(
-          (error: unknown) => {
-            console.error("Rewordly: Grammar check error in queue:", error);
-          }
-        );
-      });
-
-      // Wait for batch to complete
-      await Promise.all(promises);
-
-      // Wait before processing next batch (if there are more items)
-      if (this.grammarCheckQueue.length > 0) {
-        await new Promise((resolve) => setTimeout(resolve, this.BATCH_DELAY));
-      }
-    }
-
-    this.isProcessingQueue = false;
+    await processGrammarCheckQueue({
+      grammarCheckQueue: this.grammarCheckQueue,
+      isProcessingQueue: {
+        get: () => this.isProcessingQueue,
+        set: (value: boolean) => {
+          this.isProcessingQueue = value;
+        },
+      },
+      performGrammarCheck: (el: HTMLElement) => this.performGrammarCheck(el),
+      BATCH_SIZE: this.BATCH_SIZE,
+      BATCH_DELAY: this.BATCH_DELAY,
+    });
   }
 
   /**
@@ -1270,7 +1244,10 @@ class RewordlyContentScript {
     this.highlightHelper.clearElementHighlights(element);
 
     // Remove scroll listeners for this element
-    this.removeElementScrollListeners(element);
+    removeElementScrollListeners(element, {
+      scrollableContainers: this.scrollableContainers,
+      scrollListeners: this.scrollListeners,
+    });
   }
 
   /**
@@ -1720,71 +1697,6 @@ class RewordlyContentScript {
     });
   }
 
-  /**
-   * Set up scroll listeners for a specific editable element
-   */
-  private setupElementScrollListeners(element: HTMLElement): void {
-    // Remove existing listeners for this element
-    this.removeElementScrollListeners(element);
-
-    // Find scrollable containers
-    const containers = this.scrollableContainers.get(element) || new Set();
-    this.scrollableContainers.set(element, containers);
-
-    // Add scroll listeners to each scrollable container
-    containers.forEach((container) => {
-      // Check if we already have a listener for this container
-      if (!this.scrollListeners.has(container)) {
-        const updateAllForContainer = () => {
-          // Update highlights for all elements that have this container as a scrollable parent
-          this.scrollableContainers.forEach((containers, el) => {
-            if (containers.has(container) && this.grammarErrors.has(el)) {
-              this.highlightHelper.updatePositions(
-                el,
-                this.grammarErrors.get(el) || [],
-                (error: GrammarError) =>
-                  getErrorTextRects(el, error.start, error.end)
-              );
-            }
-          });
-        };
-
-        container.addEventListener("scroll", updateAllForContainer, {
-          passive: true,
-        });
-        this.scrollListeners.set(container, updateAllForContainer);
-      }
-    });
-  }
-
-  /**
-   * Remove scroll listeners for a specific editable element
-   */
-  private removeElementScrollListeners(element: HTMLElement): void {
-    const containers = this.scrollableContainers.get(element);
-    if (!containers) return;
-
-    // Check if any other elements use these containers
-    containers.forEach((container) => {
-      let isUsedByOthers = false;
-      this.scrollableContainers.forEach((otherContainers, otherElement) => {
-        if (otherElement !== element && otherContainers.has(container)) {
-          isUsedByOthers = true;
-        }
-      });
-
-      // If no other elements use this container, remove the listener
-      if (!isUsedByOthers) {
-        const listener = this.scrollListeners.get(container);
-        if (listener) {
-          container.removeEventListener("scroll", listener);
-          this.scrollListeners.delete(container);
-        }
-      }
-    });
-
-    this.scrollableContainers.delete(element);
-  }
 
   /**
    * Set up scroll/resize listeners for highlights
@@ -2026,120 +1938,51 @@ class RewordlyContentScript {
    * For multi-line elements, positions button at bottom-right
    */
   private showAIRewriteButton(element: HTMLElement): void {
-    if (!this.rewriteButton || !this.config.rewriteEnabled) {
-      return;
-    }
-
-    // Only show rewrite button on sites where grammar check is enabled
-    if (!this.isGrammarCheckAllowedSite() || !this.config.highlightsEnabled) {
-      return;
-    }
-
-    // Remove existing scroll listener if any
-    this.removeAIButtonScrollListener();
-
-    // Update button position
-    this.updateAIRewriteButtonPosition(element);
-
-    // Ensure button is visible
-    this.rewriteButton.style.display = "flex";
-    this.rewriteButton.style.visibility = "visible";
-    this.rewriteButton.style.opacity = "1";
-    this.rewriteButton.classList.add("show");
-
-    // Cancel any pending button blur timeout to prevent button from hiding
-    if (this.buttonBlurTimeout !== null) {
-      clearTimeout(this.buttonBlurTimeout);
-      this.buttonBlurTimeout = null;
-    }
-
-    // Store reference to current element for rewrite functionality
-    (this.rewriteButton as any).__currentElement = element;
-
-    // Add scroll listener to update button position on scroll
-    this.addAIButtonScrollListener(element);
+    this.rewriteButtonHelper.showAIRewriteButton(element, {
+      rewriteEnabled: this.config.rewriteEnabled,
+      highlightsEnabled: this.config.highlightsEnabled,
+      isGrammarCheckAllowedSite: () => this.isGrammarCheckAllowedSite(),
+      buttonBlurTimeout: {
+        value: this.buttonBlurTimeout,
+        set: (value: number | null) => {
+          this.buttonBlurTimeout = value;
+        },
+      },
+      addAIButtonScrollListener: (el: HTMLElement) =>
+        this.addAIButtonScrollListener(el),
+      removeAIButtonScrollListener: () => this.removeAIButtonScrollListener(),
+    });
   }
 
   /**
    * Add scroll listener to update AI button position
    */
   private addAIButtonScrollListener(element: HTMLElement): void {
-    // Remove existing listener if any
-    this.removeAIButtonScrollListener();
-
-    // Create throttled update function for better performance
-    let rafId: number | null = null;
-    const updatePosition = () => {
-      if (rafId !== null) {
-        return; // Already scheduled
-      }
-      rafId = requestAnimationFrame(() => {
-        rafId = null;
-        // Check if button is still visible and element still exists
-        if (
-          this.rewriteButton &&
-          this.rewriteButton.classList.contains("show") &&
-          document.body.contains(element)
-        ) {
-          this.updateAIRewriteButtonPosition(element);
-        }
-      });
-    };
-
-    // Store the bound function
-    this.aiButtonScrollListener = updatePosition;
-
-    // Add listeners to window and document for comprehensive scroll detection
-    window.addEventListener("scroll", updatePosition, true);
-    window.addEventListener("resize", updatePosition);
-    document.addEventListener("scroll", updatePosition, true);
-
-    // Also listen to scrollable parent containers (important for Medium and other sites with nested scroll containers)
-    const scrollableContainers = findScrollableContainers(element);
-    scrollableContainers.forEach((container) => {
-      container.addEventListener("scroll", updatePosition, {
-        passive: true,
-        capture: true,
-      });
+    this.rewriteButtonHelper.addAIButtonScrollListener(element, {
+      updateAIRewriteButtonPosition: (el: HTMLElement) =>
+        this.updateAIRewriteButtonPosition(el),
+      removeAIButtonScrollListener: () => this.removeAIButtonScrollListener(),
+      aiButtonScrollListener: {
+        value: this.aiButtonScrollListener,
+        set: (value: (() => void) | null) => {
+          this.aiButtonScrollListener = value;
+        },
+      },
     });
-
-    // Store containers for cleanup
-    (this.rewriteButton as any).__scrollContainers = scrollableContainers;
   }
 
   /**
    * Remove scroll listener for AI button
    */
   private removeAIButtonScrollListener(): void {
-    const updatePosition = this.aiButtonScrollListener;
-
-    if (updatePosition) {
-      window.removeEventListener("scroll", updatePosition, true);
-      window.removeEventListener("resize", updatePosition);
-      document.removeEventListener("scroll", updatePosition, true);
-      this.aiButtonScrollListener = null;
-    }
-
-    // Remove scroll listeners from scrollable containers
-    if (
-      this.rewriteButton &&
-      (this.rewriteButton as any).__scrollContainers &&
-      updatePosition
-    ) {
-      const containers = (this.rewriteButton as any)
-        .__scrollContainers as Set<HTMLElement>;
-      containers.forEach((container) => {
-        try {
-          container.removeEventListener("scroll", updatePosition, {
-            capture: true,
-          } as any);
-        } catch (e) {
-          // Fallback if capture option causes issues
-          container.removeEventListener("scroll", updatePosition, true);
-        }
-      });
-      delete (this.rewriteButton as any).__scrollContainers;
-    }
+    this.rewriteButtonHelper.removeAIButtonScrollListener({
+      aiButtonScrollListener: {
+        value: this.aiButtonScrollListener,
+        set: (value: (() => void) | null) => {
+          this.aiButtonScrollListener = value;
+        },
+      },
+    });
   }
 
   /**
@@ -2147,22 +1990,10 @@ class RewordlyContentScript {
    * Only hides if currentFocusedElement is not set or element doesn't have focus
    */
   private hideRewriteButton(): void {
-    if (this.rewriteButton) {
-      // Don't hide button if there's a current focused element that still has focus
-      if (
-        this.currentFocusedElement &&
-        document.activeElement === this.currentFocusedElement
-      ) {
-        // Element still has focus, don't hide button
-        return;
-      }
-
-      // Hide button
-      this.rewriteButton.classList.remove("show");
-
-      // Remove scroll listener when button is hidden
-      this.removeAIButtonScrollListener();
-    }
+    this.rewriteButtonHelper.hideRewriteButton({
+      currentFocusedElement: this.currentFocusedElement,
+      removeAIButtonScrollListener: () => this.removeAIButtonScrollListener(),
+    });
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars

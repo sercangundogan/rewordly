@@ -7,6 +7,7 @@
  */
 
 import { GrammarError } from "../types";
+import { isSingleLineElement, findScrollableContainers } from "./element-helper";
 
 /**
  * Rewrite Button Helper
@@ -132,6 +133,291 @@ export class RewriteButtonHelper {
     if (this.button && this.button.parentNode) {
       this.button.parentNode.removeChild(this.button);
       this.button = null;
+    }
+  }
+
+  /**
+   * Update AI rewrite button position
+   * This is called both on initial show and on scroll/resize events
+   */
+  updateAIRewriteButtonPosition(
+    element: HTMLElement,
+    options: {
+      rewriteEnabled: boolean;
+      highlightsEnabled: boolean;
+      isGrammarCheckAllowedSite: () => boolean;
+    }
+  ): void {
+    if (!this.button || !options.rewriteEnabled) {
+      return;
+    }
+
+    // Only show rewrite button on sites where grammar check is enabled
+    if (!options.isGrammarCheckAllowedSite() || !options.highlightsEnabled) {
+      return;
+    }
+
+    // Check if element is still in the DOM
+    if (!document.body.contains(element)) {
+      return;
+    }
+
+    const hostname = window.location.hostname.toLowerCase();
+    const isMedium = hostname.includes("medium.com");
+
+    let elementRect: DOMRect;
+
+    // Medium-specific positioning: position relative to actual content area
+    if (isMedium) {
+      // Try to find .section-inner - it could be a parent (closest) or child (querySelector)
+      let sectionInner =
+        element.closest(".section-inner") ||
+        element.querySelector(".section-inner");
+
+      if (sectionInner) {
+        // Use .section-inner's bounding rect directly - it's already sized correctly with max-width
+        elementRect = sectionInner.getBoundingClientRect();
+      } else {
+        elementRect = element.getBoundingClientRect();
+      }
+    } else {
+      elementRect = element.getBoundingClientRect();
+    }
+
+    const buttonSize = 28; // Button size (reduced from 32)
+    const offset = 8; // Offset from edge
+
+    // Check if element is single-line
+    const isSingleLine = isSingleLineElement(element);
+
+    let buttonX: number;
+    let buttonY: number;
+
+    if (isSingleLine) {
+      // For single-line elements: position at right-center (vertically aligned)
+      buttonX = elementRect.right - buttonSize - offset;
+      // Center vertically within the element
+      buttonY = elementRect.top + elementRect.height / 2 - buttonSize / 2;
+    } else {
+      // For multi-line elements: position at bottom-right (existing behavior)
+      buttonX = elementRect.right - buttonSize - offset;
+      buttonY = elementRect.bottom - buttonSize - offset;
+    }
+
+    // Keep within viewport bounds
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    // Check if element is completely outside viewport
+    const elementTop = elementRect.top;
+    const elementBottom = elementRect.bottom;
+
+    // Horizontal bounds check
+    if (buttonX < 0) {
+      buttonX = elementRect.left + offset;
+    }
+    if (buttonX + buttonSize > viewportWidth) {
+      buttonX = viewportWidth - buttonSize - offset;
+    }
+
+    // Vertical bounds check - only constrain if element is partially visible
+    // If element is completely above viewport, let button follow element
+    if (elementBottom < 0) {
+      // Element is completely above viewport - keep button relative to element
+      // Don't constrain to viewport
+    }
+    // If element is completely below viewport, let button follow element
+    else if (elementTop > viewportHeight) {
+      // Element is completely below viewport - keep button relative to element
+      // Don't constrain to viewport
+    }
+    // Element is partially or fully visible - apply viewport constraints
+    else {
+      if (buttonY < 0) {
+        // If button goes above viewport, position at top of element (for single-line) or top with offset
+        buttonY = isSingleLine
+          ? elementRect.top + offset
+          : elementRect.top + offset;
+      }
+      if (buttonY + buttonSize > viewportHeight) {
+        // If button goes below viewport, position at bottom of viewport
+        buttonY = viewportHeight - buttonSize - offset;
+      }
+    }
+
+    // Update button position (transition is disabled during scroll by scroll listener)
+    this.button.style.left = `${buttonX}px`;
+    this.button.style.top = `${buttonY}px`;
+  }
+
+  /**
+   * Show AI rewrite button at bottom-right of editable element
+   * For single-line elements, positions button at right-center (vertically aligned)
+   * For multi-line elements, positions button at bottom-right
+   */
+  showAIRewriteButton(
+    element: HTMLElement,
+    options: {
+      rewriteEnabled: boolean;
+      highlightsEnabled: boolean;
+      isGrammarCheckAllowedSite: () => boolean;
+      buttonBlurTimeout: { value: number | null; set: (value: number | null) => void };
+      addAIButtonScrollListener: (element: HTMLElement) => void;
+      removeAIButtonScrollListener: () => void;
+    }
+  ): void {
+    if (!this.button || !options.rewriteEnabled) {
+      return;
+    }
+
+    // Only show rewrite button on sites where grammar check is enabled
+    if (!options.isGrammarCheckAllowedSite() || !options.highlightsEnabled) {
+      return;
+    }
+
+    // Remove existing scroll listener if any
+    options.removeAIButtonScrollListener();
+
+    // Update button position
+    this.updateAIRewriteButtonPosition(element, {
+      rewriteEnabled: options.rewriteEnabled,
+      highlightsEnabled: options.highlightsEnabled,
+      isGrammarCheckAllowedSite: options.isGrammarCheckAllowedSite,
+    });
+
+    // Ensure button is visible
+    this.button.style.display = "flex";
+    this.button.style.visibility = "visible";
+    this.button.style.opacity = "1";
+    this.button.classList.add("show");
+
+    // Cancel any pending button blur timeout to prevent button from hiding
+    if (options.buttonBlurTimeout.value !== null) {
+      clearTimeout(options.buttonBlurTimeout.value);
+      options.buttonBlurTimeout.set(null);
+    }
+
+    // Store reference to current element for rewrite functionality
+    (this.button as any).__currentElement = element;
+
+    // Add scroll listener to update button position on scroll
+    options.addAIButtonScrollListener(element);
+  }
+
+  /**
+   * Hide rewrite button
+   * Only hides if currentFocusedElement is not set or element doesn't have focus
+   */
+  hideRewriteButton(options: {
+    currentFocusedElement: HTMLElement | null;
+    removeAIButtonScrollListener: () => void;
+  }): void {
+    if (this.button) {
+      // Don't hide button if there's a current focused element that still has focus
+      if (
+        options.currentFocusedElement &&
+        document.activeElement === options.currentFocusedElement
+      ) {
+        // Element still has focus, don't hide button
+        return;
+      }
+
+      // Hide button
+      this.button.classList.remove("show");
+
+      // Remove scroll listener when button is hidden
+      options.removeAIButtonScrollListener();
+    }
+  }
+
+  /**
+   * Add scroll listener to update AI button position
+   */
+  addAIButtonScrollListener(
+    element: HTMLElement,
+    options: {
+      updateAIRewriteButtonPosition: (element: HTMLElement) => void;
+      removeAIButtonScrollListener: () => void;
+      aiButtonScrollListener: { value: (() => void) | null; set: (value: (() => void) | null) => void };
+    }
+  ): void {
+    // Remove existing listener if any
+    options.removeAIButtonScrollListener();
+
+    // Create throttled update function for better performance
+    let rafId: number | null = null;
+    const updatePosition = () => {
+      if (rafId !== null) {
+        return; // Already scheduled
+      }
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        // Check if button is still visible and element still exists
+        if (
+          this.button &&
+          this.button.classList.contains("show") &&
+          document.body.contains(element)
+        ) {
+          options.updateAIRewriteButtonPosition(element);
+        }
+      });
+    };
+
+    // Store the bound function
+    options.aiButtonScrollListener.set(updatePosition);
+
+    // Add listeners to window and document for comprehensive scroll detection
+    window.addEventListener("scroll", updatePosition, true);
+    window.addEventListener("resize", updatePosition);
+    document.addEventListener("scroll", updatePosition, true);
+
+    // Also listen to scrollable parent containers (important for Medium and other sites with nested scroll containers)
+    const scrollableContainers = findScrollableContainers(element);
+    scrollableContainers.forEach((container) => {
+      container.addEventListener("scroll", updatePosition, {
+        passive: true,
+        capture: true,
+      });
+    });
+
+    // Store containers for cleanup
+    (this.button as any).__scrollContainers = scrollableContainers;
+  }
+
+  /**
+   * Remove scroll listener for AI button
+   */
+  removeAIButtonScrollListener(options: {
+    aiButtonScrollListener: { value: (() => void) | null; set: (value: (() => void) | null) => void };
+  }): void {
+    const updatePosition = options.aiButtonScrollListener.value;
+
+    if (updatePosition) {
+      window.removeEventListener("scroll", updatePosition, true);
+      window.removeEventListener("resize", updatePosition);
+      document.removeEventListener("scroll", updatePosition, true);
+      options.aiButtonScrollListener.set(null);
+    }
+
+    // Remove scroll listeners from scrollable containers
+    if (
+      this.button &&
+      (this.button as any).__scrollContainers &&
+      updatePosition
+    ) {
+      const containers = (this.button as any)
+        .__scrollContainers as Set<HTMLElement>;
+      containers.forEach((container) => {
+        try {
+          container.removeEventListener("scroll", updatePosition, {
+            capture: true,
+          } as any);
+        } catch (e) {
+          // Fallback if capture option causes issues
+          container.removeEventListener("scroll", updatePosition, true);
+        }
+      });
+      delete (this.button as any).__scrollContainers;
     }
   }
 }

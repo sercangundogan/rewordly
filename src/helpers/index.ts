@@ -21,6 +21,8 @@ export {
   shouldIgnoreElement,
   isNodeInDocument,
   findScrollableContainers,
+  setupElementScrollListeners,
+  removeElementScrollListeners,
   isSingleLineElement,
   getInputTextareaSelectionRect,
 } from "./element-helper";
@@ -46,6 +48,8 @@ export {
   mockGrammarCheck,
   performGrammarCheckDirect,
   performGrammarCheck,
+  queueGrammarCheck,
+  processGrammarCheckQueue,
 } from "./grammar-check-helper";
 
 // Text Processing Helpers

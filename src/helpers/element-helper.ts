@@ -510,3 +510,101 @@ export function getInputTextareaSelectionRect(
     caretHeight
   );
 }
+
+/**
+ * Set up scroll listeners for a specific editable element
+ * Updates highlight positions when scrollable containers are scrolled
+ */
+export function setupElementScrollListeners(
+  element: HTMLElement,
+  options: {
+    scrollableContainers: Map<HTMLElement, Set<HTMLElement>>;
+    scrollListeners: Map<HTMLElement, () => void>;
+    grammarErrors: Map<HTMLElement, any[]>;
+    highlightHelper: {
+      updatePositions: (
+        element: HTMLElement,
+        errors: any[],
+        getRects: (error: any) => DOMRect[]
+      ) => void;
+    };
+    getErrorTextRects: (element: HTMLElement, start: number, end: number) => DOMRect[];
+    removeElementScrollListeners: (element: HTMLElement) => void;
+  }
+): void {
+  const {
+    scrollableContainers,
+    scrollListeners,
+    grammarErrors,
+    highlightHelper,
+    getErrorTextRects,
+    removeElementScrollListeners,
+  } = options;
+
+  // Remove existing listeners for this element
+  removeElementScrollListeners(element, options);
+
+  // Find scrollable containers
+  const containers = findScrollableContainers(element);
+  scrollableContainers.set(element, containers);
+
+  // Add scroll listeners to each scrollable container
+  containers.forEach((container) => {
+    // Check if we already have a listener for this container
+    if (!scrollListeners.has(container)) {
+      const updateAllForContainer = () => {
+        // Update highlights for all elements that have this container as a scrollable parent
+        scrollableContainers.forEach((containers, el) => {
+          if (containers.has(container) && grammarErrors.has(el)) {
+            highlightHelper.updatePositions(
+              el,
+              grammarErrors.get(el) || [],
+              (error: any) => getErrorTextRects(el, error.start, error.end)
+            );
+          }
+        });
+      };
+
+      container.addEventListener("scroll", updateAllForContainer, {
+        passive: true,
+      });
+      scrollListeners.set(container, updateAllForContainer);
+    }
+  });
+}
+
+/**
+ * Remove scroll listeners for a specific editable element
+ */
+export function removeElementScrollListeners(
+  element: HTMLElement,
+  options: {
+    scrollableContainers: Map<HTMLElement, Set<HTMLElement>>;
+    scrollListeners: Map<HTMLElement, () => void>;
+  }
+): void {
+  const { scrollableContainers, scrollListeners } = options;
+  const containers = scrollableContainers.get(element);
+  if (!containers) return;
+
+  // Check if any other elements use these containers
+  containers.forEach((container) => {
+    let isUsedByOthers = false;
+    scrollableContainers.forEach((otherContainers, otherElement) => {
+      if (otherElement !== element && otherContainers.has(container)) {
+        isUsedByOthers = true;
+      }
+    });
+
+    // If no other elements use this container, remove the listener
+    if (!isUsedByOthers) {
+      const listener = scrollListeners.get(container);
+      if (listener) {
+        container.removeEventListener("scroll", listener);
+        scrollListeners.delete(container);
+      }
+    }
+  });
+
+  scrollableContainers.delete(element);
+}

@@ -651,3 +651,107 @@ export async function performGrammarCheck(
     }
   }
 }
+
+/**
+ * Add element to grammar check queue
+ * @deprecated Using direct requests now, but kept for backward compatibility
+ */
+export function queueGrammarCheck(
+  element: HTMLElement,
+  priority: number,
+  options: {
+    isGrammarCheckAllowedSite: () => boolean;
+    grammarCheckQueue: Array<{ element: HTMLElement; priority?: number }>;
+    isProcessingQueue: { get: () => boolean; set: (value: boolean) => void };
+    processGrammarCheckQueue: () => Promise<void>;
+  }
+): void {
+  const {
+    isGrammarCheckAllowedSite,
+    grammarCheckQueue,
+    isProcessingQueue,
+    processGrammarCheckQueue,
+  } = options;
+
+  // Only queue grammar check on allowed sites (Twitter, Gmail, Reddit, Medium)
+  if (!isGrammarCheckAllowedSite()) {
+    return;
+  }
+
+  // Check if element is already in queue
+  const existingIndex = grammarCheckQueue.findIndex(
+    (item) => item.element === element
+  );
+
+  if (existingIndex !== -1) {
+    // Update priority if new priority is higher
+    const existingItem = grammarCheckQueue[existingIndex];
+    if (existingItem && priority > (existingItem.priority || 0)) {
+      existingItem.priority = priority;
+    }
+    return;
+  }
+
+  // Add to queue
+  grammarCheckQueue.push({ element, priority });
+
+  // Sort queue by priority (higher priority first)
+  grammarCheckQueue.sort((a, b) => (b.priority || 0) - (a.priority || 0));
+
+  // Start processing queue if not already processing
+  if (!isProcessingQueue.get()) {
+    processGrammarCheckQueue();
+  }
+}
+
+/**
+ * Process grammar check queue in batches
+ * @deprecated Using direct requests now, but kept for backward compatibility
+ */
+export async function processGrammarCheckQueue(options: {
+  grammarCheckQueue: Array<{ element: HTMLElement; priority?: number }>;
+  isProcessingQueue: { get: () => boolean; set: (value: boolean) => void };
+  performGrammarCheck: (element: HTMLElement) => Promise<void>;
+  BATCH_SIZE: number;
+  BATCH_DELAY: number;
+}): Promise<void> {
+  const {
+    grammarCheckQueue,
+    isProcessingQueue,
+    performGrammarCheck,
+    BATCH_SIZE,
+    BATCH_DELAY,
+  } = options;
+
+  if (isProcessingQueue.get() || grammarCheckQueue.length === 0) {
+    return;
+  }
+
+  isProcessingQueue.set(true);
+
+  while (grammarCheckQueue.length > 0) {
+    // Get next batch
+    const batch = grammarCheckQueue.splice(0, BATCH_SIZE);
+
+    // Process batch in parallel
+    const promises = batch.map((item) => {
+      // Check if element still exists and is valid
+      if (!item.element || !item.element.isConnected) {
+        return Promise.resolve();
+      }
+      return performGrammarCheck(item.element).catch((error: unknown) => {
+        console.error("Rewordly: Grammar check error in queue:", error);
+      });
+    });
+
+    // Wait for batch to complete
+    await Promise.all(promises);
+
+    // Wait before processing next batch (if there are more items)
+    if (grammarCheckQueue.length > 0) {
+      await new Promise((resolve) => setTimeout(resolve, BATCH_DELAY));
+    }
+  }
+
+  isProcessingQueue.set(false);
+}
