@@ -9,6 +9,7 @@
 import { GrammarError, GrammarCheckResponse } from "../types";
 import { RewordlyAPIUtil } from "../utils/api";
 import { generateErrorId } from "./config-helper";
+import { extractTextExcludingSignature } from "./text-processing-helper";
 
 /**
  * Grammar check API çağrısı yap
@@ -411,4 +412,242 @@ export function mockGrammarCheck(text: string): GrammarCheckResponse {
     errors: uniqueErrors,
     corrected,
   };
+}
+
+/**
+ * Perform grammar check directly (optimized method with request cancellation)
+ */
+export async function performGrammarCheckDirect(
+  element: HTMLElement,
+  options: {
+    apiUtil: RewordlyAPIUtil;
+    activeGrammarRequests: Map<HTMLElement, string>;
+    isGrammarCheckAllowedSite: () => boolean;
+    isElementIgnored: (element: HTMLElement) => boolean;
+    isPerformingReplace: boolean;
+    displayGrammarErrors: (
+      element: HTMLElement,
+      errors: GrammarError[]
+    ) => void;
+  }
+): Promise<void> {
+  const {
+    apiUtil,
+    activeGrammarRequests,
+    isGrammarCheckAllowedSite,
+    isElementIgnored,
+    isPerformingReplace,
+    displayGrammarErrors,
+  } = options;
+
+  // Only perform grammar check on allowed sites
+  if (!isGrammarCheckAllowedSite()) {
+    return;
+  }
+
+  // Check if element is in ignore list
+  if (isElementIgnored(element)) {
+    return;
+  }
+
+  // Don't perform grammar check if we're currently performing a replace operation
+  if (isPerformingReplace) {
+    return;
+  }
+
+  // Extract text excluding signature blocks
+  const { text, textSource } = extractTextExcludingSignature(element);
+
+  // Skip if text is too short
+  if (text.trim().length < 3) {
+    return;
+  }
+
+  // Store text source for overlay creation
+  (element as any).__rewordlyTextSource = textSource;
+  (element as any).__rewordlyText = text;
+
+  // Cancel previous request for this element if exists
+  const previousRequestId = activeGrammarRequests.get(element);
+  if (previousRequestId) {
+    apiUtil.cancelRequest(previousRequestId);
+    activeGrammarRequests.delete(element);
+  }
+
+  try {
+    // Call WebSocket API with cancellation support
+    const result = await apiUtil.checkGrammar(
+      text,
+      "default",
+      previousRequestId
+    );
+
+    console.log("Rewordly: Grammar check result", {
+      errorsCount: result.errors.length,
+      errors: result.errors,
+      text: text.substring(0, 50) + "...",
+      textLength: text.length,
+    });
+
+    // Store the new request ID
+    activeGrammarRequests.set(element, result.requestId);
+
+    // Check if detected language is English
+    // For short texts, language detection can be inaccurate, so we allow grammar checking
+    // if the text contains English words or if language detection confidence is low
+    const textLength = text.trim().length;
+    const isShortText = textLength < 50; // Consider text short if less than 50 characters
+
+    if (
+      result.detectedLanguage &&
+      !result.detectedLanguage.code.toLowerCase().startsWith("en")
+    ) {
+      // For short texts, be more lenient - allow grammar checking if text contains English words
+      if (isShortText) {
+        // Check if text contains common English words or patterns
+        const englishPattern =
+          /\b(the|and|or|but|in|on|at|to|for|of|with|by|from|as|is|are|was|were|be|been|have|has|had|do|does|did|will|would|should|could|can|may|might|this|that|these|those|a|an)\b/i;
+        const hasEnglishWords = englishPattern.test(text);
+
+        if (hasEnglishWords) {
+          console.log(
+            "Rewordly: Short text with English words, allowing grammar check despite language detection",
+            {
+              detectedLanguage: result.detectedLanguage,
+              textLength,
+            }
+          );
+          // Continue with grammar check even if language is not detected as English
+        } else {
+          console.log(
+            "Rewordly: Language is not English and no English words detected",
+            result.detectedLanguage
+          );
+          displayGrammarErrors(element, []);
+          activeGrammarRequests.delete(element);
+          return;
+        }
+      } else {
+        // For longer texts, trust language detection
+        console.log(
+          "Rewordly: Language is not English",
+          result.detectedLanguage
+        );
+        displayGrammarErrors(element, []);
+        activeGrammarRequests.delete(element);
+        return;
+      }
+    }
+
+    // Map errors to include id field
+    const errorsWithId: GrammarError[] = result.errors.map((error) => ({
+      id: generateErrorId(),
+      start: error.start,
+      end: error.end,
+      word: error.word,
+      suggestions: error.suggestions,
+      type: error.type,
+    }));
+
+    console.log("Rewordly: Mapped errors", {
+      errorsWithId,
+      textLength: text.length,
+    });
+
+    // Display errors (or clear if no errors)
+    displayGrammarErrors(element, errorsWithId);
+    activeGrammarRequests.delete(element);
+  } catch (error) {
+    // Don't log cancellation errors
+    if (error instanceof Error && error.message === "Request cancelled") {
+      return;
+    }
+    console.error("Rewordly: Grammar check error:", error);
+    activeGrammarRequests.delete(element);
+    // Clear highlights on error
+    displayGrammarErrors(element, []);
+  }
+}
+
+/**
+ * Perform grammar check on an element (legacy method - kept for queue system)
+ */
+export async function performGrammarCheck(
+  element: HTMLElement,
+  options: {
+    apiUtil: RewordlyAPIUtil;
+    isGrammarCheckAllowedSite: () => boolean;
+    isElementIgnored: (element: HTMLElement) => boolean;
+    isPerformingReplace: boolean;
+    displayGrammarErrors: (
+      element: HTMLElement,
+      errors: GrammarError[]
+    ) => void;
+  }
+): Promise<void> {
+  const {
+    apiUtil,
+    isGrammarCheckAllowedSite,
+    isElementIgnored,
+    isPerformingReplace,
+    displayGrammarErrors,
+  } = options;
+
+  // Only perform grammar check on allowed sites (Twitter, Gmail, Reddit, Medium)
+  if (!isGrammarCheckAllowedSite()) {
+    return;
+  }
+
+  // Check if element is in ignore list
+  if (isElementIgnored(element)) {
+    return;
+  }
+
+  // Don't perform grammar check if we're currently performing a replace operation
+  // This prevents race conditions where API returns old errors while we're updating positions
+  if (isPerformingReplace) {
+    return;
+  }
+
+  // Extract text excluding signature blocks
+  const { text, textSource } = extractTextExcludingSignature(element);
+
+  // Skip if text is too short
+  if (text.trim().length < 3) {
+    return;
+  }
+
+  // Store text source for overlay creation
+  (element as any).__rewordlyTextSource = textSource;
+  (element as any).__rewordlyText = text;
+
+  try {
+    // Call real API
+    const response = await checkGrammarAPI(apiUtil, text);
+
+    // Check if detected language is English
+    if (
+      response.detectedLanguage &&
+      !response.detectedLanguage.code.toLowerCase().startsWith("en")
+    ) {
+      // Language is not English, clear all highlights and skip grammar check
+      displayGrammarErrors(element, []);
+      return;
+    }
+
+    // Display errors (or clear if no errors)
+    displayGrammarErrors(element, response.errors);
+  } catch (error) {
+    console.error("Rewordly: Grammar check error:", error);
+    // Fallback to mock if API fails (for development)
+    try {
+      const mockResponse = mockGrammarCheck(text);
+      // Mock always assumes English, so we can proceed
+      displayGrammarErrors(element, mockResponse.errors);
+    } catch (mockError) {
+      console.error("Rewordly: Mock grammar check also failed:", mockError);
+      // Clear all highlights if both API and mock fail
+      displayGrammarErrors(element, []);
+    }
+  }
 }

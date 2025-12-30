@@ -9,6 +9,15 @@
 import { GrammarError } from "../types";
 import { getElementId } from "./element-helper";
 import { mapInnerTextToTextNodes } from "./text-processing-helper";
+import { generateErrorId } from "./config-helper";
+import { getDismissKey } from "./grammar-check-helper";
+import {
+  extractTextExcludingSignature,
+  adjustErrorPositionsForMultiWord,
+  escapeHtml,
+  formatSuggestionForDisplay,
+} from "./text-processing-helper";
+import { mapInnerTextToTextNodes } from "./text-processing-helper";
 
 /**
  * Highlight Container Helper
@@ -20,10 +29,38 @@ export class HighlightContainerHelper {
   private content: HTMLElement | null = null;
 
   /**
+   * Get container element
+   */
+  getContainer(): HTMLElement | null {
+    return this.container;
+  }
+
+  /**
+   * Get shadow root
+   */
+  getShadowRoot(): ShadowRoot | null {
+    return this.shadowRoot;
+  }
+
+  /**
+   * Get content element
+   */
+  getContent(): HTMLElement | null {
+    return this.content;
+  }
+
+  /**
    * Highlight container oluştur
+   * Content.ts versiyonu ile uyumlu - Reddit için özel z-index desteği
    */
   create(): void {
-    if (this.container) return;
+    // Remove existing container if any
+    if (this.container) {
+      this.container.remove();
+      this.container = null;
+      this.shadowRoot = null;
+      this.content = null;
+    }
 
     // Custom element tanımla (Reddit için)
     if (
@@ -41,44 +78,76 @@ export class HighlightContainerHelper {
       );
     }
 
-    // Container oluştur
+    // Create container element (like <grammarly-highlights>)
     this.container = document.createElement("rewordly-highlights");
-    this.container.id = "rewordly-highlights-container";
+    this.container.setAttribute("data-rewordly-shadow-root", "true");
+
+    // Use maximum z-index for Reddit (Reddit has high z-index modals)
+    const isReddit = window.location.hostname.includes("reddit.com");
+    const zIndex = isReddit ? "2147483647" : "2147483645";
+
     this.container.style.cssText = `
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      pointer-events: none;
-      z-index: 2147483646;
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 0 !important;
+      height: 0 !important;
+      pointer-events: none !important;
+      z-index: ${zIndex} !important;
+      overflow: visible !important;
+      visibility: visible !important;
     `;
 
-    // Shadow DOM oluştur (CSS izolasyonu için)
-    this.shadowRoot = this.container.attachShadow({ mode: "open" });
+    // Create Shadow DOM
+    this.shadowRoot = this.container.attachShadow({
+      mode: "open",
+    });
 
-    // Shadow DOM içine content ekle
+    // Create content div inside Shadow DOM
     this.content = document.createElement("div");
-    this.content.className = "rewordly-highlights-content";
-    this.shadowRoot.appendChild(this.content);
+    this.content.setAttribute("data-rewordly-part", "highlights");
+    this.content.style.cssText = `
+      position: absolute !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      pointer-events: none !important;
+      overflow: visible !important;
+    `;
 
-    // Style ekle
+    // Add styles to Shadow DOM
     const style = document.createElement("style");
+    // Use the same isReddit variable defined above
     style.textContent = `
       .rewordly-highlight {
-        position: absolute;
-        background: rgba(255, 0, 0, 0.2);
-        border-bottom: 2px solid red;
-        pointer-events: auto;
-        cursor: pointer;
-        transition: opacity 0.2s;
+        position: absolute !important;
+        pointer-events: auto !important;
+        cursor: pointer !important;
+        border-bottom: 2px solid #ef4444 !important;
+        box-sizing: content-box !important;
+        z-index: ${isReddit ? "2147483647" : "1"} !important;
+        /* No transition for position updates - only animate on initial creation */
+        transition: none !important;
+        transform-origin: left center !important;
+        ${isReddit ? "background: rgba(239, 68, 68, 0.05) !important;" : ""}
       }
       .rewordly-highlight:hover {
-        opacity: 0.8;
+        background: rgba(239, 68, 68, 0.1) !important;
+      }
+      .rewordly-highlight.rewordly-highlight-enter {
+        overflow: hidden !important;
+      }
+      .rewordly-highlight.rewordly-no-transition {
+        transition: none !important;
+        will-change: auto !important;
       }
     `;
-    this.shadowRoot.appendChild(style);
 
+    this.shadowRoot.appendChild(style);
+    this.shadowRoot.appendChild(this.content);
+
+    // Append to document body (at the end, like Grammarly)
     document.body.appendChild(this.container);
   }
 
@@ -1287,5 +1356,1179 @@ export function closeAllGrammarTooltips(): void {
   const allTooltips = document.querySelectorAll(".rewordly-grammar-tooltip");
   allTooltips.forEach((tooltip) => {
     tooltip.remove();
+  });
+}
+
+/**
+ * Validate and remove invalid highlights immediately when text changes
+ */
+export function validateAndRemoveInvalidHighlights(
+  element: HTMLElement,
+  highlightsContent: HTMLElement | null,
+  grammarErrors: Map<HTMLElement, GrammarError[]>,
+  extractTextExcludingSignature: (element: HTMLElement) => {
+    text: string;
+    textSource: "value" | "textContent" | "innerText";
+  },
+  getElementId: (element: HTMLElement) => string,
+  isPerformingReplace: boolean
+): void {
+  // Don't validate during replace operations - positions are being updated
+  if (isPerformingReplace) {
+    return;
+  }
+
+  const currentErrors = grammarErrors.get(element);
+  if (!currentErrors || currentErrors.length === 0) {
+    return;
+  }
+
+  // Get current text (excluding signature to match error positions)
+  const { text } = extractTextExcludingSignature(element);
+
+  if (!highlightsContent) {
+    return;
+  }
+
+  const elementId = getElementId(element);
+  const highlights = highlightsContent.querySelectorAll(
+    `[data-element-id="${elementId}"]`
+  );
+
+  highlights.forEach((highlight) => {
+    const errorData = (highlight as HTMLElement).getAttribute("data-error");
+    if (!errorData) {
+      highlight.remove();
+      return;
+    }
+
+    try {
+      const error: GrammarError = JSON.parse(errorData);
+
+      // Check if error position is still valid
+      if (
+        error.start < 0 ||
+        error.end > text.length ||
+        error.start >= error.end
+      ) {
+        // Position out of bounds, remove highlight
+        highlight.remove();
+        return;
+      }
+
+      // Check if the error word still matches at that position
+      const errorWord = text.substring(error.start, error.end);
+      // Strict matching: word must match exactly (case-insensitive, whitespace variations allowed)
+      // If the word at that position has changed (e.g., "asd" -> "asdf"), highlight should be removed
+      const isStillValid =
+        errorWord.toLowerCase().trim() === error.word.toLowerCase().trim();
+
+      if (!isStillValid) {
+        // Word changed or deleted, remove highlight immediately
+        highlight.remove();
+      }
+    } catch (e) {
+      // Error parsing, remove highlight
+      highlight.remove();
+    }
+  });
+
+  // Update stored errors - remove invalid ones
+  const validErrors = currentErrors.filter((error) => {
+    if (
+      error.start < 0 ||
+      error.end > text.length ||
+      error.start >= error.end
+    ) {
+      return false;
+    }
+    const errorWord = text.substring(error.start, error.end);
+    // Strict matching: word must match exactly (case-insensitive, whitespace variations allowed)
+    return errorWord.toLowerCase().trim() === error.word.toLowerCase().trim();
+  });
+
+  grammarErrors.set(element, validErrors);
+}
+
+/**
+ * Create a single highlight for an error
+ * @param animate - Whether to animate the highlight (default: true)
+ */
+export function createHighlight(
+  element: HTMLElement,
+  error: GrammarError,
+  index: number,
+  highlightsContent: HTMLElement | null,
+  getErrorTextRects: (
+    element: HTMLElement,
+    start: number,
+    end: number
+  ) => DOMRect[],
+  extractTextExcludingSignature: (element: HTMLElement) => {
+    text: string;
+    textSource: "value" | "textContent" | "innerText";
+  },
+  adjustErrorPositionsForMultiWord: (
+    text: string,
+    error: GrammarError
+  ) => { start: number; end: number },
+  getElementId: (element: HTMLElement) => string,
+  isErrorDismissed: (element: HTMLElement, error: GrammarError) => boolean,
+  attachHighlightHoverListener: (
+    highlight: HTMLElement,
+    error: GrammarError,
+    element: HTMLElement
+  ) => void,
+  animate: boolean = true
+): void {
+  if (!highlightsContent) {
+    return;
+  }
+
+  // Don't create highlight if error is dismissed
+  if (isErrorDismissed(element, error)) {
+    return;
+  }
+
+  // Get text from element (excluding signature)
+  const { text } = extractTextExcludingSignature(element);
+
+  if (!text || error.start >= text.length || error.end > text.length) {
+    return;
+  }
+
+  // Adjust positions for multi-word grammar errors to highlight only problematic word(s)
+  const adjustedPositions = adjustErrorPositionsForMultiWord(text, error);
+  const highlightStart = adjustedPositions.start;
+  const highlightEnd = adjustedPositions.end;
+
+  // Get all rects for multi-line support (one rect per line)
+  const highlightRects = getErrorTextRects(
+    element,
+    highlightStart,
+    highlightEnd
+  );
+  if (highlightRects.length === 0) {
+    const isGoogleDocs = (element as any).__rewordlyIsGoogleDocs === true;
+    console.warn("Rewordly: No highlight rects found", {
+      error,
+      highlightStart,
+      highlightEnd,
+      textLength: text.length,
+      elementType:
+        element instanceof HTMLInputElement
+          ? "input"
+          : element instanceof HTMLTextAreaElement
+          ? "textarea"
+          : "contenteditable",
+      isGoogleDocs,
+      errorText: text.substring(
+        Math.max(0, highlightStart - 10),
+        Math.min(text.length, highlightEnd + 10)
+      ),
+      elementTextPreview: (
+        element.textContent ||
+        element.innerText ||
+        ""
+      ).substring(0, 100),
+    });
+    return;
+  }
+
+  console.log("Rewordly: Creating highlight", {
+    error,
+    highlightRects: highlightRects.length,
+    highlightStart,
+    highlightEnd,
+    firstRect: highlightRects[0]
+      ? {
+          left: highlightRects[0].left,
+          top: highlightRects[0].top,
+          width: highlightRects[0].width,
+          height: highlightRects[0].height,
+        }
+      : null,
+    isGoogleDocs: (element as any).__rewordlyIsGoogleDocs === true,
+  });
+
+  // Create a highlight element for each rect (each line)
+  highlightRects.forEach((highlightRect, lineIndex) => {
+    // Create highlight element
+    const highlight = document.createElement("div");
+    highlight.className = "rewordly-highlight";
+    highlight.setAttribute("data-rewordly-part", "highlight");
+    highlight.setAttribute("data-highlight-format", "underline");
+    highlight.setAttribute("data-highlight-color-name", "red");
+    highlight.setAttribute("data-element-id", getElementId(element));
+    highlight.setAttribute("data-error-index", index.toString());
+    highlight.setAttribute("data-error-id", error.id); // Store error ID for quick lookup
+    highlight.setAttribute("data-line-index", lineIndex.toString()); // Track which line this highlight is for
+    highlight.setAttribute("data-error", JSON.stringify(error));
+
+    // Set position and size
+    highlight.style.top = `${highlightRect.top}px`;
+    highlight.style.left = `${highlightRect.left}px`;
+    highlight.style.height = `${highlightRect.height}px`;
+
+    // Store target width for animation
+    const targetWidth = highlightRect.width;
+
+    // Add hover listeners to all lines - tooltip will be shared by error ID
+    attachHighlightHoverListener(highlight, error, element);
+
+    // Append to highlights content
+    if (!highlightsContent) return;
+    highlightsContent.appendChild(highlight);
+
+    if (animate) {
+      // Initially set width to 0 for animation
+      highlight.style.width = "0px";
+      highlight.style.overflow = "hidden";
+      highlight.style.opacity = "0";
+
+      // Add animation class
+      highlight.classList.add("rewordly-highlight-enter");
+
+      // Force reflow to ensure animation starts
+      void highlight.offsetWidth;
+
+      // Animate width using requestAnimationFrame for smooth animation
+      const startTime = performance.now();
+      const duration = 300; // 300ms
+      const startWidth = 0;
+      const startOpacity = 0;
+      const endOpacity = 1;
+
+      const animateFn = (currentTime: number) => {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+
+        // Ease-in-out function
+        const easeInOut =
+          progress < 0.5
+            ? 2 * progress * progress
+            : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+
+        const currentWidth =
+          startWidth + (targetWidth - startWidth) * easeInOut;
+        const currentOpacity =
+          startOpacity + (endOpacity - startOpacity) * easeInOut;
+
+        highlight.style.width = `${currentWidth}px`;
+        highlight.style.opacity = `${currentOpacity}`;
+
+        if (progress < 1) {
+          requestAnimationFrame(animateFn);
+        } else {
+          // Animation complete
+          highlight.style.width = `${targetWidth}px`;
+          highlight.style.opacity = "1";
+          highlight.style.overflow = "visible";
+          highlight.classList.remove("rewordly-highlight-enter");
+        }
+      };
+
+      requestAnimationFrame(animateFn);
+    } else {
+      // No animation - set final values immediately
+      highlight.style.width = `${targetWidth}px`;
+      highlight.style.opacity = "1";
+      highlight.style.overflow = "visible";
+    }
+  });
+}
+
+/**
+ * Display grammar errors on an element using Grammarly-style highlights
+ */
+export function displayGrammarErrors(
+  element: HTMLElement,
+  errors: GrammarError[],
+  options: {
+    grammarErrors: Map<HTMLElement, GrammarError[]>;
+    highlightHelper: HighlightContainerHelper;
+    dismissedErrors: Map<string, boolean>;
+    isErrorDismissed: (element: HTMLElement, error: GrammarError) => boolean;
+    createHighlight: (
+      element: HTMLElement,
+      error: GrammarError,
+      index: number,
+      animate: boolean
+    ) => void;
+    attachHighlightHoverListener: (
+      highlight: HTMLElement,
+      error: GrammarError,
+      element: HTMLElement
+    ) => void;
+    highlightsContent: HTMLElement | null; // Legacy reference
+  }
+): void {
+  const {
+    grammarErrors,
+    highlightHelper,
+    dismissedErrors,
+    isErrorDismissed,
+    createHighlight,
+    attachHighlightHoverListener,
+    highlightsContent,
+  } = options;
+
+  const isGoogleDocsElement =
+    (element as any).__rewordlyIsGoogleDocs === true;
+  console.log("Rewordly: displayGrammarErrors called", {
+    errorsCount: errors.length,
+    errors: errors,
+    element: element.tagName,
+    elementId: getElementId(element),
+    isGoogleDocs: isGoogleDocsElement,
+    hasContainer: !!(element as any).__rewordlyGoogleDocsContainer,
+    elementTextPreview: (
+      element.textContent ||
+      element.innerText ||
+      ""
+    ).substring(0, 100),
+  });
+
+  // Ensure all errors have unique IDs (assign if missing from API response)
+  const errorsWithIds = errors.map((error) => {
+    if (!error.id) {
+      return { ...error, id: generateErrorId() };
+    }
+    return error;
+  });
+
+  // Store errors (empty array if no errors)
+  grammarErrors.set(element, errorsWithIds);
+
+  // Ensure highlights container exists
+  if (
+    !highlightHelper.getContainer() ||
+    !highlightHelper.getShadowRoot() ||
+    !highlightHelper.getContent()
+  ) {
+    highlightHelper.create();
+    if (
+      !highlightHelper.getContainer() ||
+      !highlightHelper.getShadowRoot() ||
+      !highlightHelper.getContent()
+    ) {
+      console.error("Rewordly: Failed to create highlights container");
+      return;
+    }
+  }
+
+  // Get existing highlights to compare by error ID and position/word (for matching after replace)
+  const elementId = getElementId(element);
+  const highlightsContentElement = highlightHelper.getContent();
+  if (!highlightsContentElement) return;
+  const existingHighlights = highlightsContentElement.querySelectorAll(
+    `[data-element-id="${elementId}"]`
+  );
+  const existingErrorMap = new Map<string, HTMLElement>(); // Key: error ID
+  const existingErrorByPositionMap = new Map<string, HTMLElement>(); // Key: "start-end-word" for position-based matching
+
+  existingHighlights.forEach((highlight) => {
+    const errorData = (highlight as HTMLElement).getAttribute("data-error");
+    if (errorData) {
+      try {
+        const error: GrammarError = JSON.parse(errorData);
+        if (error.id) {
+          existingErrorMap.set(error.id, highlight as HTMLElement);
+        }
+        // Also create position-based key for matching after replace (when IDs might differ)
+        if (
+          error.start !== undefined &&
+          error.end !== undefined &&
+          error.word
+        ) {
+          const positionKey = `${error.start}-${error.end}-${error.word
+            .toLowerCase()
+            .trim()}`;
+          // Only set if not already set (prefer first highlight found for this position)
+          if (!existingErrorByPositionMap.has(positionKey)) {
+            existingErrorByPositionMap.set(
+              positionKey,
+              highlight as HTMLElement
+            );
+          }
+        }
+      } catch (e) {
+        // Error parsing, skip
+      }
+    }
+  });
+
+  // If no errors, remove all highlights for this element
+  if (errorsWithIds.length === 0) {
+    existingErrorMap.forEach((highlight) => {
+      highlight.remove();
+    });
+    return;
+  }
+
+  // Validate error positions against current text (excluding signature)
+  // Use the same text extraction method as grammar check to ensure positions match
+  const { text } = extractTextExcludingSignature(element);
+
+  // Filter out errors that are no longer valid (text changed, error position out of bounds)
+  const validErrors = errorsWithIds.filter((error) => {
+    if (
+      error.start < 0 ||
+      error.end > text.length ||
+      error.start >= error.end
+    ) {
+      console.warn("Rewordly: Error position out of bounds", {
+        error,
+        textLength: text.length,
+        start: error.start,
+        end: error.end,
+      });
+      return false;
+    }
+    // Check if the error word still matches at that position
+    const errorWord = text.substring(error.start, error.end);
+    // Strict matching: word must match exactly (case-insensitive, whitespace variations allowed)
+    // If the word at that position has changed (e.g., "asd" -> "asdf"), highlight should be removed
+    const isValid =
+      errorWord.toLowerCase().trim() === error.word.toLowerCase().trim();
+
+    if (!isValid) {
+      console.warn("Rewordly: Error word mismatch", {
+        error,
+        errorWord,
+        expectedWord: error.word,
+        text: text.substring(
+          Math.max(0, error.start - 5),
+          Math.min(text.length, error.end + 5)
+        ),
+      });
+      // Word changed, remove from dismissed list if it was dismissed
+      const dismissKey = getDismissKey(elementId, error, text);
+      dismissedErrors.delete(dismissKey);
+      return false;
+    }
+
+    // Check if this error was dismissed
+    if (isErrorDismissed(element, error)) {
+      // Error is dismissed, filter it out
+      return false;
+    }
+
+    return isValid;
+  });
+
+  console.log("Rewordly: displayGrammarErrors", {
+    totalErrors: errorsWithIds.length,
+    validErrors: validErrors.length,
+    textLength: text.length,
+    text: text.substring(0, 50) + "...",
+  });
+
+  // Update stored errors with only valid ones
+  grammarErrors.set(element, validErrors);
+
+  // Update or create highlights for each valid error
+  validErrors.forEach((error, index) => {
+    // First try to match by error ID
+    let existingHighlight = existingErrorMap.get(error.id);
+
+    // If not found by ID, try to match by position and word (for cases where API returns new IDs after replace)
+    if (
+      !existingHighlight &&
+      error.start !== undefined &&
+      error.end !== undefined &&
+      error.word
+    ) {
+      const positionKey = `${error.start}-${error.end}-${error.word
+        .toLowerCase()
+        .trim()}`;
+      existingHighlight = existingErrorByPositionMap.get(positionKey);
+
+      // If found by position, update the error ID in the highlight to match the new error
+      if (existingHighlight) {
+        // Update error ID in all highlights for this position
+        const highlightsContentForUpdate = highlightHelper.getContent();
+        if (highlightsContentForUpdate) {
+          const allHighlightsForPosition = Array.from(
+            highlightsContentForUpdate.querySelectorAll(
+              `[data-element-id="${elementId}"][data-error-id="${existingHighlight.getAttribute(
+                "data-error-id"
+              )}"]`
+            )
+          ) as HTMLElement[];
+          allHighlightsForPosition.forEach((h) => {
+            h.setAttribute("data-error-id", error.id);
+            h.setAttribute("data-error", JSON.stringify(error));
+          });
+        }
+        // Update the map to reflect the new ID
+        existingErrorMap.set(error.id, existingHighlight);
+      }
+    }
+
+    if (existingHighlight) {
+      // Check if this error is dismissed - if so, remove the highlight
+      if (isErrorDismissed(element, error)) {
+        // Remove all highlights for this dismissed error
+        const highlightsContentForDismiss = highlightHelper.getContent();
+        if (!highlightsContentForDismiss) return;
+        const errorHighlights = Array.from(
+          highlightsContentForDismiss.querySelectorAll(
+            `[data-element-id="${getElementId(element)}"][data-error-id="${
+              error.id
+            }"]`
+          )
+        ) as HTMLElement[];
+        errorHighlights.forEach((h) => h.remove());
+        return;
+      }
+
+      // Same error position, just update position (text might have changed)
+      // Get text to adjust positions for multi-word errors
+      let textForAdjustment = "";
+      if (
+        element instanceof HTMLInputElement ||
+        element instanceof HTMLTextAreaElement
+      ) {
+        textForAdjustment = element.value;
+      } else if (
+        element.getAttribute("contenteditable") === "true" ||
+        element.isContentEditable
+      ) {
+        textForAdjustment = element.innerText || element.textContent || "";
+      }
+
+      // Adjust positions for multi-word grammar errors
+      const adjustedPositions = textForAdjustment
+        ? adjustErrorPositionsForMultiWord(textForAdjustment, error)
+        : { start: error.start, end: error.end };
+      const highlightRects = getErrorTextRects(
+        element,
+        adjustedPositions.start,
+        adjustedPositions.end
+      );
+
+      // Get all existing highlights for this error
+      const highlightsContentForUpdate = highlightHelper.getContent();
+      if (!highlightsContentForUpdate) return;
+      const errorHighlights = Array.from(
+        highlightsContentForUpdate.querySelectorAll(
+          `[data-element-id="${getElementId(element)}"][data-error-id="${
+            error.id
+          }"]`
+        )
+      ) as HTMLElement[];
+
+      if (highlightRects.length > 0) {
+        // Update or create highlights for each line
+        highlightRects.forEach((highlightRect, lineIndex) => {
+          let highlight = errorHighlights.find(
+            (h) => h.getAttribute("data-line-index") === lineIndex.toString()
+          );
+
+          if (!highlight) {
+            // Create new highlight for this line (no animation - this is an existing error, just new line)
+            highlight = document.createElement("div");
+            highlight.className = "rewordly-highlight";
+            highlight.setAttribute("data-rewordly-part", "highlight");
+            highlight.setAttribute("data-highlight-format", "underline");
+            highlight.setAttribute("data-highlight-color-name", "red");
+            highlight.setAttribute("data-element-id", getElementId(element));
+            highlight.setAttribute("data-error-index", index.toString());
+            highlight.setAttribute("data-error-id", error.id);
+            highlight.setAttribute("data-line-index", lineIndex.toString());
+
+            // Add hover listeners to all lines
+            attachHighlightHoverListener(highlight, error, element);
+
+            // Set position and size immediately (no animation for existing error's new line)
+            highlight.style.top = `${highlightRect.top}px`;
+            highlight.style.left = `${highlightRect.left}px`;
+            highlight.style.width = `${highlightRect.width}px`;
+            highlight.style.height = `${highlightRect.height}px`;
+            highlight.style.opacity = "1";
+            highlight.style.overflow = "visible";
+
+            const highlightsContentForAppend = highlightHelper.getContent();
+            if (highlightsContentForAppend) {
+              highlightsContentForAppend.appendChild(highlight);
+            }
+          }
+
+          // Update position and size
+          highlight.style.top = `${highlightRect.top}px`;
+          highlight.style.left = `${highlightRect.left}px`;
+          highlight.style.width = `${highlightRect.width}px`;
+          highlight.style.height = `${highlightRect.height}px`;
+          highlight.setAttribute("data-error", JSON.stringify(error));
+          highlight.setAttribute("data-error-index", index.toString());
+        });
+
+        // Remove extra highlights if rect count decreased
+        errorHighlights.forEach((highlight) => {
+          const lineIndex = parseInt(
+            highlight.getAttribute("data-line-index") || "0",
+            10
+          );
+          if (lineIndex >= highlightRects.length) {
+            highlight.remove();
+          }
+        });
+      } else {
+        // Position calculation failed - for Draft.js (Twitter), keep the highlight
+        // It will be updated on the next position update after DOM settles
+        console.warn(
+          "Rewordly: Could not calculate position for existing error:",
+          error.id
+        );
+        // Update error data anyway
+        existingHighlight.setAttribute("data-error", JSON.stringify(error));
+        existingHighlight.setAttribute("data-error-index", index.toString());
+      }
+
+      // If element has text, ensure highlight is visible (even if not focused)
+      let hasText = false;
+      if (
+        element instanceof HTMLInputElement ||
+        element instanceof HTMLTextAreaElement
+      ) {
+        hasText = element.value.trim().length > 0;
+      } else if (
+        element.getAttribute("contenteditable") === "true" ||
+        element.isContentEditable
+      ) {
+        hasText =
+          (element.innerText || element.textContent || "").trim().length > 0;
+      }
+
+      if (hasText) {
+        // Make sure highlight is visible
+        existingHighlight.style.display = "";
+        existingHighlight.removeAttribute("data-hidden-by-blur");
+      }
+    } else {
+      // New error or error position changed, create new highlight with animation
+      createHighlight(element, error, index, true);
+    }
+  });
+
+  // Remove highlights that no longer exist (errors that were fixed or removed)
+  const currentErrorIds = new Set(validErrors.map((err) => err.id));
+  existingErrorMap.forEach((highlight, errorId) => {
+    if (!currentErrorIds.has(errorId)) {
+      // Remove all highlights for this error (multi-line support)
+      if (highlightsContent) {
+        const allErrorHighlights = highlightsContent.querySelectorAll(
+          `[data-element-id="${elementId}"][data-error-id="${errorId}"]`
+        );
+        allErrorHighlights.forEach((h) => h.remove());
+      } else {
+        highlight.remove();
+      }
+    } else {
+      // Also check if this error is dismissed (double-check to be safe)
+      const errorData = highlight.getAttribute("data-error");
+      if (errorData) {
+        try {
+          const error: GrammarError = JSON.parse(errorData);
+          if (isErrorDismissed(element, error)) {
+            // Remove all highlights for this dismissed error (multi-line support)
+            if (highlightsContent) {
+              const allErrorHighlights = highlightsContent.querySelectorAll(
+                `[data-element-id="${elementId}"][data-error-id="${errorId}"]`
+              );
+              allErrorHighlights.forEach((h) => h.remove());
+            } else {
+              highlight.remove();
+            }
+          }
+        } catch (e) {
+          // Error parsing, skip
+        }
+      }
+    }
+  });
+
+  // If element has text, ensure all highlights are visible (even if not focused)
+  // For Google Docs, always show highlights
+  const isGoogleDocs = (element as any).__rewordlyIsGoogleDocs === true;
+  let hasText = false;
+  if (
+    element instanceof HTMLInputElement ||
+    element instanceof HTMLTextAreaElement
+  ) {
+    hasText = element.value.trim().length > 0;
+  } else if (
+    element.getAttribute("contenteditable") === "true" ||
+    element.isContentEditable
+  ) {
+    hasText =
+      (element.innerText || element.textContent || "").trim().length > 0;
+  }
+
+  if ((isGoogleDocs || hasText) && highlightsContent) {
+    const elementIdForVisibility = getElementId(element);
+    const allHighlights = highlightsContent.querySelectorAll(
+      `[data-element-id="${elementIdForVisibility}"]`
+    );
+    allHighlights.forEach((highlight) => {
+      (highlight as HTMLElement).style.display = "";
+      (highlight as HTMLElement).style.opacity = "1";
+      (highlight as HTMLElement).removeAttribute("data-hidden-by-blur");
+      (highlight as HTMLElement).removeAttribute("data-hidden-by-modal");
+      (highlight as HTMLElement).removeAttribute("data-hidden-by-scroll");
+    });
+  }
+
+  // Update highlights on scroll/resize
+  highlightHelper.updatePositions(
+    element,
+    errors,
+    (error: GrammarError) => getErrorTextRects(element, error.start, error.end)
+  );
+}
+
+/**
+ * Attach hover listener to highlight
+ */
+export function attachHighlightHoverListener(
+  highlight: HTMLElement,
+  error: GrammarError,
+  element: HTMLElement,
+  options: {
+    grammarErrors: Map<HTMLElement, GrammarError[]>;
+    dismissedErrors: Map<string, boolean>;
+    highlightsContent: HTMLElement | null;
+    replaceGrammarError: (
+      element: HTMLElement,
+      targetError: GrammarError,
+      replacement: string
+    ) => void;
+    closeAllGrammarTooltips: () => void;
+    scheduledBlurHandlers: Map<HTMLElement, number>;
+    isPerformingDismiss: { value: boolean };
+    getElementId: (element: HTMLElement) => string;
+  }
+): void {
+  const {
+    grammarErrors,
+    dismissedErrors,
+    highlightsContent,
+    replaceGrammarError,
+    closeAllGrammarTooltips,
+    scheduledBlurHandlers,
+    isPerformingDismiss,
+    getElementId,
+  } = options;
+
+  let tooltipTimeout: number | null = null;
+
+  const closeTooltip = () => {
+    if (tooltipTimeout !== null) {
+      clearTimeout(tooltipTimeout);
+      tooltipTimeout = null;
+    }
+  };
+
+  highlight.addEventListener("mouseenter", () => {
+    // Close any existing tooltip for this error ID
+    closeTooltip();
+
+    // Close all other tooltips when opening a new one
+    closeAllGrammarTooltips();
+
+    // Get current errors
+    const currentErrors = grammarErrors.get(element) || [];
+
+    // Find the current error by ID (guaranteed to find the exact error)
+    let currentError = currentErrors.find((err) => err.id === error.id);
+
+    // If error not found (shouldn't happen), use the stored error as fallback
+    if (!currentError) {
+      currentError = error;
+    }
+
+    // Create tooltip
+    const tooltip = document.createElement("div");
+    tooltip.className = "rewordly-grammar-tooltip";
+
+    // Limit initial suggestions display (show first 5, rest with "see more")
+    const INITIAL_SUGGESTIONS_LIMIT = 5;
+    const allSuggestions = currentError.suggestions || [];
+    const hasMoreSuggestions =
+      allSuggestions.length > INITIAL_SUGGESTIONS_LIMIT;
+    const initialSuggestions = hasMoreSuggestions
+      ? allSuggestions.slice(0, INITIAL_SUGGESTIONS_LIMIT)
+      : allSuggestions;
+    const remainingSuggestions = hasMoreSuggestions
+      ? allSuggestions.slice(INITIAL_SUGGESTIONS_LIMIT)
+      : [];
+
+    const initialSuggestionsHtml =
+      initialSuggestions.length > 0
+        ? initialSuggestions
+            .map((suggestion, index) => {
+              // Format suggestion for display - make whitespace visible
+              const displayText = formatSuggestionForDisplay(
+                suggestion,
+                currentError.word
+              );
+              return `<button class="rewordly-grammar-suggestion" data-suggestion="${escapeHtml(
+                suggestion
+              )}" data-error-start="${currentError.start}" data-error-end="${
+                currentError.end
+              }" data-suggestion-index="${index}">${escapeHtml(
+                displayText
+              )}</button>`;
+            })
+            .join("")
+        : '<div class="rewordly-grammar-no-suggestions">No suggestions available</div>';
+
+    const remainingSuggestionsHtml =
+      remainingSuggestions.length > 0
+        ? remainingSuggestions
+            .map((suggestion, index) => {
+              const displayText = formatSuggestionForDisplay(
+                suggestion,
+                currentError.word
+              );
+              return `<button class="rewordly-grammar-suggestion rewordly-grammar-suggestion-hidden" data-suggestion="${escapeHtml(
+                suggestion
+              )}" data-error-start="${currentError.start}" data-error-end="${
+                currentError.end
+              }" data-suggestion-index="${
+                initialSuggestions.length + index
+              }">${escapeHtml(displayText)}</button>`;
+            })
+            .join("")
+        : "";
+
+    const seeMoreButtonHtml = hasMoreSuggestions
+      ? `<button class="rewordly-grammar-see-more" data-error-id="${currentError.id}">See more (${remainingSuggestions.length})</button>`
+      : "";
+
+    tooltip.innerHTML = `
+      <div class="rewordly-grammar-tooltip-content">
+        <div class="rewordly-grammar-tooltip-word">${escapeHtml(
+          currentError.word
+        )}</div>
+        <div class="rewordly-grammar-tooltip-suggestions">
+          ${initialSuggestionsHtml}
+          ${remainingSuggestionsHtml}
+        </div>
+        ${seeMoreButtonHtml}
+        <button class="rewordly-grammar-dismiss" data-error-id="${
+          currentError.id
+        }">Dismiss</button>
+      </div>
+    `;
+
+    document.body.appendChild(tooltip);
+
+    // Calculate available screen space for max-height
+    const highlightRect = highlight.getBoundingClientRect();
+    const viewportHeight = window.innerHeight;
+    const viewportWidth = window.innerWidth;
+
+    // Calculate space above and below the highlight
+    const spaceAbove = highlightRect.top;
+    const spaceBelow = viewportHeight - highlightRect.bottom;
+
+    // Use the larger space, but leave some margin (at least 16px from edges)
+    const maxAvailableHeight = Math.max(spaceAbove, spaceBelow) - 32; // 16px margin top + 16px margin bottom
+
+    // Set a reasonable minimum and maximum
+    const MIN_TOOLTIP_HEIGHT = 100;
+    const MAX_TOOLTIP_HEIGHT = 400;
+    const calculatedMaxHeight = Math.max(
+      MIN_TOOLTIP_HEIGHT,
+      Math.min(MAX_TOOLTIP_HEIGHT, maxAvailableHeight)
+    );
+
+    // Apply max-height to suggestions container
+    const suggestionsContainer = tooltip.querySelector(
+      ".rewordly-grammar-tooltip-suggestions"
+    ) as HTMLElement;
+    if (suggestionsContainer) {
+      suggestionsContainer.style.maxHeight = `${calculatedMaxHeight}px`;
+      suggestionsContainer.style.overflowY = "auto";
+      suggestionsContainer.style.overflowX = "hidden";
+    }
+
+    // Position tooltip
+    const tooltipRect = tooltip.getBoundingClientRect();
+    const tooltipTop = highlightRect.top - tooltipRect.height - 8;
+    const tooltipLeft =
+      highlightRect.left + highlightRect.width / 2 - tooltipRect.width / 2;
+
+    // Ensure tooltip doesn't go outside screen bounds horizontally
+    const adjustedLeft = Math.max(
+      8,
+      Math.min(tooltipLeft, viewportWidth - tooltipRect.width - 8)
+    );
+
+    // Ensure tooltip doesn't go outside screen bounds vertically
+    let adjustedTop = tooltipTop;
+    if (tooltipTop < 8) {
+      // Not enough space above, try below
+      adjustedTop = highlightRect.bottom + 8;
+      // If still doesn't fit below, adjust to fit within viewport
+      if (adjustedTop + tooltipRect.height > viewportHeight - 8) {
+        adjustedTop = Math.max(8, viewportHeight - tooltipRect.height - 8);
+      }
+    } else if (adjustedTop + tooltipRect.height > viewportHeight - 8) {
+      // Doesn't fit below, adjust to fit within viewport
+      adjustedTop = Math.max(8, viewportHeight - tooltipRect.height - 8);
+    }
+
+    tooltip.style.top = `${adjustedTop}px`;
+    tooltip.style.left = `${adjustedLeft}px`;
+
+    // Attach click handlers
+    const suggestionButtons = tooltip.querySelectorAll(
+      ".rewordly-grammar-suggestion"
+    );
+    suggestionButtons.forEach((button) => {
+      button.addEventListener("click", (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+
+        const suggestion = (button as HTMLElement).getAttribute(
+          "data-suggestion"
+        );
+        if (!suggestion) return;
+
+        // Get error data directly from highlight - this is the most reliable source
+        const errorData = highlight.getAttribute("data-error");
+        const errorId = highlight.getAttribute("data-error-id");
+
+        if (!errorId || !errorData) {
+          console.error("Rewordly: No error data found on highlight", {
+            errorId,
+            hasErrorData: !!errorData,
+          });
+          return;
+        }
+
+        let targetError: GrammarError;
+        try {
+          targetError = JSON.parse(errorData);
+        } catch (e) {
+          console.error(
+            "Rewordly: Failed to parse error data from highlight",
+            e
+          );
+          return;
+        }
+
+        closeTooltip();
+        closeAllGrammarTooltips();
+
+        // Use the error directly from highlight - no need to search in maps
+        replaceGrammarError(element, targetError, suggestion);
+      });
+    });
+
+    // Attach "see more" button handler
+    const seeMoreButton = tooltip.querySelector(".rewordly-grammar-see-more");
+    if (seeMoreButton) {
+      seeMoreButton.addEventListener("click", (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+
+        // Show all hidden suggestions
+        const hiddenSuggestions = tooltip.querySelectorAll(
+          ".rewordly-grammar-suggestion-hidden"
+        );
+        hiddenSuggestions.forEach((suggestion) => {
+          suggestion.classList.remove("rewordly-grammar-suggestion-hidden");
+        });
+
+        // Hide the "see more" button
+        seeMoreButton.remove();
+
+        // Recalculate tooltip position after showing all suggestions
+        const updatedTooltipRect = tooltip.getBoundingClientRect();
+        const updatedHighlightRect = highlight.getBoundingClientRect();
+        const updatedTooltipTop =
+          updatedHighlightRect.top - updatedTooltipRect.height - 8;
+        const updatedTooltipLeft =
+          updatedHighlightRect.left +
+          updatedHighlightRect.width / 2 -
+          updatedTooltipRect.width / 2;
+
+        const updatedAdjustedLeft = Math.max(
+          8,
+          Math.min(
+            updatedTooltipLeft,
+            window.innerWidth - updatedTooltipRect.width - 8
+          )
+        );
+        let updatedAdjustedTop = updatedTooltipTop;
+
+        if (updatedTooltipTop < 8) {
+          updatedAdjustedTop = updatedHighlightRect.bottom + 8;
+          if (
+            updatedAdjustedTop + updatedTooltipRect.height >
+            window.innerHeight - 8
+          ) {
+            updatedAdjustedTop = Math.max(
+              8,
+              window.innerHeight - updatedTooltipRect.height - 8
+            );
+          }
+        } else if (
+          updatedAdjustedTop + updatedTooltipRect.height >
+          window.innerHeight - 8
+        ) {
+          updatedAdjustedTop = Math.max(
+            8,
+            window.innerHeight - updatedTooltipRect.height - 8
+          );
+        }
+
+        tooltip.style.top = `${updatedAdjustedTop}px`;
+        tooltip.style.left = `${updatedAdjustedLeft}px`;
+      });
+    }
+
+    // Attach dismiss button handler
+    const dismissButton = tooltip.querySelector(".rewordly-grammar-dismiss");
+    if (dismissButton) {
+      dismissButton.addEventListener("click", (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+
+        // Get error ID from the highlight
+        const errorId = highlight.getAttribute("data-error-id");
+        if (!errorId) {
+          console.error("Rewordly: No error ID found on highlight");
+          return;
+        }
+
+        // Find the error in the stored errors
+        const errors = grammarErrors.get(element) || [];
+        const error = errors.find((err) => err.id === errorId);
+
+        if (error) {
+          // Add to dismissed list
+          // Dismiss based on word + context (handles position changes)
+          const elementId = getElementId(element);
+
+          // Get current text to generate context-based key
+          let text = "";
+          if (
+            element instanceof HTMLInputElement ||
+            element instanceof HTMLTextAreaElement
+          ) {
+            text = element.value;
+          } else if (
+            element.getAttribute("contenteditable") === "true" ||
+            element.isContentEditable
+          ) {
+            text = element.innerText || element.textContent || "";
+          }
+
+          const dismissKey = getDismissKey(elementId, error, text);
+          dismissedErrors.set(dismissKey, true);
+
+          // Remove error from grammarErrors map to prevent it from reappearing
+          const currentErrors = grammarErrors.get(element) || [];
+          const updatedErrors = currentErrors.filter(
+            (err) => err.id !== error.id
+          );
+          grammarErrors.set(element, updatedErrors);
+
+          // Remove all highlights for this error (multi-line support)
+          if (highlightsContent) {
+            const allErrorHighlights = highlightsContent.querySelectorAll(
+              `[data-element-id="${elementId}"][data-error-id="${error.id}"]`
+            );
+            allErrorHighlights.forEach((h) => h.remove());
+          } else {
+            highlight.remove();
+          }
+
+          // Close tooltip
+          closeTooltip();
+          closeAllGrammarTooltips();
+
+          // Restore focus after dismiss (similar to replace)
+          // Cancel any scheduled blur handlers for this element
+          const existingBlurTimeout = scheduledBlurHandlers.get(element);
+          if (existingBlurTimeout) {
+            clearTimeout(existingBlurTimeout);
+            scheduledBlurHandlers.delete(element);
+          }
+
+          // Use requestAnimationFrame to ensure DOM is ready before focusing
+          requestAnimationFrame(() => {
+            // Keep flag true during focus restore to prevent blur handler from hiding highlights
+            isPerformingDismiss.value = true;
+
+            element.focus();
+
+            // Set cursor position to the end of the dismissed error
+            if (error) {
+              const cursorPosition = error.end;
+
+              if (
+                element instanceof HTMLInputElement ||
+                element instanceof HTMLTextAreaElement
+              ) {
+                // For input/textarea, use setSelectionRange
+                element.setSelectionRange(cursorPosition, cursorPosition);
+              } else if (
+                element.getAttribute("contenteditable") === "true" ||
+                element.isContentEditable
+              ) {
+                // For contenteditable, use Range API
+                const selection = window.getSelection();
+                if (selection) {
+                  const cursorMapping = mapInnerTextToTextNodes(
+                    element,
+                    cursorPosition,
+                    cursorPosition
+                  );
+                  if (cursorMapping && cursorMapping.startNode) {
+                    const cursorRange = document.createRange();
+                    const offset = Math.min(
+                      cursorMapping.startOffset,
+                      cursorMapping.startNode.textContent!.length
+                    );
+                    cursorRange.setStart(cursorMapping.startNode, offset);
+                    cursorRange.collapse(true);
+                    selection.removeAllRanges();
+                    selection.addRange(cursorRange);
+                  }
+                }
+              }
+            }
+
+            // Clear the dismiss flag after a short delay to ensure focus is stable
+            setTimeout(() => {
+              isPerformingDismiss.value = false;
+            }, 150);
+          });
+        }
+      });
+    }
+
+    tooltip.addEventListener("mouseleave", () => {
+      tooltipTimeout = window.setTimeout(() => {
+        // Check if any highlight for this error is still hovered
+        const allHighlightsForError =
+          highlightsContent?.querySelectorAll(
+            `[data-error-id="${error.id}"]`
+          ) || [];
+        const isAnyHighlightHovered = Array.from(allHighlightsForError).some(
+          (h) => (h as HTMLElement).matches(":hover")
+        );
+
+        if (!isAnyHighlightHovered && !tooltip.matches(":hover")) {
+          closeTooltip();
+        }
+      }, 100);
+    });
   });
 }

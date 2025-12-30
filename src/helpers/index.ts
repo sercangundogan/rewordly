@@ -44,6 +44,8 @@ export {
   filterDismissedErrors,
   isElementIgnored,
   mockGrammarCheck,
+  performGrammarCheckDirect,
+  performGrammarCheck,
 } from "./grammar-check-helper";
 
 // Text Processing Helpers
@@ -66,10 +68,15 @@ export {
   getInputTextareaErrorRects,
   getGoogleDocsErrorRects,
   closeAllGrammarTooltips,
+  validateAndRemoveInvalidHighlights,
+  createHighlight,
+  displayGrammarErrors,
+  attachHighlightHoverListener,
 } from "./highlight-helper";
 
 // Text Replacement Helpers
 export {
   replaceTextInDraftJS,
   replaceTextInContentEditable,
+  replaceGrammarError,
 } from "./text-replacement-helper";
