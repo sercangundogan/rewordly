@@ -528,8 +528,18 @@ export function setupElementScrollListeners(
         getRects: (error: any) => DOMRect[]
       ) => void;
     };
-    getErrorTextRects: (element: HTMLElement, start: number, end: number) => DOMRect[];
-    removeElementScrollListeners: (element: HTMLElement) => void;
+    getErrorTextRects: (
+      element: HTMLElement,
+      start: number,
+      end: number
+    ) => DOMRect[];
+    removeElementScrollListeners: (
+      element: HTMLElement,
+      options: {
+        scrollableContainers: Map<HTMLElement, Set<HTMLElement>>;
+        scrollListeners: Map<HTMLElement, () => void>;
+      }
+    ) => void;
   }
 ): void {
   const {
@@ -542,7 +552,10 @@ export function setupElementScrollListeners(
   } = options;
 
   // Remove existing listeners for this element
-  removeElementScrollListeners(element, options);
+  removeElementScrollListeners(element, {
+    scrollableContainers,
+    scrollListeners,
+  });
 
   // Find scrollable containers
   const containers = findScrollableContainers(element);
