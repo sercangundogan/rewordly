@@ -5,12 +5,7 @@
  */
 
 import { createRewordlyAPIUtil, RewordlyAPIUtil } from "./utils/api";
-import {
-  RewordlyConfig,
-  GrammarError,
-  GrammarCheckResponse,
-  IPlatformAdapter,
-} from "./types";
+import { RewordlyConfig, GrammarError, IPlatformAdapter } from "./types";
 import {
   RewriteButtonHelper,
   ModalHelper,
@@ -36,6 +31,7 @@ import {
   extractTextExcludingSignature,
   isElementIgnored,
   isErrorDismissed,
+  mockGrammarCheck,
   mapInnerTextToTextNodes,
   adjustErrorPositionsForMultiWord,
   escapeHtml,
@@ -1159,7 +1155,7 @@ class RewordlyContentScript {
 
     try {
       // Call real API
-      const response = await this.checkGrammarAPI(text);
+      const response = await checkGrammarAPI(this.apiUtil, text);
 
       // Check if detected language is English
       if (
@@ -1177,7 +1173,7 @@ class RewordlyContentScript {
       console.error("Rewordly: Grammar check error:", error);
       // Fallback to mock if API fails (for development)
       try {
-        const mockResponse = this.mockGrammarCheck(text);
+        const mockResponse = mockGrammarCheck(text);
         // Mock always assumes English, so we can proceed
         this.displayGrammarErrors(element, mockResponse.errors);
       } catch (mockError) {
@@ -1186,252 +1182,6 @@ class RewordlyContentScript {
         this.displayGrammarErrors(element, []);
       }
     }
-  }
-
-  /**
-   * Check grammar using WebSocket API (legacy method - kept for compatibility)
-   */
-  private async checkGrammarAPI(text: string): Promise<GrammarCheckResponse> {
-    try {
-      // Use WebSocket API for grammar check
-      const result = await this.apiUtil.checkGrammar(text, "default");
-
-      // Map errors to include id field (required by GrammarError interface)
-      const errorsWithId: GrammarError[] = result.errors.map((error) => ({
-        id: generateErrorId(),
-        start: error.start,
-        end: error.end,
-        word: error.word,
-        suggestions: error.suggestions,
-        type: error.type,
-      }));
-
-      return {
-        errors: errorsWithId,
-        corrected: result.corrected,
-        ...(result.detectedLanguage && {
-          detectedLanguage: result.detectedLanguage,
-        }),
-      };
-    } catch (error) {
-      // Don't log cancellation errors
-      if (error instanceof Error && error.message === "Request cancelled") {
-        throw error;
-      }
-      console.error("Rewordly: WebSocket API request failed:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Mock grammar check API - returns grammar errors with positions
-   * Used as fallback when API is unavailable
-   */
-  private mockGrammarCheck(text: string): GrammarCheckResponse {
-    // Mock grammar check with multiple error types
-    // This is a mock - in real implementation, this would call the API
-
-    const errors: GrammarError[] = [];
-    const lowerText = text.toLowerCase();
-
-    // Find ALL occurrences of "goes" (not just the first one)
-    let searchIndex = 0;
-    while (true) {
-      const goesIndex = lowerText.indexOf(" goes ", searchIndex);
-      if (goesIndex === -1) break;
-
-      const start = text.indexOf(" goes ", goesIndex);
-      if (start !== -1) {
-        errors.push({
-          id: generateErrorId(),
-          start: start + 1,
-          end: start + 5,
-          word: "goes",
-          suggestions: ["went", "go"],
-          type: "grammar",
-        });
-      }
-      searchIndex = goesIndex + 1;
-    }
-
-    // Find ALL occurrences of "buyed"
-    searchIndex = 0;
-    while (true) {
-      const buyedIndex = lowerText.indexOf("buyed", searchIndex);
-      if (buyedIndex === -1) break;
-
-      errors.push({
-        id: generateErrorId(),
-        start: buyedIndex,
-        end: buyedIndex + 5,
-        word: "buyed",
-        suggestions: ["bought", "buy"],
-        type: "grammar",
-      });
-      searchIndex = buyedIndex + 1;
-    }
-
-    // Find ALL occurrences of "have" with singular subject
-    searchIndex = 0;
-    while (true) {
-      const haveIndex = lowerText.indexOf(" have ", searchIndex);
-      if (haveIndex === -1) break;
-
-      if (haveIndex > 0) {
-        const beforeHave = text
-          .substring(Math.max(0, haveIndex - 20), haveIndex)
-          .trim();
-        const wordsBefore = beforeHave.split(/\s+/);
-        const lastWord = wordsBefore[wordsBefore.length - 1];
-        if (
-          lastWord &&
-          !lastWord.toLowerCase().endsWith("s") &&
-          lastWord.toLowerCase() !== "they" &&
-          lastWord.toLowerCase() !== "we" &&
-          lastWord.toLowerCase() !== "you" &&
-          lastWord.toLowerCase() !== "i"
-        ) {
-          const start = text.indexOf(" have ", haveIndex);
-          if (start !== -1) {
-            errors.push({
-              id: generateErrorId(),
-              start: start + 1,
-              end: start + 5,
-              word: "have",
-              suggestions: ["has", "have"],
-              type: "grammar",
-            });
-          }
-        }
-      }
-      searchIndex = haveIndex + 1;
-    }
-
-    // Find ALL occurrences of "was" with plural subject
-    searchIndex = 0;
-    while (true) {
-      const wasIndex = lowerText.indexOf(" was ", searchIndex);
-      if (wasIndex === -1) break;
-
-      if (wasIndex > 0) {
-        const beforeWas = text
-          .substring(Math.max(0, wasIndex - 10), wasIndex)
-          .trim();
-        const wordsBefore = beforeWas.split(/\s+/);
-        const lastWord = wordsBefore[wordsBefore.length - 1];
-        if (
-          lastWord &&
-          (lastWord.toLowerCase() === "they" ||
-            lastWord.toLowerCase() === "we" ||
-            lastWord.toLowerCase() === "you")
-        ) {
-          const start = text.indexOf(" was ", wasIndex);
-          if (start !== -1) {
-            errors.push({
-              id: generateErrorId(),
-              start: start + 1,
-              end: start + 4,
-              word: "was",
-              suggestions: ["were", "was"],
-              type: "grammar",
-            });
-          }
-        }
-      }
-      searchIndex = wasIndex + 1;
-    }
-
-    // Find ALL occurrences of "do" with singular subject (e.g., "he do")
-    searchIndex = 0;
-    while (true) {
-      const doIndex = lowerText.indexOf(" do ", searchIndex);
-      if (doIndex === -1) break;
-
-      if (doIndex > 0) {
-        const beforeDo = text
-          .substring(Math.max(0, doIndex - 10), doIndex)
-          .trim();
-        const wordsBefore = beforeDo.split(/\s+/);
-        const lastWord = wordsBefore[wordsBefore.length - 1];
-        if (
-          lastWord &&
-          (lastWord.toLowerCase() === "he" ||
-            lastWord.toLowerCase() === "she" ||
-            lastWord.toLowerCase() === "it")
-        ) {
-          const start = text.indexOf(" do ", doIndex);
-          if (start !== -1) {
-            errors.push({
-              id: generateErrorId(),
-              start: start + 1,
-              end: start + 3,
-              word: "do",
-              suggestions: ["does", "do"],
-              type: "grammar",
-            });
-          }
-        }
-      }
-      searchIndex = doIndex + 1;
-    }
-
-    // Find ALL occurrences of "are" with singular subject (e.g., "he are")
-    searchIndex = 0;
-    while (true) {
-      const areIndex = lowerText.indexOf(" are ", searchIndex);
-      if (areIndex === -1) break;
-
-      if (areIndex > 0) {
-        const beforeAre = text
-          .substring(Math.max(0, areIndex - 10), areIndex)
-          .trim();
-        const wordsBefore = beforeAre.split(/\s+/);
-        const lastWord = wordsBefore[wordsBefore.length - 1];
-        if (
-          lastWord &&
-          (lastWord.toLowerCase() === "he" ||
-            lastWord.toLowerCase() === "she" ||
-            lastWord.toLowerCase() === "it")
-        ) {
-          const start = text.indexOf(" are ", areIndex);
-          if (start !== -1) {
-            errors.push({
-              id: generateErrorId(),
-              start: start + 1,
-              end: start + 4,
-              word: "are",
-              suggestions: ["is", "are"],
-              type: "grammar",
-            });
-          }
-        }
-      }
-      searchIndex = areIndex + 1;
-    }
-
-    // Remove duplicate errors (same position)
-    const uniqueErrors = errors.filter(
-      (error, index, self) =>
-        index ===
-        self.findIndex((e) => e.start === error.start && e.end === error.end)
-    );
-
-    // Generate corrected text
-    let corrected = text;
-    // Sort errors by position (reverse order to maintain indices)
-    const sortedErrors = [...uniqueErrors].sort((a, b) => b.start - a.start);
-    for (const error of sortedErrors) {
-      if (error.suggestions.length > 0) {
-        const before = corrected.substring(0, error.start);
-        const after = corrected.substring(error.end);
-        corrected = before + error.suggestions[0] + after;
-      }
-    }
-
-    return {
-      errors: uniqueErrors,
-      corrected,
-    };
   }
 
   /**
@@ -2378,13 +2128,8 @@ class RewordlyContentScript {
    * Clear highlights for a specific element
    */
   private clearElementHighlights(element: HTMLElement): void {
-    if (!this.highlightsContent) return;
-
-    const elementId = getElementId(element);
-    const highlights = this.highlightsContent.querySelectorAll(
-      `[data-element-id="${elementId}"]`
-    );
-    highlights.forEach((highlight) => highlight.remove());
+    // Use helper to clear highlights
+    this.highlightHelper.clearElementHighlights(element);
 
     // Remove scroll listeners for this element
     this.removeElementScrollListeners(element);

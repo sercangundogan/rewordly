@@ -43,6 +43,7 @@ export {
   undismissError,
   filterDismissedErrors,
   isElementIgnored,
+  mockGrammarCheck,
 } from "./grammar-check-helper";
 
 // Text Processing Helpers
