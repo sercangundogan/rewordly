@@ -56,9 +56,6 @@ class RewordlyContentScript {
   // Highlight Helper
   private highlightHelper: HighlightContainerHelper;
 
-  // Legacy references (deprecated - use helpers instead)
-  private rewriteButton: HTMLDivElement | null = null;
-
   // Real-time grammar checking
   private grammarCheckTimeout: number | null = null;
   private grammarCheckThrottle: number | null = null; // Throttle timer
@@ -76,10 +73,6 @@ class RewordlyContentScript {
   // Ignore list for elements that should not have grammar checking
   // Stores element IDs (from getElementId) that should be ignored
   private ignoredElementIds: Set<string> = new Set();
-
-  // Grammarly-style highlights container (legacy - use highlightHelper instead)
-  // Kept for backward compatibility
-  private highlightsContent: HTMLElement | null = null;
 
   // Store bound event handlers to allow proper removal
   private boundHandleOutsideClick = this.handleOutsideClick.bind(this);
@@ -195,9 +188,6 @@ class RewordlyContentScript {
     this.rewriteButtonHelper.create();
     this.modalHelper.create();
     this.highlightHelper.create();
-
-    // Legacy references for backward compatibility
-    this.rewriteButton = this.rewriteButtonHelper["button"];
 
     // Set up scroll/resize listeners for highlights
     this.setupHighlightsUpdateListeners();
@@ -424,11 +414,7 @@ class RewordlyContentScript {
     // Disable Gmail's spell check (writingsuggestions)
     element.setAttribute("writingsuggestions", "false");
 
-    // Remove Gmail's spell check markers (aria-invalid spans)
-    this.removeGmailSpellCheckMarkers(element);
-
-    // Watch for Gmail adding spell check markers and remove them
-    this.setupGmailSpellCheckObserver(element);
+    // Gmail spell check marker removal is now handled by GmailAdapter
 
     // Add multiple event listeners to catch all input types
     // Use capture phase to catch events before they're stopped
@@ -540,25 +526,6 @@ class RewordlyContentScript {
         observer.disconnect();
       }, 2000); // Fallback: try after 2 seconds
     }
-  }
-
-  /**
-   * Remove Gmail's spell check markers (spans with aria-invalid)
-   */
-  /**
-   * Remove Gmail spell check markers
-   * @deprecated Moved to GmailAdapter. This method is kept for backward compatibility.
-   */
-  private removeGmailSpellCheckMarkers(_element: HTMLElement): void {
-    // Moved to GmailAdapter
-  }
-
-  /**
-   * Set up observer to watch for Gmail adding spell check markers
-   * @deprecated Moved to GmailAdapter. This method is kept for backward compatibility.
-   */
-  private setupGmailSpellCheckObserver(_element: HTMLElement): void {
-    // Moved to GmailAdapter
   }
 
   /**
@@ -814,10 +781,10 @@ class RewordlyContentScript {
     // Check if the blur is caused by clicking the button
     const relatedTarget = (event as FocusEvent)
       .relatedTarget as HTMLElement | null;
+    const button = this.rewriteButtonHelper["button"];
     const isClickingButton =
       relatedTarget &&
-      (relatedTarget === this.rewriteButton ||
-        this.rewriteButton?.contains(relatedTarget));
+      (relatedTarget === button || button?.contains(relatedTarget));
 
     if (!isClickingButton) {
       // Cancel any existing button blur timeout
@@ -834,10 +801,11 @@ class RewordlyContentScript {
       // Small delay to allow for focus transfer (e.g., clicking on button)
       this.buttonBlurTimeout = window.setTimeout(() => {
         // Check if element still doesn't have focus and button wasn't clicked
+        const button = this.rewriteButtonHelper["button"];
         const shouldHide =
           document.activeElement !== blurredElement &&
-          document.activeElement !== this.rewriteButton &&
-          !this.rewriteButton?.contains(document.activeElement) &&
+          document.activeElement !== button &&
+          !button?.contains(document.activeElement) &&
           this.currentFocusedElement !== blurredElement; // Check if element is no longer the focused element
 
         // Only hide if element truly lost focus and is not the current focused element
@@ -907,12 +875,13 @@ class RewordlyContentScript {
           // Only hide highlights if element has no text or is removed from DOM
           if (!hasText || !isInDOM) {
             // Element has no text or was removed, hide highlights
-            if (this.highlightsContent) {
+            const highlightsContent = this.highlightHelper.getContent();
+            if (highlightsContent) {
               const elementId = getElementId(element);
-              const highlights = this.highlightsContent.querySelectorAll(
+              const highlights = highlightsContent.querySelectorAll(
                 `[data-element-id="${elementId}"]`
               );
-              highlights.forEach((highlight) => {
+              highlights.forEach((highlight: Element) => {
                 highlight.remove();
               });
             }
@@ -1030,7 +999,7 @@ class RewordlyContentScript {
         err: GrammarError,
         el: HTMLElement
       ) => this.attachHighlightHoverListener(highlight, err, el),
-      highlightsContent: this.highlightsContent,
+      highlightsContent: this.highlightHelper.getContent(),
     });
   }
 
@@ -1086,7 +1055,8 @@ class RewordlyContentScript {
       return;
     }
 
-    if (!this.highlightsContent) {
+    const highlightsContent = this.highlightHelper.getContent();
+    if (!highlightsContent) {
       // Recreate if doesn't exist
       const errors = this.grammarErrors.get(element);
       if (errors) {
@@ -1096,7 +1066,7 @@ class RewordlyContentScript {
     }
 
     const elementId = getElementId(element);
-    const highlights = this.highlightsContent.querySelectorAll(
+    const highlights = highlightsContent.querySelectorAll(
       `[data-element-id="${elementId}"]`
     );
 
@@ -1138,12 +1108,13 @@ class RewordlyContentScript {
       });
 
       // Remove all highlights for dismissed errors (multi-line support)
-      if (dismissedErrorIds.size > 0 && this.highlightsContent) {
+      const highlightsContent = this.highlightHelper.getContent();
+      if (dismissedErrorIds.size > 0 && highlightsContent) {
         dismissedErrorIds.forEach((errorId) => {
-          const allErrorHighlights = this.highlightsContent!.querySelectorAll(
+          const allErrorHighlights = highlightsContent.querySelectorAll(
             `[data-element-id="${elementId}"][data-error-id="${errorId}"]`
           );
-          allErrorHighlights.forEach((h) => h.remove());
+          allErrorHighlights.forEach((h: Element) => h.remove());
         });
       }
       // Update positions
@@ -1270,7 +1241,7 @@ class RewordlyContentScript {
     attachHighlightHoverListener(highlight, error, element, {
       grammarErrors: this.grammarErrors,
       dismissedErrors: this.dismissedErrors,
-      highlightsContent: this.highlightsContent,
+      highlightsContent: this.highlightHelper.getContent(),
       replaceGrammarError: (el: HTMLElement, err: GrammarError, rep: string) =>
         this.replaceGrammarError(el, err, rep),
       closeAllGrammarTooltips: () => this.closeAllGrammarTooltips(),
@@ -1743,7 +1714,7 @@ class RewordlyContentScript {
   ): void {
     replaceGrammarErrorHelper(element, targetError, replacement, {
       grammarErrors: this.grammarErrors,
-      highlightsContent: this.highlightsContent,
+      highlightsContent: this.highlightHelper.getContent(),
       isPerformingReplace: {
         get: () => this.isPerformingReplace,
         set: (value: boolean) => {
@@ -1797,11 +1768,12 @@ class RewordlyContentScript {
    * Hide all grammar highlights across all elements
    */
   private hideAllGrammarHighlights(): void {
-    if (!this.highlightsContent) return;
+    const highlightsContent = this.highlightHelper.getContent();
+    if (!highlightsContent) return;
 
     // Hide all highlights by setting display to none
     const allHighlights =
-      this.highlightsContent.querySelectorAll("[data-element-id]");
+      highlightsContent.querySelectorAll("[data-element-id]");
     allHighlights.forEach((highlight) => {
       (highlight as HTMLElement).style.display = "none";
     });
@@ -1814,7 +1786,8 @@ class RewordlyContentScript {
     const target = event.target as HTMLElement;
 
     // Hide rewrite button if clicking outside
-    if (this.rewriteButton && !this.rewriteButton.contains(target)) {
+    const button = this.rewriteButtonHelper["button"];
+    if (button && !button.contains(target)) {
       this.hideRewriteButton();
     }
   }
@@ -1830,7 +1803,8 @@ class RewordlyContentScript {
    * This is called both on initial show and on scroll/resize events
    */
   private updateAIRewriteButtonPosition(element: HTMLElement): void {
-    if (!this.rewriteButton || !this.config.rewriteEnabled) {
+    const rewriteButton = this.rewriteButtonHelper["button"];
+    if (!rewriteButton || !this.config.rewriteEnabled) {
       return;
     }
 
@@ -1928,8 +1902,8 @@ class RewordlyContentScript {
     }
 
     // Update button position (transition is disabled during scroll by scroll listener)
-    this.rewriteButton.style.left = `${buttonX}px`;
-    this.rewriteButton.style.top = `${buttonY}px`;
+    rewriteButton.style.left = `${buttonX}px`;
+    rewriteButton.style.top = `${buttonY}px`;
   }
 
   /**
@@ -1996,15 +1970,6 @@ class RewordlyContentScript {
     });
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  // @ts-ignore - Kept for compatibility, no longer used
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  private async handleGrammarClick(): Promise<void> {
-    // Grammar click is no longer used - kept for compatibility
-    // Grammar checking is now done automatically in real-time
-    return;
-  }
-
   /**
    * Handle rewrite action from context menu
    */
@@ -2012,31 +1977,7 @@ class RewordlyContentScript {
     if (!selectedText || selectedText.trim().length < 3) {
       return;
     }
-  }
-
-  // @ts-ignore - Kept for compatibility, no longer used
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  private async grammarText(_text: string): Promise<string> {
-    const response = await fetch(
-      "https://rewordly-web.vercel.app/api/grammar",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          text: _text,
-          mode: "ai",
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(`API request failed: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data.corrected || "Failed to fix grammar.";
+    // TODO: Implement context menu rewrite functionality
   }
 }
 
