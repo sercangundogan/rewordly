@@ -125,24 +125,35 @@ class RewordlyContentScript {
   private apiUtil: RewordlyAPIUtil;
 
   constructor() {
+    console.log("RewordlyContentScript çalıştı", this.config);
+
     // Initialize WebSocket API (production server with WSS)
     // Using wss://rewordly.store with Let's Encrypt SSL certificate
     this.apiUtil = createRewordlyAPIUtil("wss://rewordly.store");
+
+    console.log("Bağlantı kuruldu");
 
     // Initialize helpers
     this.rewriteButtonHelper = new RewriteButtonHelper();
     this.modalHelper = new ModalHelper();
     this.highlightHelper = new HighlightContainerHelper();
 
+    console.log("Helperlar başlatıldı");
+    console.log("Rewrite buton helper:", this.rewriteButtonHelper);
+    console.log("Modal helper:", this.modalHelper);
+    console.log("Highlight helper:", this.highlightHelper);
+
     this.init();
   }
 
   private async init(): Promise<void> {
+    console.log("Başlatılıyor...");
     // Check if this page is disabled - if so, don't initialize at all
     const pageDisabled = await isPageDisabled();
     if (pageDisabled) {
       return;
     }
+    console.log("Sayfa etkin");
     // Define custom element for highlights container to prevent Reddit's CSS from hiding it
     // Reddit uses :not(:defined) to hide undefined custom elements
     if (

@@ -14,7 +14,7 @@ export interface GrammarResponse {
     end: number;
     word: string;
     suggestions: string[];
-    type: 'grammar' | 'spelling';
+    type: "grammar" | "spelling";
   }>;
 }
 
@@ -30,26 +30,26 @@ interface BaseMessage {
 }
 
 interface GrammarCheckRequest extends BaseMessage {
-  type: 'grammar_check';
+  type: "grammar_check";
   text: string;
   language?: string;
-  mode?: 'default' | 'ai';
+  mode?: "default" | "ai";
 }
 
 interface RewriteRequest extends BaseMessage {
-  type: 'rewrite';
+  type: "rewrite";
   text: string;
   preserveMeaning?: boolean;
 }
 
 interface GrammarCheckResponse extends BaseMessage {
-  type: 'grammar_check_response';
+  type: "grammar_check_response";
   errors: Array<{
     start: number;
     end: number;
     word: string;
     suggestions: string[];
-    type: 'grammar' | 'spelling';
+    type: "grammar" | "spelling";
   }>;
   corrected: string;
   detectedLanguage?: {
@@ -59,17 +59,21 @@ interface GrammarCheckResponse extends BaseMessage {
 }
 
 interface RewriteResponse extends BaseMessage {
-  type: 'rewrite_response';
+  type: "rewrite_response";
   rewritten: string;
 }
 
 interface ErrorResponse extends BaseMessage {
-  type: 'error';
+  type: "error";
   error: string;
   message: string;
 }
 
-type ServerMessage = GrammarCheckResponse | RewriteResponse | ErrorResponse | { type: 'connected' | 'pong' };
+type ServerMessage =
+  | GrammarCheckResponse
+  | RewriteResponse
+  | ErrorResponse
+  | { type: "connected" | "pong" };
 
 export class RewordlyAPIUtil {
   private wsUrl: string;
@@ -77,13 +81,20 @@ export class RewordlyAPIUtil {
   private reconnectAttempts: number = 0;
   private maxReconnectAttempts: number = 5;
   private reconnectDelay: number = 1000;
-  private pendingRequests: Map<string, { resolve: (value: any) => void; reject: (error: Error) => void; timeoutId?: NodeJS.Timeout }> = new Map();
+  private pendingRequests: Map<
+    string,
+    {
+      resolve: (value: any) => void;
+      reject: (error: Error) => void;
+      timeoutId?: NodeJS.Timeout;
+    }
+  > = new Map();
   private connectionPromise: Promise<void> | null = null;
 
   constructor(wsUrl?: string) {
     // Production WebSocket server URL (WSS with Let's Encrypt SSL)
     // For Chrome extension, we can't use process.env, so we use a default or pass it in
-    this.wsUrl = wsUrl || 'wss://rewordly.store';
+    this.wsUrl = wsUrl || "wss://rewordly.store";
   }
 
   /**
@@ -106,7 +117,7 @@ export class RewordlyAPIUtil {
         this.ws = new WebSocket(this.wsUrl);
 
         this.ws.onopen = () => {
-          console.log('WebSocket connected');
+          console.log("WebSocket connected");
           this.reconnectAttempts = 0;
           resolve();
         };
@@ -116,17 +127,17 @@ export class RewordlyAPIUtil {
             const message: ServerMessage = JSON.parse(event.data);
             this.handleMessage(message);
           } catch (error) {
-            console.error('Error parsing WebSocket message:', error);
+            console.error("Error parsing WebSocket message:", error);
           }
         };
 
         this.ws.onerror = (error) => {
-          console.error('WebSocket error:', error);
-          reject(new Error('WebSocket connection error'));
+          console.error("WebSocket error:", error);
+          reject(new Error("WebSocket connection error"));
         };
 
         this.ws.onclose = () => {
-          console.log('WebSocket disconnected');
+          console.log("WebSocket disconnected");
           this.ws = null;
           this.connectionPromise = null;
           this.handleReconnect();
@@ -144,11 +155,11 @@ export class RewordlyAPIUtil {
    * Handle incoming WebSocket messages
    */
   private handleMessage(message: ServerMessage): void {
-    if (message.type === 'connected' || message.type === 'pong') {
+    if (message.type === "connected" || message.type === "pong") {
       return; // Ignore connection/ping messages
     }
 
-    if (message.type === 'error') {
+    if (message.type === "error") {
       const errorMsg = message as ErrorResponse;
       const pending = this.pendingRequests.get(errorMsg.id);
       if (pending) {
@@ -159,7 +170,7 @@ export class RewordlyAPIUtil {
     }
 
     // Handle response messages (at this point, message must have an id)
-    if ('id' in message) {
+    if ("id" in message) {
       const pending = this.pendingRequests.get(message.id);
       if (pending) {
         this.pendingRequests.delete(message.id);
@@ -173,10 +184,10 @@ export class RewordlyAPIUtil {
    */
   private handleReconnect(): void {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error('Max reconnection attempts reached');
+      console.error("Max reconnection attempts reached");
       // Reject all pending requests
       this.pendingRequests.forEach(({ reject }) => {
-        reject(new Error('WebSocket connection lost and reconnection failed'));
+        reject(new Error("WebSocket connection lost and reconnection failed"));
       });
       this.pendingRequests.clear();
       return;
@@ -184,11 +195,13 @@ export class RewordlyAPIUtil {
 
     this.reconnectAttempts++;
     const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
-    console.log(`Attempting to reconnect in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+    console.log(
+      `Attempting to reconnect in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`
+    );
 
     setTimeout(() => {
       this.connect().catch((error) => {
-        console.error('Reconnection failed:', error);
+        console.error("Reconnection failed:", error);
       });
     }, delay);
   }
@@ -208,7 +221,7 @@ export class RewordlyAPIUtil {
           clearTimeout(previous.timeoutId);
         }
         this.pendingRequests.delete(cancelPrevious);
-        previous.reject(new Error('Request cancelled'));
+        previous.reject(new Error("Request cancelled"));
       }
     }
 
@@ -218,14 +231,14 @@ export class RewordlyAPIUtil {
     }
 
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      throw new Error('WebSocket is not connected');
+      throw new Error("WebSocket is not connected");
     }
 
     return new Promise<T>((resolve, reject) => {
       const timeoutId = setTimeout(() => {
         if (this.pendingRequests.has(message.id)) {
           this.pendingRequests.delete(message.id);
-          reject(new Error('Request timeout'));
+          reject(new Error("Request timeout"));
         }
       }, 30000); // 30 second timeout
 
@@ -244,7 +257,7 @@ export class RewordlyAPIUtil {
         clearTimeout(pending.timeoutId);
       }
       this.pendingRequests.delete(requestId);
-      pending.reject(new Error('Request cancelled'));
+      pending.reject(new Error("Request cancelled"));
     }
   }
 
@@ -254,20 +267,29 @@ export class RewordlyAPIUtil {
    * @param options - Configuration options
    * @returns Promise<string> - The rewritten text
    */
-  async rewriteText(text: string, _options: RewriteOptions = {}): Promise<string> {
+  async rewriteText(
+    text: string,
+    _options: RewriteOptions = {}
+  ): Promise<string> {
     try {
       const message: RewriteRequest = {
         id: this.generateId(),
-        type: 'rewrite',
+        type: "rewrite",
         text: text,
-        ...(_options.preserveMeaning !== undefined && { preserveMeaning: _options.preserveMeaning }),
+        ...(_options.preserveMeaning !== undefined && {
+          preserveMeaning: _options.preserveMeaning,
+        }),
       };
 
       const response = await this.sendMessage<RewriteResponse>(message);
-      return response.rewritten || 'Failed to rewrite text.';
+      return response.rewritten || "Failed to rewrite text.";
     } catch (error) {
-      console.error('Rewordly API error:', error);
-      throw new Error(`Failed to rewrite text: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error("Rewordly API error:", error);
+      throw new Error(
+        `Failed to rewrite text: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
     }
   }
 
@@ -277,20 +299,27 @@ export class RewordlyAPIUtil {
    * @param mode - 'default' uses LanguageTool, 'ai' uses OpenAI
    * @returns Promise<string> - The grammar-corrected text
    */
-  async grammarText(text: string, mode: 'default' | 'ai' = 'default'): Promise<string> {
+  async grammarText(
+    text: string,
+    mode: "default" | "ai" = "default"
+  ): Promise<string> {
     try {
       const message: GrammarCheckRequest = {
         id: this.generateId(),
-        type: 'grammar_check',
+        type: "grammar_check",
         text: text,
         mode: mode,
       };
 
       const response = await this.sendMessage<GrammarCheckResponse>(message);
-      return response.corrected || 'Failed to fix grammar.';
+      return response.corrected || "Failed to fix grammar.";
     } catch (error) {
-      console.error('Rewordly Grammar API error:', error);
-      throw new Error(`Failed to fix grammar: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error("Rewordly Grammar API error:", error);
+      throw new Error(
+        `Failed to fix grammar: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
     }
   }
 
@@ -302,8 +331,8 @@ export class RewordlyAPIUtil {
    * @returns Promise with errors, corrected text, and detected language
    */
   async checkGrammar(
-    text: string, 
-    mode: 'default' | 'ai' = 'default',
+    text: string,
+    mode: "default" | "ai" = "default",
     cancelPreviousId?: string
   ): Promise<{
     errors: Array<{
@@ -311,7 +340,7 @@ export class RewordlyAPIUtil {
       end: number;
       word: string;
       suggestions: string[];
-      type: 'grammar' | 'spelling';
+      type: "grammar" | "spelling";
     }>;
     corrected: string;
     detectedLanguage?: {
@@ -323,25 +352,34 @@ export class RewordlyAPIUtil {
     try {
       const message: GrammarCheckRequest = {
         id: this.generateId(),
-        type: 'grammar_check',
+        type: "grammar_check",
         text: text,
         mode: mode,
       };
 
-      const response = await this.sendMessage<GrammarCheckResponse>(message, cancelPreviousId);
+      const response = await this.sendMessage<GrammarCheckResponse>(
+        message,
+        cancelPreviousId
+      );
       return {
         errors: response.errors || [],
         corrected: response.corrected || text,
-        ...(response.detectedLanguage && { detectedLanguage: response.detectedLanguage }),
+        ...(response.detectedLanguage && {
+          detectedLanguage: response.detectedLanguage,
+        }),
         requestId: message.id,
       };
     } catch (error) {
       // Don't log cancellation errors
-      if (error instanceof Error && error.message === 'Request cancelled') {
+      if (error instanceof Error && error.message === "Request cancelled") {
         throw error;
       }
-      console.error('Rewordly Grammar API error:', error);
-      throw new Error(`Failed to check grammar: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error("Rewordly Grammar API error:", error);
+      throw new Error(
+        `Failed to check grammar: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
     }
   }
 
@@ -354,7 +392,7 @@ export class RewordlyAPIUtil {
       await this.connect();
       return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
     } catch (error) {
-      console.error('API test failed:', error);
+      console.error("API test failed:", error);
       return false;
     }
   }
@@ -378,6 +416,7 @@ export class RewordlyAPIUtil {
  * @returns RewordlyAPIUtil instance
  */
 export function createRewordlyAPIUtil(wsUrl?: string): RewordlyAPIUtil {
+  console.log("Bağlantı kuruluyor...");
   return new RewordlyAPIUtil(wsUrl);
 }
 
