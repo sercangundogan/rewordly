@@ -29,6 +29,13 @@ export {
   attachToEditableElement,
 } from "./element-helper";
 
+// Contexts
+export { EditableElementContext } from "./element-context";
+export { GrammarCheckContext } from "./grammar-check-context";
+export { UIStateContext } from "./ui-state-context";
+export { EventContext } from "./event-context";
+export { ConfigContext } from "./config-context";
+
 // Config Helpers
 export {
   loadConfig,

@@ -8,6 +8,7 @@
 
 import { isGrammarCheckAllowedSite } from "./config-helper";
 import { checkAndPerformGrammarCheckForExistingText } from "./grammar-check-helper";
+import { EditableElementContext } from "./element-context";
 
 /**
  * Element editable mi kontrol et
@@ -517,65 +518,32 @@ export function getInputTextareaSelectionRect(
 /**
  * Set up scroll listeners for a specific editable element
  * Updates highlight positions when scrollable containers are scrolled
+ * Tek sorumluluk: Scroll listener'ları yönetmek
  */
 export function setupElementScrollListeners(
   element: HTMLElement,
-  options: {
-    scrollableContainers: Map<HTMLElement, Set<HTMLElement>>;
-    scrollListeners: Map<HTMLElement, () => void>;
-    grammarErrors: Map<HTMLElement, any[]>;
-    highlightHelper: {
-      updatePositions: (
-        element: HTMLElement,
-        errors: any[],
-        getRects: (error: any) => DOMRect[]
-      ) => void;
-    };
-    getErrorTextRects: (
-      element: HTMLElement,
-      start: number,
-      end: number
-    ) => DOMRect[];
-    removeElementScrollListeners: (
-      element: HTMLElement,
-      options: {
-        scrollableContainers: Map<HTMLElement, Set<HTMLElement>>;
-        scrollListeners: Map<HTMLElement, () => void>;
-      }
-    ) => void;
-  }
+  context: EditableElementContext
 ): void {
-  const {
-    scrollableContainers,
-    scrollListeners,
-    grammarErrors,
-    highlightHelper,
-    getErrorTextRects,
-    removeElementScrollListeners,
-  } = options;
-
   // Remove existing listeners for this element
-  removeElementScrollListeners(element, {
-    scrollableContainers,
-    scrollListeners,
-  });
+  context.removeElementScrollListeners(element);
 
   // Find scrollable containers
   const containers = findScrollableContainers(element);
-  scrollableContainers.set(element, containers);
+  context.scrollableContainers.set(element, containers);
 
   // Add scroll listeners to each scrollable container
   containers.forEach((container) => {
     // Check if we already have a listener for this container
-    if (!scrollListeners.has(container)) {
+    if (!context.scrollListeners.has(container)) {
       const updateAllForContainer = () => {
         // Update highlights for all elements that have this container as a scrollable parent
-        scrollableContainers.forEach((containers, el) => {
-          if (containers.has(container) && grammarErrors.has(el)) {
-            highlightHelper.updatePositions(
+        context.scrollableContainers.forEach((containers, el) => {
+          if (containers.has(container) && context.grammarErrors.has(el)) {
+            context.highlightHelper.updatePositions(
               el,
-              grammarErrors.get(el) || [],
-              (error: any) => getErrorTextRects(el, error.start, error.end)
+              context.grammarErrors.get(el) || [],
+              (error: any) =>
+                context.getErrorTextRects(el, error.start, error.end)
             );
           }
         });
@@ -584,45 +552,21 @@ export function setupElementScrollListeners(
       container.addEventListener("scroll", updateAllForContainer, {
         passive: true,
       });
-      scrollListeners.set(container, updateAllForContainer);
+      context.scrollListeners.set(container, updateAllForContainer);
     }
   });
 }
 
 /**
  * Remove scroll listeners for a specific editable element
+ * Tek sorumluluk: Scroll listener'ları kaldırmak
+ * Not: Bu fonksiyon artık context içinde, burada sadece export ediliyor
  */
 export function removeElementScrollListeners(
   element: HTMLElement,
-  options: {
-    scrollableContainers: Map<HTMLElement, Set<HTMLElement>>;
-    scrollListeners: Map<HTMLElement, () => void>;
-  }
+  context: EditableElementContext
 ): void {
-  const { scrollableContainers, scrollListeners } = options;
-  const containers = scrollableContainers.get(element);
-  if (!containers) return;
-
-  // Check if any other elements use these containers
-  containers.forEach((container) => {
-    let isUsedByOthers = false;
-    scrollableContainers.forEach((otherContainers, otherElement) => {
-      if (otherElement !== element && otherContainers.has(container)) {
-        isUsedByOthers = true;
-      }
-    });
-
-    // If no other elements use this container, remove the listener
-    if (!isUsedByOthers) {
-      const listener = scrollListeners.get(container);
-      if (listener) {
-        container.removeEventListener("scroll", listener);
-        scrollListeners.delete(container);
-      }
-    }
-  });
-
-  scrollableContainers.delete(element);
+  context.removeElementScrollListeners(element);
 }
 
 /**
@@ -645,63 +589,10 @@ export function findAndAttachToEditableElements(options: {
 }
 
 /**
- * Attach event listeners to an editable element
+ * Disable spell check on element
+ * Tek sorumluluk: Element'teki spell check'i devre dışı bırakmak
  */
-export function attachToEditableElement(
-  element: HTMLElement,
-  options: {
-    editableElements: Set<HTMLElement>;
-    ignoredElementIds: Set<string>;
-    config: { highlightsEnabled: boolean };
-    boundHandleInput: (event: Event) => void;
-    boundHandleFocus: (event: Event) => void;
-    boundHandleBlur: (event: Event) => void;
-    scrollableContainers: Map<HTMLElement, Set<HTMLElement>>;
-    scrollListeners: Map<HTMLElement, () => void>;
-    grammarErrors: Map<HTMLElement, any[]>;
-    highlightHelper: any;
-    queueGrammarCheck: (element: HTMLElement, priority: number) => void;
-    getErrorTextRects: (
-      element: HTMLElement,
-      start: number,
-      end: number
-    ) => DOMRect[];
-    removeElementScrollListeners: (element: HTMLElement) => void;
-  }
-): void {
-  const {
-    editableElements,
-    ignoredElementIds,
-    config,
-    boundHandleInput,
-    boundHandleFocus,
-    boundHandleBlur,
-    scrollableContainers,
-    scrollListeners,
-    grammarErrors,
-    highlightHelper,
-    queueGrammarCheck,
-    getErrorTextRects,
-    removeElementScrollListeners,
-  } = options;
-
-  if (!isEditableElement(element)) {
-    return;
-  }
-
-  if (editableElements.has(element)) {
-    return;
-  }
-
-  editableElements.add(element);
-
-  // Check if this element should be ignored (e.g., Gmail's "To" field)
-  if (shouldIgnoreElement(element)) {
-    const elementId = getElementId(element);
-    ignoredElementIds.add(elementId);
-    return; // Don't attach grammar checking to ignored elements
-  }
-
+function disableSpellCheck(element: HTMLElement): void {
   // Disable browser's native spell check
   if (
     element instanceof HTMLInputElement ||
@@ -714,37 +605,83 @@ export function attachToEditableElement(
 
   // Disable Gmail's spell check (writingsuggestions)
   element.setAttribute("writingsuggestions", "false");
+}
 
+/**
+ * Attach event listeners to element
+ * Tek sorumluluk: Event listener'ları eklemek
+ */
+function attachEventListeners(
+  element: HTMLElement,
+  context: EditableElementContext
+): void {
   // Add multiple event listeners to catch all input types
   // Use capture phase to catch events before they're stopped
-  element.addEventListener("input", boundHandleInput, true);
-  element.addEventListener("beforeinput", boundHandleInput, true);
-  element.addEventListener("keyup", boundHandleInput, true);
-  element.addEventListener("focus", boundHandleFocus, true);
-  element.addEventListener("blur", boundHandleBlur, true);
+  element.addEventListener("input", context.boundHandleInput, true);
+  element.addEventListener("beforeinput", context.boundHandleInput, true);
+  element.addEventListener("keyup", context.boundHandleInput, true);
+  element.addEventListener("focus", context.boundHandleFocus, true);
+  element.addEventListener("blur", context.boundHandleBlur, true);
 
   // For contenteditable, also listen to textInput
   if (element.getAttribute("contenteditable") === "true") {
-    element.addEventListener("textInput", boundHandleInput, true);
+    element.addEventListener("textInput", context.boundHandleInput, true);
   }
+}
 
-  // Check if element already has text and perform grammar check
-  // Wait for element to be visible and rendered (especially for dynamic content like Google)
+/**
+ * Check and queue grammar check for existing text
+ * Tek sorumluluk: Mevcut text için grammar check yapmak
+ */
+function checkExistingTextForGrammar(
+  element: HTMLElement,
+  context: EditableElementContext
+): void {
   checkAndPerformGrammarCheckForExistingText(element, {
     isGrammarCheckAllowedSite: () => isGrammarCheckAllowedSite(),
-    config,
-    queueGrammarCheck,
+    config: context.config,
+    queueGrammarCheck: context.queueGrammarCheck,
     isEditableElement,
     isElementVisible,
   });
+}
 
-  // Set up scroll listeners for scrollable containers
-  setupElementScrollListeners(element, {
-    scrollableContainers,
-    scrollListeners,
-    grammarErrors,
-    highlightHelper,
-    getErrorTextRects,
-    removeElementScrollListeners,
-  });
+/**
+ * Attach event listeners to an editable element
+ * Ana koordinatör fonksiyon - diğer helper fonksiyonları çağırır
+ */
+export function attachToEditableElement(
+  element: HTMLElement,
+  context: EditableElementContext
+): void {
+  // Validation
+  if (!isEditableElement(element)) {
+    return;
+  }
+
+  if (context.editableElements.has(element)) {
+    return;
+  }
+
+  // Track element
+  context.editableElements.add(element);
+
+  // Check if this element should be ignored (e.g., Gmail's "To" field)
+  if (shouldIgnoreElement(element)) {
+    const elementId = getElementId(element);
+    context.ignoredElementIds.add(elementId);
+    return; // Don't attach grammar checking to ignored elements
+  }
+
+  // Disable spell check
+  disableSpellCheck(element);
+
+  // Attach event listeners
+  attachEventListeners(element, context);
+
+  // Check existing text for grammar errors
+  checkExistingTextForGrammar(element, context);
+
+  // Set up scroll listeners
+  setupElementScrollListeners(element, context);
 }

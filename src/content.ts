@@ -25,6 +25,11 @@ import {
   removeElementScrollListeners,
   findAndAttachToEditableElements,
   attachToEditableElement,
+  EditableElementContext,
+  GrammarCheckContext,
+  UIStateContext,
+  EventContext,
+  ConfigContext,
   loadConfig,
   isPageDisabled,
   isGrammarCheckAllowedSite,
@@ -45,98 +50,188 @@ import {
 } from "./helpers";
 
 class RewordlyContentScript {
-  private config: RewordlyConfig = {
-    highlightsEnabled: true,
-    rewriteEnabled: true,
-  };
+  // Context'ler - tüm state'ler context'lerde organize edilmiş
+  private grammarCheckContext: GrammarCheckContext | null = null;
+  private uiStateContext: UIStateContext | null = null;
+  private eventContext: EventContext | null = null;
+  private configContext: ConfigContext | null = null;
+  private editableElementContext: EditableElementContext | null = null;
 
-  // UI Helpers
-  private rewriteButtonHelper: RewriteButtonHelper;
-  private modalHelper: ModalHelper;
-
-  // Highlight Helper
-  private highlightHelper: HighlightContainerHelper;
-
-  // Real-time grammar checking
-  private grammarCheckTimeout: number | null = null;
-  private grammarCheckThrottle: number | null = null; // Throttle timer
-  private highlightPositionUpdateTimeout: number | null = null;
-  private buttonBlurTimeout: number | null = null; // Timeout for hiding button on blur
-  private currentFocusedElement: HTMLElement | null = null; // Track currently focused element - if set, button should not be hidden
-  private grammarErrors: Map<HTMLElement, GrammarError[]> = new Map();
-  private editableElements: Set<HTMLElement> = new Set();
-  // Track active grammar check requests per element (for cancellation)
-  private activeGrammarRequests: Map<HTMLElement, string> = new Map(); // element -> requestId
-
-  // Track dismissed errors: key = elementId + word + start, value = true
-  private dismissedErrors: Map<string, boolean> = new Map();
-
-  // Ignore list for elements that should not have grammar checking
-  // Stores element IDs (from getElementId) that should be ignored
-  private ignoredElementIds: Set<string> = new Set();
-
-  // Store bound event handlers to allow proper removal
-  private boundHandleInput = (event: Event) => this.handleInput(event);
-  private boundHandleFocus = (event: Event) => this.handleFocus(event);
-  private boundHandleBlur = (event: Event) => this.handleBlur(event);
-
-  // Platform adapter (handles Google Docs, Reddit, Notion, etc.)
-  private platformAdapter: IPlatformAdapter | null = null;
-
-  // Track if we're currently performing a replace operation (to prevent blur from hiding highlights)
-  private isPerformingReplace = false;
-
-  // Track if we're currently performing a dismiss operation (to prevent blur from hiding highlights)
-  private isPerformingDismiss = false;
-
-  // Track scheduled blur handlers to cancel them if needed
-  private scheduledBlurHandlers = new Map<HTMLElement, NodeJS.Timeout>();
-
-  // Track scrollable containers for each editable element
-  // Maps element -> Set of scrollable parent containers
-  private scrollableContainers = new Map<HTMLElement, Set<HTMLElement>>();
-
-  // Track scroll event listeners for cleanup
-  // Maps scrollable container -> bound update function
-  private scrollListeners = new Map<HTMLElement, () => void>();
-
-  // Track scroll listener for AI rewrite button position updates
-  private aiButtonScrollListener: (() => void) | null = null;
-
-  // Request queue for batch processing API requests (deprecated - using direct requests now)
-  private grammarCheckQueue: Array<{
+  // State'ler - context'lerde organize edilmiş, doğrudan erişim için getter'lar kullanılabilir
+  // Grammar Check State
+  private _grammarErrors: Map<HTMLElement, GrammarError[]> = new Map();
+  private _activeGrammarRequests: Map<HTMLElement, string> = new Map();
+  private _dismissedErrors: Map<string, boolean> = new Map();
+  private _grammarCheckQueue: Array<{
     element: HTMLElement;
     priority?: number;
   }> = [];
-  private isProcessingQueue: boolean = false;
-  private readonly BATCH_SIZE: number = 3; // Process 3 requests at a time
-  private readonly BATCH_DELAY: number = 200; // Delay between batches in milliseconds
-  // Throttle delay for grammar checks (300ms - faster than debounce)
+  private _isProcessingQueue: boolean = false;
+  private _grammarCheckTimeout: number | null = null;
+  private _grammarCheckThrottle: number | null = null;
+  private readonly BATCH_SIZE: number = 3;
+  private readonly BATCH_DELAY: number = 200;
   private readonly GRAMMAR_CHECK_THROTTLE: number = 300;
+  private _apiUtil: RewordlyAPIUtil;
 
-  // WebSocket API instance
-  private apiUtil: RewordlyAPIUtil;
+  // UI State
+  private _rewriteButtonHelper: RewriteButtonHelper;
+  private _modalHelper: ModalHelper;
+  private _highlightHelper: HighlightContainerHelper;
+  private _buttonBlurTimeout: number | null = null;
+  private _currentFocusedElement: HTMLElement | null = null;
+  private _highlightPositionUpdateTimeout: number | null = null;
+  private _aiButtonScrollListener: (() => void) | null = null;
+
+  // Event State
+  private _boundHandleInput = (event: Event) => this.handleInput(event);
+  private _boundHandleFocus = (event: Event) => this.handleFocus(event);
+  private _boundHandleBlur = (event: Event) => this.handleBlur(event);
+  private _scheduledBlurHandlers = new Map<HTMLElement, NodeJS.Timeout>();
+  private _isPerformingReplace = false;
+  private _isPerformingDismiss = false;
+
+  // Config State
+  private _config: RewordlyConfig = {
+    highlightsEnabled: true,
+    rewriteEnabled: true,
+  };
+  private _platformAdapter: IPlatformAdapter | null = null;
+
+  // Editable Element State
+  private _editableElements: Set<HTMLElement> = new Set();
+  private _ignoredElementIds: Set<string> = new Set();
+  private _scrollableContainers = new Map<HTMLElement, Set<HTMLElement>>();
+  private _scrollListeners = new Map<HTMLElement, () => void>();
 
   constructor() {
-    console.log("RewordlyContentScript çalıştı", this.config);
+    console.log("RewordlyContentScript çalıştı", this._config);
 
     // Initialize WebSocket API (production server with WSS)
     // Using wss://rewordly.store with Let's Encrypt SSL certificate
-    this.apiUtil = createRewordlyAPIUtil("wss://rewordly.store");
+    this._apiUtil = createRewordlyAPIUtil("wss://rewordly.store");
 
     console.log("Bağlantı kuruldu");
 
     // Initialize helpers
-    this.rewriteButtonHelper = new RewriteButtonHelper();
-    this.modalHelper = new ModalHelper();
-    this.highlightHelper = new HighlightContainerHelper();
+    this._rewriteButtonHelper = new RewriteButtonHelper();
+    this._modalHelper = new ModalHelper();
+    this._highlightHelper = new HighlightContainerHelper();
 
     console.log("Helperlar başlatıldı");
-    console.log("Rewrite buton helper:", this.rewriteButtonHelper);
-    console.log("Modal helper:", this.modalHelper);
-    console.log("Highlight helper:", this.highlightHelper);
+    console.log("Rewrite buton helper:", this._rewriteButtonHelper);
+    console.log("Modal helper:", this._modalHelper);
+    console.log("Highlight helper:", this._highlightHelper);
+
+    // Initialize contexts
+    this.initializeContexts();
 
     this.init();
+  }
+
+  /**
+   * Tüm context'leri oluştur
+   */
+  private initializeContexts(): void {
+    // Grammar Check Context
+    this.grammarCheckContext = new GrammarCheckContext(
+      this._grammarErrors,
+      this._activeGrammarRequests,
+      this._dismissedErrors,
+      this._grammarCheckQueue,
+      {
+        get: () => this._isProcessingQueue,
+        set: (value: boolean) => {
+          this._isProcessingQueue = value;
+        },
+      },
+      {
+        get: () => this._grammarCheckTimeout,
+        set: (value: number | null) => {
+          this._grammarCheckTimeout = value;
+        },
+      },
+      {
+        get: () => this._grammarCheckThrottle,
+        set: (value: number | null) => {
+          this._grammarCheckThrottle = value;
+        },
+      },
+      this._apiUtil,
+      this.BATCH_SIZE,
+      this.BATCH_DELAY,
+      this.GRAMMAR_CHECK_THROTTLE
+    );
+
+    // UI State Context
+    this.uiStateContext = new UIStateContext(
+      this._rewriteButtonHelper,
+      this._modalHelper,
+      this._highlightHelper,
+      {
+        get: () => this._buttonBlurTimeout,
+        set: (value: number | null) => {
+          this._buttonBlurTimeout = value;
+        },
+      },
+      {
+        get: () => this._currentFocusedElement,
+        set: (value: HTMLElement | null) => {
+          this._currentFocusedElement = value;
+        },
+      },
+      {
+        get: () => this._highlightPositionUpdateTimeout,
+        set: (value: number | null) => {
+          this._highlightPositionUpdateTimeout = value;
+        },
+      },
+      {
+        get: () => this._aiButtonScrollListener,
+        set: (value: (() => void) | null) => {
+          this._aiButtonScrollListener = value;
+        },
+      }
+    );
+
+    // Event Context
+    this.eventContext = new EventContext(
+      this._boundHandleInput,
+      this._boundHandleFocus,
+      this._boundHandleBlur,
+      this._scheduledBlurHandlers,
+      {
+        get: () => this._isPerformingReplace,
+        set: (value: boolean) => {
+          this._isPerformingReplace = value;
+        },
+      },
+      {
+        get: () => this._isPerformingDismiss,
+        set: (value: boolean) => {
+          this._isPerformingDismiss = value;
+        },
+      }
+    );
+
+    // Config Context
+    this.configContext = new ConfigContext(this._config, this._platformAdapter);
+
+    // Editable Element Context (diğer context'lere bağımlı)
+    this.editableElementContext = new EditableElementContext(
+      this._editableElements,
+      this._ignoredElementIds,
+      this._scrollableContainers,
+      this._scrollListeners,
+      this.grammarCheckContext!,
+      this.uiStateContext!,
+      this.eventContext!,
+      this.configContext!,
+      (el: HTMLElement, priority: number) =>
+        this.queueGrammarCheck(el, priority),
+      (el: HTMLElement, start: number, end: number) =>
+        getErrorTextRects(el, start, end)
+    );
   }
 
   private async init(): Promise<void> {
@@ -149,7 +244,11 @@ class RewordlyContentScript {
     console.log("Sayfa etkin");
 
     // Load configuration from storage
-    this.config = await loadConfig();
+    this._config = await loadConfig();
+    // Update config context
+    if (this.configContext) {
+      (this.configContext as any).config = this._config;
+    }
 
     console.log("Config yüklendi", this.config);
 
@@ -354,34 +453,219 @@ class RewordlyContentScript {
   }
 
   /**
-   * Get attachToEditableElement callback with all required parameters
-   * This reduces code duplication across multiple call sites
+   * Get editable element context
+   */
+  private getEditableElementContext(): EditableElementContext {
+    if (!this.editableElementContext) {
+      this.initializeContexts();
+    }
+    return this.editableElementContext!;
+  }
+
+  /**
+   * Get grammar check context
+   */
+  private getGrammarCheckContext(): GrammarCheckContext {
+    if (!this.grammarCheckContext) {
+      this.initializeContexts();
+    }
+    return this.grammarCheckContext!;
+  }
+
+  /**
+   * Get UI state context
+   */
+  private getUIStateContext(): UIStateContext {
+    if (!this.uiStateContext) {
+      this.initializeContexts();
+    }
+    return this.uiStateContext!;
+  }
+
+  /**
+   * Get event context
+   */
+  private getEventContext(): EventContext {
+    if (!this.eventContext) {
+      this.initializeContexts();
+    }
+    return this.eventContext!;
+  }
+
+  /**
+   * Get config context
+   */
+  private getConfigContext(): ConfigContext {
+    if (!this.configContext) {
+      this.initializeContexts();
+    }
+    return this.configContext!;
+  }
+
+  // Getter'lar - eski property'lere erişim için (backward compatibility)
+  // Bu getter'lar context'ler üzerinden state'lere erişim sağlar
+  private get config() {
+    return this.getConfigContext().config;
+  }
+
+  private set config(value: RewordlyConfig) {
+    (this.getConfigContext() as any).config = value;
+  }
+
+  private get grammarErrors() {
+    return this.getGrammarCheckContext().grammarErrors;
+  }
+
+  private get editableElements() {
+    return this.getEditableElementContext().editableElements;
+  }
+
+  private get ignoredElementIds() {
+    return this.getEditableElementContext().ignoredElementIds;
+  }
+
+  private get scrollableContainers() {
+    return this.getEditableElementContext().scrollableContainers;
+  }
+
+  private get scrollListeners() {
+    return this.getEditableElementContext().scrollListeners;
+  }
+
+  private get highlightHelper() {
+    return this.getUIStateContext().highlightHelper;
+  }
+
+  private get rewriteButtonHelper() {
+    return this.getUIStateContext().rewriteButtonHelper;
+  }
+
+  private get modalHelper() {
+    return this.getUIStateContext().modalHelper;
+  }
+
+  private get boundHandleInput() {
+    return this.getEventContext().boundHandleInput;
+  }
+
+  private get boundHandleFocus() {
+    return this.getEventContext().boundHandleFocus;
+  }
+
+  private get boundHandleBlur() {
+    return this.getEventContext().boundHandleBlur;
+  }
+
+  private get grammarCheckTimeout() {
+    return this.getGrammarCheckContext().grammarCheckTimeout.get();
+  }
+
+  private set grammarCheckTimeout(value: number | null) {
+    this.getGrammarCheckContext().grammarCheckTimeout.set(value);
+  }
+
+  private get grammarCheckThrottle() {
+    return this.getGrammarCheckContext().grammarCheckThrottle.get();
+  }
+
+  private set grammarCheckThrottle(value: number | null) {
+    this.getGrammarCheckContext().grammarCheckThrottle.set(value);
+  }
+
+  private get highlightPositionUpdateTimeout() {
+    return this.getUIStateContext().highlightPositionUpdateTimeout.get();
+  }
+
+  private set highlightPositionUpdateTimeout(value: number | null) {
+    this.getUIStateContext().highlightPositionUpdateTimeout.set(value);
+  }
+
+  private get buttonBlurTimeout() {
+    return this.getUIStateContext().buttonBlurTimeout.get();
+  }
+
+  private set buttonBlurTimeout(value: number | null) {
+    this.getUIStateContext().buttonBlurTimeout.set(value);
+  }
+
+  private get currentFocusedElement() {
+    return this.getUIStateContext().currentFocusedElement.get();
+  }
+
+  private set currentFocusedElement(value: HTMLElement | null) {
+    this.getUIStateContext().currentFocusedElement.set(value);
+  }
+
+  private get isPerformingReplace() {
+    return this.getEventContext().isPerformingReplace.get();
+  }
+
+  private set isPerformingReplace(value: boolean) {
+    this.getEventContext().isPerformingReplace.set(value);
+  }
+
+  private get isPerformingDismiss() {
+    return this.getEventContext().isPerformingDismiss.get();
+  }
+
+  private set isPerformingDismiss(value: boolean) {
+    this.getEventContext().isPerformingDismiss.set(value);
+  }
+
+  private get scheduledBlurHandlers() {
+    return this.getEventContext().scheduledBlurHandlers;
+  }
+
+  private get activeGrammarRequests() {
+    return this.getGrammarCheckContext().activeGrammarRequests;
+  }
+
+  private get dismissedErrors() {
+    return this.getGrammarCheckContext().dismissedErrors;
+  }
+
+  private get grammarCheckQueue() {
+    return this.getGrammarCheckContext().grammarCheckQueue;
+  }
+
+  private get isProcessingQueue() {
+    return this.getGrammarCheckContext().isProcessingQueue.get();
+  }
+
+  private set isProcessingQueue(value: boolean) {
+    this.getGrammarCheckContext().isProcessingQueue.set(value);
+  }
+
+  private get apiUtil() {
+    return this.getGrammarCheckContext().apiUtil;
+  }
+
+  private get platformAdapter() {
+    return this.getConfigContext().platformAdapter;
+  }
+
+  private set platformAdapter(value: IPlatformAdapter | null) {
+    (this.getConfigContext() as any).platformAdapter = value;
+  }
+
+  private get aiButtonScrollListener() {
+    return this.getUIStateContext().aiButtonScrollListener.get();
+  }
+
+  private set aiButtonScrollListener(value: (() => void) | null) {
+    this.getUIStateContext().aiButtonScrollListener.set(value);
+  }
+
+  /**
+   * Get attachToEditableElement callback with context
+   * Artık sadece context'i geçiyoruz, çok daha temiz!
    */
   private createAttachToEditableElementCallback(): (
     element: HTMLElement
   ) => void {
+    const context = this.getEditableElementContext();
     return (element: HTMLElement) => {
-      attachToEditableElement(element, {
-        editableElements: this.editableElements,
-        ignoredElementIds: this.ignoredElementIds,
-        config: this.config,
-        boundHandleInput: this.boundHandleInput,
-        boundHandleFocus: this.boundHandleFocus,
-        boundHandleBlur: this.boundHandleBlur,
-        scrollableContainers: this.scrollableContainers,
-        scrollListeners: this.scrollListeners,
-        grammarErrors: this.grammarErrors,
-        highlightHelper: this.highlightHelper,
-        queueGrammarCheck: (el: HTMLElement, priority: number) =>
-          this.queueGrammarCheck(el, priority),
-        getErrorTextRects: (el: HTMLElement, start: number, end: number) =>
-          getErrorTextRects(el, start, end),
-        removeElementScrollListeners: (el: HTMLElement) =>
-          removeElementScrollListeners(el, {
-            scrollableContainers: this.scrollableContainers,
-            scrollListeners: this.scrollListeners,
-          }),
-      });
+      attachToEditableElement(element, context);
     };
   }
 
@@ -752,10 +1036,8 @@ class RewordlyContentScript {
     this.highlightHelper.clearElementHighlights(element);
 
     // Remove scroll listeners for this element
-    removeElementScrollListeners(element, {
-      scrollableContainers: this.scrollableContainers,
-      scrollListeners: this.scrollListeners,
-    });
+    const context = this.getEditableElementContext();
+    removeElementScrollListeners(element, context);
   }
 
   /**
