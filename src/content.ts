@@ -79,8 +79,6 @@ class RewordlyContentScript {
   private ignoredElementIds: Set<string> = new Set();
 
   // Store bound event handlers to allow proper removal
-  private boundHandleOutsideClick = this.handleOutsideClick.bind(this);
-  private boundHandleKeyDown = this.handleKeyDown.bind(this);
   private boundHandleInput = this.handleInput.bind(this);
   private boundHandleFocus = this.handleFocus.bind(this);
   private boundHandleBlur = this.handleBlur.bind(this);
@@ -160,11 +158,6 @@ class RewordlyContentScript {
 
     console.log("Config yüklendi", this.config);
 
-    // Set up event listeners
-    this.setupEventListeners();
-
-    console.log("Event listeners ayarlandı");
-
     // Set up real-time grammar checking for editable elements
     this.setupRealtimeGrammarCheck();
 
@@ -181,20 +174,6 @@ class RewordlyContentScript {
 
     // Listen for settings updates from popup
     this.setupMessageListener();
-  }
-
-  private setupEventListeners(): void {
-    // Remove existing listeners to prevent duplicates
-    document.removeEventListener("click", this.boundHandleOutsideClick);
-    document.removeEventListener("keydown", this.boundHandleKeyDown);
-
-    // Listen for clicks outside to hide button/modal
-    document.addEventListener("click", this.boundHandleOutsideClick, true);
-
-    // Listen for escape key to close modal
-    document.addEventListener("keydown", this.boundHandleKeyDown, true);
-
-    // Note: Text selection listeners removed - button only shows on editable element focus
   }
 
   /**
@@ -1174,25 +1153,6 @@ class RewordlyContentScript {
         }
       }
     });
-  }
-
-  // Text selection handlers removed - button only shows on editable element focus
-  // No longer needed since we only show button for editable elements
-
-  private handleOutsideClick(event: Event): void {
-    const target = event.target as HTMLElement;
-
-    // Hide rewrite button if clicking outside
-    const button = this.rewriteButtonHelper["button"];
-    if (button && !button.contains(target)) {
-      this.hideRewriteButton();
-    }
-  }
-
-  private handleKeyDown(event: KeyboardEvent): void {
-    if (event.key === "Escape") {
-      this.hideRewriteButton();
-    }
   }
 
   /**
