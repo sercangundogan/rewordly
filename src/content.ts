@@ -154,44 +154,16 @@ class RewordlyContentScript {
       return;
     }
     console.log("Sayfa etkin");
-    // Define custom element for highlights container to prevent Reddit's CSS from hiding it
-    // Reddit uses :not(:defined) to hide undefined custom elements
-    if (
-      typeof customElements !== "undefined" &&
-      customElements &&
-      !customElements.get("rewordly-highlights")
-    ) {
-      customElements.define(
-        "rewordly-highlights",
-        class extends HTMLElement {
-          constructor() {
-            super();
-          }
-        }
-      );
-    }
-
-    // Add global style to override Reddit's CSS that hides undefined custom elements
-    // Reddit uses :not(:defined) to hide custom elements, so we need to explicitly show ours
-    if (window.location.hostname.includes("reddit.com")) {
-      const styleId = "rewordly-reddit-override";
-      if (!document.getElementById(styleId)) {
-        const style = document.createElement("style");
-        style.id = styleId;
-        style.textContent = `
-          rewordly-highlights {
-            visibility: visible !important;
-          }
-        `;
-        document.head.appendChild(style);
-      }
-    }
 
     // Load configuration from storage
     this.config = await loadConfig();
 
+    console.log("Config yüklendi", this.config);
+
     // Set up event listeners
     this.setupEventListeners();
+
+    console.log("Event listeners ayarlandı");
 
     // Set up real-time grammar checking for editable elements
     this.setupRealtimeGrammarCheck();
