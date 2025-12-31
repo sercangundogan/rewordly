@@ -2136,6 +2136,8 @@ export function attachHighlightHoverListener(
     // Get current errors
     const currentErrors = grammarErrors.get(element) || [];
 
+    console.log("Current errors", currentErrors);
+
     // Find the current error by ID (guaranteed to find the exact error)
     let currentError = currentErrors.find((err) => err.id === error.id);
 

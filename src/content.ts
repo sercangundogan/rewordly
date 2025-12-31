@@ -161,6 +161,8 @@ class RewordlyContentScript {
     // Set up real-time grammar checking for editable elements
     this.setupRealtimeGrammarCheck();
 
+    console.log("Realtime grammar checking ayarlandı");
+
     // Set up platform-specific adapter
     this.setupPlatformAdapter();
 
@@ -183,6 +185,9 @@ class RewordlyContentScript {
     // Use event delegation at document level to catch all input events
     // This works even for dynamically added elements and Shadow DOM
     this.setupEventDelegation();
+    console.log("Event delegation ayarlandı");
+
+    console.log("Docuement ready state", document.readyState);
 
     // Wait for DOM to be ready
     if (document.readyState === "loading") {
@@ -306,6 +311,8 @@ class RewordlyContentScript {
       true
     );
 
+    console.log("Input event listener ayarlandı");
+
     document.addEventListener(
       "beforeinput",
       (event) => {
@@ -313,6 +320,8 @@ class RewordlyContentScript {
       },
       true
     );
+
+    console.log("Beforeinput event listener ayarlandı");
 
     // Also listen to keyup for contenteditable elements
     document.addEventListener(
@@ -325,6 +334,8 @@ class RewordlyContentScript {
       },
       true
     );
+
+    console.log("Keyup event listener ayarlandı");
   }
 
   /**
@@ -445,12 +456,14 @@ class RewordlyContentScript {
     // Skip programmatic input events triggered by our replace operations
     // This prevents unnecessary grammar checks after replacements
     if ((event as any).__rewordlyProgrammatic) {
+      console.log("Programmatic input event detected");
       return;
     }
 
     const element = event.target as HTMLElement;
 
     if (!isEditableElement(element)) {
+      console.log("Element is not editable");
       return;
     }
 
@@ -541,8 +554,6 @@ class RewordlyContentScript {
       this.validateAndRemoveInvalidHighlights(element);
     }
 
-    // Don't clear existing errors - keep overlays visible while user is typing
-
     // Update highlight positions when text changes (if highlights exist)
     if (this.config.highlightsEnabled && this.grammarErrors.has(element)) {
       // Clear previous position update timeout
@@ -553,16 +564,14 @@ class RewordlyContentScript {
       // Update positions after DOM updates (using double requestAnimationFrame to ensure DOM is fully updated)
       this.highlightPositionUpdateTimeout = window.setTimeout(() => {
         requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            this.highlightHelper.updatePositions(
-              element,
-              this.grammarErrors.get(element) || [],
-              (error: GrammarError) =>
-                getErrorTextRects(element, error.start, error.end)
-            );
-          });
+          this.highlightHelper.updatePositions(
+            element,
+            this.grammarErrors.get(element) || [],
+            (error: GrammarError) =>
+              getErrorTextRects(element, error.start, error.end)
+          );
         });
-      }, 0);
+      }, 10);
     }
 
     // Only perform grammar check if highlights are enabled
