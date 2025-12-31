@@ -25,6 +25,8 @@ export {
   removeElementScrollListeners,
   isSingleLineElement,
   getInputTextareaSelectionRect,
+  findAndAttachToEditableElements,
+  attachToEditableElement,
 } from "./element-helper";
 
 // Config Helpers
@@ -89,3 +91,10 @@ export {
   replaceTextInContentEditable,
   replaceGrammarError,
 } from "./text-replacement-helper";
+
+// Event Handler Helpers
+export {
+  handleInput,
+  handleFocus,
+  handleBlur,
+} from "./event-handler-helper";

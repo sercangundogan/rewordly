@@ -6,6 +6,9 @@
  * Basitçe: Element bul, kontrol et, ignore et gibi işlemler.
  */
 
+import { isGrammarCheckAllowedSite } from "./config-helper";
+import { checkAndPerformGrammarCheckForExistingText } from "./grammar-check-helper";
+
 /**
  * Element editable mi kontrol et
  */
@@ -620,4 +623,128 @@ export function removeElementScrollListeners(
   });
 
   scrollableContainers.delete(element);
+}
+
+/**
+ * Find all editable elements and attach listeners
+ */
+export function findAndAttachToEditableElements(options: {
+  attachToEditableElement: (element: HTMLElement) => void;
+}): void {
+  const { attachToEditableElement } = options;
+  const allEditable = findAllEditableElements();
+  allEditable.forEach((element) => {
+    attachToEditableElement(element);
+  });
+
+  // Check Shadow DOM
+  const shadowEditable = findEditableInShadowDOM(document.body);
+  shadowEditable.forEach((element) => {
+    attachToEditableElement(element);
+  });
+}
+
+/**
+ * Attach event listeners to an editable element
+ */
+export function attachToEditableElement(
+  element: HTMLElement,
+  options: {
+    editableElements: Set<HTMLElement>;
+    ignoredElementIds: Set<string>;
+    config: { highlightsEnabled: boolean };
+    boundHandleInput: (event: Event) => void;
+    boundHandleFocus: (event: Event) => void;
+    boundHandleBlur: (event: Event) => void;
+    scrollableContainers: Map<HTMLElement, Set<HTMLElement>>;
+    scrollListeners: Map<HTMLElement, () => void>;
+    grammarErrors: Map<HTMLElement, any[]>;
+    highlightHelper: any;
+    queueGrammarCheck: (element: HTMLElement, priority: number) => void;
+    getErrorTextRects: (
+      element: HTMLElement,
+      start: number,
+      end: number
+    ) => DOMRect[];
+    removeElementScrollListeners: (element: HTMLElement) => void;
+  }
+): void {
+  const {
+    editableElements,
+    ignoredElementIds,
+    config,
+    boundHandleInput,
+    boundHandleFocus,
+    boundHandleBlur,
+    scrollableContainers,
+    scrollListeners,
+    grammarErrors,
+    highlightHelper,
+    queueGrammarCheck,
+    getErrorTextRects,
+    removeElementScrollListeners,
+  } = options;
+
+  if (!isEditableElement(element)) {
+    return;
+  }
+
+  if (editableElements.has(element)) {
+    return;
+  }
+
+  editableElements.add(element);
+
+  // Check if this element should be ignored (e.g., Gmail's "To" field)
+  if (shouldIgnoreElement(element)) {
+    const elementId = getElementId(element);
+    ignoredElementIds.add(elementId);
+    return; // Don't attach grammar checking to ignored elements
+  }
+
+  // Disable browser's native spell check
+  if (
+    element instanceof HTMLInputElement ||
+    element instanceof HTMLTextAreaElement
+  ) {
+    element.spellcheck = false;
+  } else {
+    element.setAttribute("spellcheck", "false");
+  }
+
+  // Disable Gmail's spell check (writingsuggestions)
+  element.setAttribute("writingsuggestions", "false");
+
+  // Add multiple event listeners to catch all input types
+  // Use capture phase to catch events before they're stopped
+  element.addEventListener("input", boundHandleInput, true);
+  element.addEventListener("beforeinput", boundHandleInput, true);
+  element.addEventListener("keyup", boundHandleInput, true);
+  element.addEventListener("focus", boundHandleFocus, true);
+  element.addEventListener("blur", boundHandleBlur, true);
+
+  // For contenteditable, also listen to textInput
+  if (element.getAttribute("contenteditable") === "true") {
+    element.addEventListener("textInput", boundHandleInput, true);
+  }
+
+  // Check if element already has text and perform grammar check
+  // Wait for element to be visible and rendered (especially for dynamic content like Google)
+  checkAndPerformGrammarCheckForExistingText(element, {
+    isGrammarCheckAllowedSite: () => isGrammarCheckAllowedSite(),
+    config,
+    queueGrammarCheck,
+    isEditableElement,
+    isElementVisible,
+  });
+
+  // Set up scroll listeners for scrollable containers
+  setupElementScrollListeners(element, {
+    scrollableContainers,
+    scrollListeners,
+    grammarErrors,
+    highlightHelper,
+    getErrorTextRects,
+    removeElementScrollListeners,
+  });
 }

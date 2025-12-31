@@ -6,8 +6,12 @@
  * En basit developer bile anlayabilir: Button göster, modal aç, tooltip göster gibi.
  */
 
-import { GrammarError } from "../types";
-import { isSingleLineElement, findScrollableContainers } from "./element-helper";
+import { GrammarError, RewordlyConfig } from "../types";
+import { isGrammarCheckAllowedSite, loadConfig } from "./config-helper";
+import {
+  isSingleLineElement,
+  findScrollableContainers,
+} from "./element-helper";
 
 /**
  * Rewrite Button Helper
@@ -15,6 +19,19 @@ import { isSingleLineElement, findScrollableContainers } from "./element-helper"
  */
 export class RewriteButtonHelper {
   private button: HTMLDivElement | null = null;
+  private config: RewordlyConfig = {
+    highlightsEnabled: true,
+    rewriteEnabled: true,
+  };
+
+  // Load config
+  constructor() {
+    this.init();
+  }
+
+  private async init(): Promise<void> {
+    this.config = await loadConfig();
+  }
 
   /**
    * Rewrite button oluştur
@@ -140,20 +157,13 @@ export class RewriteButtonHelper {
    * Update AI rewrite button position
    * This is called both on initial show and on scroll/resize events
    */
-  updateAIRewriteButtonPosition(
-    element: HTMLElement,
-    options: {
-      rewriteEnabled: boolean;
-      highlightsEnabled: boolean;
-      isGrammarCheckAllowedSite: () => boolean;
-    }
-  ): void {
-    if (!this.button || !options.rewriteEnabled) {
+  updateAIRewriteButtonPosition(element: HTMLElement): void {
+    if (!this.button || !this.config.rewriteEnabled) {
       return;
     }
 
     // Only show rewrite button on sites where grammar check is enabled
-    if (!options.isGrammarCheckAllowedSite() || !options.highlightsEnabled) {
+    if (!isGrammarCheckAllowedSite() || !this.config.highlightsEnabled) {
       return;
     }
 
@@ -258,20 +268,23 @@ export class RewriteButtonHelper {
   showAIRewriteButton(
     element: HTMLElement,
     options: {
-      rewriteEnabled: boolean;
-      highlightsEnabled: boolean;
-      isGrammarCheckAllowedSite: () => boolean;
-      buttonBlurTimeout: { value: number | null; set: (value: number | null) => void };
+      buttonBlurTimeout: {
+        value: number | null;
+        set: (value: number | null) => void;
+      };
       addAIButtonScrollListener: (element: HTMLElement) => void;
       removeAIButtonScrollListener: () => void;
     }
   ): void {
-    if (!this.button || !options.rewriteEnabled) {
+    const isRewriteEnabled = this.config.rewriteEnabled;
+    const isHighlightsEnabled = this.config.highlightsEnabled;
+
+    if (!this.button || !isRewriteEnabled) {
       return;
     }
 
     // Only show rewrite button on sites where grammar check is enabled
-    if (!options.isGrammarCheckAllowedSite() || !options.highlightsEnabled) {
+    if (!isGrammarCheckAllowedSite() || !isHighlightsEnabled) {
       return;
     }
 
@@ -279,11 +292,7 @@ export class RewriteButtonHelper {
     options.removeAIButtonScrollListener();
 
     // Update button position
-    this.updateAIRewriteButtonPosition(element, {
-      rewriteEnabled: options.rewriteEnabled,
-      highlightsEnabled: options.highlightsEnabled,
-      isGrammarCheckAllowedSite: options.isGrammarCheckAllowedSite,
-    });
+    this.updateAIRewriteButtonPosition(element);
 
     // Ensure button is visible
     this.button.style.display = "flex";
@@ -338,7 +347,10 @@ export class RewriteButtonHelper {
     options: {
       updateAIRewriteButtonPosition: (element: HTMLElement) => void;
       removeAIButtonScrollListener: () => void;
-      aiButtonScrollListener: { value: (() => void) | null; set: (value: (() => void) | null) => void };
+      aiButtonScrollListener: {
+        value: (() => void) | null;
+        set: (value: (() => void) | null) => void;
+      };
     }
   ): void {
     // Remove existing listener if any
@@ -388,7 +400,10 @@ export class RewriteButtonHelper {
    * Remove scroll listener for AI button
    */
   removeAIButtonScrollListener(options: {
-    aiButtonScrollListener: { value: (() => void) | null; set: (value: (() => void) | null) => void };
+    aiButtonScrollListener: {
+      value: (() => void) | null;
+      set: (value: (() => void) | null) => void;
+    };
   }): void {
     const updatePosition = options.aiButtonScrollListener.value;
 
