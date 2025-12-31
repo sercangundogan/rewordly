@@ -2513,6 +2513,7 @@ export function attachHighlightHoverListener(
     }
 
     tooltip.addEventListener("mouseleave", () => {
+      console.log("Rewordly: Mouse left tooltip");
       tooltipTimeout = window.setTimeout(() => {
         // Check if any highlight for this error is still hovered
         const allHighlightsForError =
@@ -2524,6 +2525,7 @@ export function attachHighlightHoverListener(
         );
 
         if (!isAnyHighlightHovered && !tooltip.matches(":hover")) {
+          console.log("Girdi");
           closeTooltip();
         }
       }, 100);

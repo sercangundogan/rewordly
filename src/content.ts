@@ -524,13 +524,13 @@ class RewordlyContentScript {
     return this.getEditableElementContext().ignoredElementIds;
   }
 
-  private get scrollableContainers() {
-    return this.getEditableElementContext().scrollableContainers;
-  }
+  // private get scrollableContainers() {
+  //   return this.getEditableElementContext().scrollableContainers;
+  // }
 
-  private get scrollListeners() {
-    return this.getEditableElementContext().scrollListeners;
-  }
+  // private get scrollListeners() {
+  //   return this.getEditableElementContext().scrollListeners;
+  // }
 
   private get highlightHelper() {
     return this.getUIStateContext().highlightHelper;
@@ -544,17 +544,17 @@ class RewordlyContentScript {
     return this.getUIStateContext().modalHelper;
   }
 
-  private get boundHandleInput() {
-    return this.getEventContext().boundHandleInput;
-  }
+  // private get boundHandleInput() {
+  //   return this.getEventContext().boundHandleInput;
+  // }
 
-  private get boundHandleFocus() {
-    return this.getEventContext().boundHandleFocus;
-  }
+  // private get boundHandleFocus() {
+  //   return this.getEventContext().boundHandleFocus;
+  // }
 
-  private get boundHandleBlur() {
-    return this.getEventContext().boundHandleBlur;
-  }
+  // private get boundHandleBlur() {
+  //   return this.getEventContext().boundHandleBlur;
+  // }
 
   private get grammarCheckTimeout() {
     return this.getGrammarCheckContext().grammarCheckTimeout.get();
