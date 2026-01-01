@@ -37,7 +37,7 @@ import {
   showAllGrammarHighlights,
 } from "../../helpers/highlight-helper";
 import {
-  extractTextExcludingSignature,
+  extractText,
   adjustErrorPositionsForMultiWord,
 } from "../../helpers/text-processing-helper";
 import { getDismissKey } from "../../helpers/grammar-check-helper";
@@ -186,7 +186,7 @@ export class RedditPlatformAdapter implements PlatformAdapter {
                 editableElement,
                 this.highlightHelper.getContent(),
                 this.grammarErrors,
-                extractTextExcludingSignature,
+                extractText,
                 getElementId,
                 false // isPerformingReplace
               );
@@ -464,9 +464,9 @@ export class RedditPlatformAdapter implements PlatformAdapter {
       };
     }
 
-    // Use extractTextExcludingSignature to match the text used in highlight helper
+    // Use extractText to get the text content
     // This ensures API positions match DOM text positions exactly
-    const { text } = extractTextExcludingSignature(element);
+    const { text } = extractText(element);
 
     // Get version from map, or initialize to 0 if not tracked
     let version = this.versionMap.get(element);
@@ -532,12 +532,12 @@ export class RedditPlatformAdapter implements PlatformAdapter {
         highlightsContent,
         (el: HTMLElement, start: number, end: number) =>
           getErrorTextRects(el, start, end),
-        extractTextExcludingSignature,
+        extractText,
         adjustErrorPositionsForMultiWord,
         getElementId,
         (el: HTMLElement, err: GrammarError) => {
           const elementId = getElementId(el);
-          const { text } = extractTextExcludingSignature(el);
+          const { text } = extractText(el);
           const dismissKey = getDismissKey(elementId, err, text);
           return this.dismissedErrors.get(dismissKey) === true;
         },
@@ -584,7 +584,7 @@ export class RedditPlatformAdapter implements PlatformAdapter {
       dismissedErrors: this.dismissedErrors,
       isErrorDismissed: (el: HTMLElement, err: GrammarError) => {
         const elementId = getElementId(el);
-        const { text } = extractTextExcludingSignature(el);
+        const { text } = extractText(el);
         const dismissKey = getDismissKey(elementId, err, text);
         return this.dismissedErrors.get(dismissKey) === true;
       },
@@ -872,7 +872,7 @@ export class RedditPlatformAdapter implements PlatformAdapter {
         element,
         this.highlightHelper.getContent(),
         this.grammarErrors,
-        extractTextExcludingSignature,
+        extractText,
         getElementId,
         false // isPerformingReplace
       );
@@ -887,7 +887,7 @@ export class RedditPlatformAdapter implements PlatformAdapter {
   private checkExistingTextAndNotify(): void {
     // Find first editable element with text
     for (const element of this.editableElements) {
-      const { text } = extractTextExcludingSignature(element);
+      const { text } = extractText(element);
       if (text.trim().length > 0) {
         // Found element with text, set as current and notify
         this.currentElement = element;
@@ -909,7 +909,7 @@ export class RedditPlatformAdapter implements PlatformAdapter {
 
     // Always trigger check on focus (even if text is empty or unchanged)
     // This ensures connection is established immediately and highlights are shown
-    const { text } = extractTextExcludingSignature(element);
+    const { text } = extractText(element);
     // Initialize lastText for this element if not set
     if (!this.lastTextMap.has(element)) {
       this.lastTextMap.set(element, text);
@@ -929,7 +929,7 @@ export class RedditPlatformAdapter implements PlatformAdapter {
       return;
     }
 
-    const { text: currentText } = extractTextExcludingSignature(element);
+    const { text: currentText } = extractText(element);
     const lastTextForElement = this.lastTextMap.get(element) || "";
 
     // Notify if text changed OR if forced (e.g., on focus)

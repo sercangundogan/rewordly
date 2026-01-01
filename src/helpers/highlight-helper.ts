@@ -11,7 +11,7 @@ import { getElementId } from "./element-helper";
 import { generateErrorId } from "./config-helper";
 import { getDismissKey } from "./grammar-check-helper";
 import {
-  extractTextExcludingSignature,
+  extractText,
   adjustErrorPositionsForMultiWord,
   escapeHtml,
   formatSuggestionForDisplay,
@@ -1424,7 +1424,7 @@ export function validateAndRemoveInvalidHighlights(
   element: HTMLElement,
   highlightsContent: HTMLElement | null,
   grammarErrors: Map<HTMLElement, GrammarError[]>,
-  extractTextExcludingSignature: (element: HTMLElement) => {
+  extractTextFn: (element: HTMLElement) => {
     text: string;
     textSource: "value" | "textContent" | "innerText";
   },
@@ -1441,8 +1441,8 @@ export function validateAndRemoveInvalidHighlights(
     return;
   }
 
-  // Get current text (excluding signature to match error positions)
-  const { text } = extractTextExcludingSignature(element);
+  // Get current text to match error positions
+  const { text } = extractTextFn(element);
 
   if (!highlightsContent) {
     return;
@@ -1562,7 +1562,7 @@ export function createHighlight(
     start: number,
     end: number
   ) => DOMRect[],
-  extractTextExcludingSignature: (element: HTMLElement) => {
+  extractTextFn: (element: HTMLElement) => {
     text: string;
     textSource: "value" | "textContent" | "innerText";
   },
@@ -1588,8 +1588,8 @@ export function createHighlight(
     return;
   }
 
-  // Get text from element (excluding signature)
-  const { text } = extractTextExcludingSignature(element);
+  // Get text from element
+  const { text } = extractTextFn(element);
 
   if (!text || error.start >= text.length || error.end > text.length) {
     return;
@@ -1863,9 +1863,9 @@ export function displayGrammarErrors(
     return;
   }
 
-  // Validate error positions against current text (excluding signature)
+  // Validate error positions against current text
   // Use the same text extraction method as grammar check to ensure positions match
-  const { text } = extractTextExcludingSignature(element);
+  const { text } = extractText(element);
 
   // Clean text the same way as orchestrator (only remove invisible characters)
   // This ensures positions match - newlines and whitespace are preserved

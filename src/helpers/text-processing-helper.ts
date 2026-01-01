@@ -26,8 +26,8 @@ export function mapInnerTextToTextNodes(
 ): TextNodeMapping | null {
   if (!element) return null;
 
-  // Use text extraction that excludes signature to match error positions
-  const { text: extractedText } = extractTextExcludingSignature(element);
+  // Use text extraction to match error positions
+  const { text: extractedText } = extractText(element);
   const innerText = extractedText;
   
   if (start >= innerText.length || end > innerText.length) {
@@ -51,12 +51,6 @@ export function mapInnerTextToTextNodes(
     const parent = node.parentElement;
     if (!parent) continue;
     
-    // Skip signature elements (Gmail and other email clients)
-    // Check if this node is inside a signature block
-    const isInSignature = parent.closest('.gmail_signature, [class*="signature"], [id*="signature"]') !== null;
-    if (isInSignature) {
-      continue; // Skip signature text nodes
-    }
     
     // Check visibility
     const style = window.getComputedStyle(parent);
@@ -194,11 +188,11 @@ export function mapInnerTextToTextNodes(
 }
 
 /**
- * Text'i signature hariç çıkar
- * Gmail gibi platformlarda signature'ı hariç tutmak için
+ * Text'i çıkar (genel kullanım için)
+ * Platform-agnostic text extraction
  * Content.ts'deki versiyonla uyumlu - textSource döndürür
  */
-export function extractTextExcludingSignature(element: HTMLElement): {
+export function extractText(element: HTMLElement): {
   text: string;
   textSource: "value" | "textContent" | "innerText";
 } {
@@ -228,51 +222,9 @@ export function extractTextExcludingSignature(element: HTMLElement): {
     element.getAttribute("contenteditable") === "true" ||
     element.isContentEditable
   ) {
-    // Temporarily hide signature elements to exclude them from innerText
-    // This preserves line breaks and formatting while excluding signature
-    const signatureElements = element.querySelectorAll(
-      '.gmail_signature, [class*="signature"], [id*="signature"]'
-    );
-    const signaturePrefix = element.querySelector(".gmail_signature_prefix");
-
-    const hiddenElements: Array<{
-      el: HTMLElement;
-      originalDisplay: string;
-    }> = [];
-
-    // Hide signature elements
-    signatureElements.forEach((sigEl) => {
-      const htmlEl = sigEl as HTMLElement;
-      const originalDisplay = htmlEl.style.display;
-      htmlEl.style.display = "none";
-      hiddenElements.push({ el: htmlEl, originalDisplay });
-    });
-
-    // Hide signature prefix
-    if (signaturePrefix) {
-      const htmlEl = signaturePrefix as HTMLElement;
-      const originalDisplay = htmlEl.style.display;
-      htmlEl.style.display = "none";
-      hiddenElements.push({ el: htmlEl, originalDisplay });
-    }
-
     // Get text with innerText (preserves line breaks from <br> and block elements)
-    let text = element.innerText || element.textContent || "";
-
-    // Restore original display styles
-    hiddenElements.forEach(({ el, originalDisplay }) => {
-      if (originalDisplay) {
-        el.style.display = originalDisplay;
-      } else {
-        el.style.removeProperty("display");
-      }
-    });
-
-    // Don't trim trailing whitespace - it's needed to maintain correct error positions
-    // Signature exclusion is already handled by hiding signature elements above
-
+    const text = element.innerText || element.textContent || "";
     const textSource = "innerText";
-
     return { text, textSource };
   }
 
@@ -282,6 +234,7 @@ export function extractTextExcludingSignature(element: HTMLElement): {
     textSource: "textContent",
   };
 }
+
 
 /**
  * Text'ten error pozisyonlarını güncelle

@@ -94,7 +94,7 @@ dismissError(elementId, error, text, dismissedErrors);
 
 **İçindekiler:**
 - `mapInnerTextToTextNodes()` - InnerText pozisyonlarını text node'lara map et
-- `extractTextExcludingSignature()` - Signature hariç text çıkar
+- `extractText()` - Text çıkar (platform-agnostic)
 - `updateErrorPositions()` - Error pozisyonlarını güncelle
 
 **Kullanım:**

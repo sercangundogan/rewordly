@@ -9,7 +9,7 @@
 import { GrammarError, GrammarCheckResponse } from "../types";
 import { RewordlyAPIUtil } from "../utils/api";
 import { generateErrorId } from "./config-helper";
-import { extractTextExcludingSignature } from "./text-processing-helper";
+import { extractText } from "./text-processing-helper";
 
 /**
  * Grammar check API çağrısı yap
@@ -455,8 +455,8 @@ export async function performGrammarCheckDirect(
     return;
   }
 
-  // Extract text excluding signature blocks
-  const { text, textSource } = extractTextExcludingSignature(element);
+  // Extract text
+  const { text, textSource } = extractText(element);
 
   // Skip if text is too short
   if (text.trim().length < 3) {
@@ -609,8 +609,8 @@ export async function performGrammarCheck(
     return;
   }
 
-  // Extract text excluding signature blocks
-  const { text, textSource } = extractTextExcludingSignature(element);
+  // Extract text
+  const { text, textSource } = extractText(element);
 
   // Skip if text is too short
   if (text.trim().length < 3) {
