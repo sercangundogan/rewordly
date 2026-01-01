@@ -2846,5 +2846,26 @@ export function hideAllGrammarHighlights(options: {
   const allHighlights = highlightsContent.querySelectorAll("[data-element-id]");
   allHighlights.forEach((highlight) => {
     (highlight as HTMLElement).style.display = "none";
+    (highlight as HTMLElement).setAttribute("data-hidden-by-search", "true");
+  });
+}
+
+/**
+ * Show all grammar highlights (if they were hidden by search)
+ */
+export function showAllGrammarHighlights(options: {
+  highlightHelper: HighlightContainerHelper;
+}): void {
+  const { highlightHelper } = options;
+  const highlightsContent = highlightHelper.getContent();
+  if (!highlightsContent) return;
+
+  // Show all highlights that were hidden by search
+  const allHighlights = highlightsContent.querySelectorAll(
+    "[data-element-id][data-hidden-by-search]"
+  );
+  allHighlights.forEach((highlight) => {
+    (highlight as HTMLElement).style.display = "";
+    (highlight as HTMLElement).removeAttribute("data-hidden-by-search");
   });
 }
