@@ -2020,8 +2020,42 @@ export function displayGrammarErrors(
           highlight.setAttribute("data-error-index", index.toString());
         });
 
+        // After updating all highlights for this error, re-attach listeners
+        // This ensures tooltip works correctly after replace operations
+        // Clone each highlight to remove old listeners, then replace it
+        const updatedErrorHighlights = Array.from(
+          highlightsContentForUpdate.querySelectorAll(
+            `[data-element-id="${getElementId(element)}"][data-error-id="${
+              error.id
+            }"]`
+          )
+        ) as HTMLElement[];
+
+        updatedErrorHighlights.forEach((oldHighlight) => {
+          const lineIndex = parseInt(
+            oldHighlight.getAttribute("data-line-index") || "0",
+            10
+          );
+          if (lineIndex < highlightRects.length) {
+            const newHighlight = oldHighlight.cloneNode(true) as HTMLElement;
+            if (oldHighlight.parentNode) {
+              oldHighlight.parentNode.replaceChild(newHighlight, oldHighlight);
+              // Re-attach listeners with updated error data
+              attachHighlightHoverListener(newHighlight, error, element);
+            }
+          }
+        });
+
         // Remove extra highlights if rect count decreased
-        errorHighlights.forEach((highlight) => {
+        const finalErrorHighlights = Array.from(
+          highlightsContentForUpdate.querySelectorAll(
+            `[data-element-id="${getElementId(element)}"][data-error-id="${
+              error.id
+            }"]`
+          )
+        ) as HTMLElement[];
+
+        finalErrorHighlights.forEach((highlight) => {
           const lineIndex = parseInt(
             highlight.getAttribute("data-line-index") || "0",
             10

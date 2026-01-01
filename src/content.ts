@@ -74,10 +74,10 @@ if (!adapter) {
     if (isActive) return;
     console.log("[REWORDLY][NEW] Reinitializing");
     isActive = true;
-    
+
     // Reinitialize adapter
     adapter.initialize();
-    
+
     // Restart orchestrator
     try {
       await orchestrator.start();
