@@ -7,8 +7,6 @@
  */
 
 import { RewordlyConfig } from "../types";
-import { IPlatformAdapter } from "../types";
-import { createPlatformAdapter } from "../adapters";
 
 // Allowed sites for grammar check
 const allowedSites = [
@@ -82,11 +80,14 @@ export function isGrammarCheckAllowedSite(): boolean {
 
 /**
  * Platform adapter oluştur
+ * @deprecated This function is no longer used in the new architecture.
+ * Use platform/registry.ts getEnabledAdapter() instead.
  */
 export function createPlatformAdapterForSite(
-  onGrammarCheck?: (text: string) => Promise<import("../types").GrammarError[]>
-): IPlatformAdapter | null {
-  return createPlatformAdapter(onGrammarCheck);
+  _onGrammarCheck?: (text: string) => Promise<import("../types").GrammarError[]>
+): null {
+  // Legacy function - no longer used in new architecture
+  return null;
 }
 
 /**

@@ -26,6 +26,14 @@ export class HighlightContainerHelper {
   private container: HTMLElement | null = null;
   private shadowRoot: ShadowRoot | null = null;
   private content: HTMLElement | null = null;
+  private trackedElements: Map<
+    HTMLElement,
+    {
+      errors: GrammarError[];
+      getErrorRects: (error: GrammarError) => DOMRect[];
+    }
+  > = new Map();
+  private scrollResizeHandler: (() => void) | null = null;
 
   /**
    * Get container element
@@ -148,6 +156,44 @@ export class HighlightContainerHelper {
 
     // Append to document body (at the end, like Grammarly)
     document.body.appendChild(this.container);
+
+    // Set up scroll and resize listeners for position updates
+    this.setupScrollResizeListeners();
+  }
+
+  /**
+   * Set up scroll and resize listeners to update highlight positions
+   */
+  private setupScrollResizeListeners(): void {
+    // Remove existing handler if any
+    if (this.scrollResizeHandler) {
+      window.removeEventListener("scroll", this.scrollResizeHandler, true);
+      window.removeEventListener("resize", this.scrollResizeHandler);
+    }
+
+    // Create debounced update handler
+    let updateTimeout: number | null = null;
+    this.scrollResizeHandler = () => {
+      if (updateTimeout !== null) {
+        cancelAnimationFrame(updateTimeout);
+      }
+      updateTimeout = requestAnimationFrame(() => {
+        this.updateAllPositions();
+      });
+    };
+
+    // Add listeners with capture to catch all scroll events
+    window.addEventListener("scroll", this.scrollResizeHandler, true);
+    window.addEventListener("resize", this.scrollResizeHandler);
+  }
+
+  /**
+   * Update positions for all tracked elements
+   */
+  private updateAllPositions(): void {
+    this.trackedElements.forEach((data, element) => {
+      this.updatePositions(element, data.errors, data.getErrorRects);
+    });
   }
 
   /**
@@ -203,6 +249,8 @@ export class HighlightContainerHelper {
     errors: GrammarError[],
     getErrorRects: (error: GrammarError) => DOMRect[]
   ): void {
+    // Track this element for scroll/resize updates
+    this.trackedElements.set(element, { errors, getErrorRects });
     if (!this.content) return;
 
     const elementId = getElementId(element);
@@ -284,6 +332,16 @@ export class HighlightContainerHelper {
    * Container'ı temizle
    */
   cleanup(): void {
+    // Remove scroll/resize listeners
+    if (this.scrollResizeHandler) {
+      window.removeEventListener("scroll", this.scrollResizeHandler, true);
+      window.removeEventListener("resize", this.scrollResizeHandler);
+      this.scrollResizeHandler = null;
+    }
+
+    // Clear tracked elements
+    this.trackedElements.clear();
+
     if (this.container && this.container.parentNode) {
       this.container.parentNode.removeChild(this.container);
       this.container = null;
@@ -2118,11 +2176,22 @@ export function attachHighlightHoverListener(
   } = options;
 
   let tooltipTimeout: number | null = null;
+  let currentTooltip: HTMLElement | null = null;
+  let mouseMoveHandler: ((e: MouseEvent) => void) | null = null;
 
   const closeTooltip = () => {
     if (tooltipTimeout !== null) {
       clearTimeout(tooltipTimeout);
       tooltipTimeout = null;
+    }
+    // Remove global mousemove listener if it exists
+    if (mouseMoveHandler) {
+      document.removeEventListener("mousemove", mouseMoveHandler);
+      mouseMoveHandler = null;
+    }
+    if (currentTooltip && currentTooltip.parentNode) {
+      currentTooltip.remove();
+      currentTooltip = null;
     }
   };
 
@@ -2149,6 +2218,7 @@ export function attachHighlightHoverListener(
     // Create tooltip
     const tooltip = document.createElement("div");
     tooltip.className = "rewordly-grammar-tooltip";
+    currentTooltip = tooltip; // Store reference for cleanup
 
     // Limit initial suggestions display (show first 5, rest with "see more")
     const INITIAL_SUGGESTIONS_LIMIT = 5;
@@ -2512,24 +2582,105 @@ export function attachHighlightHoverListener(
       });
     }
 
-    tooltip.addEventListener("mouseleave", () => {
-      console.log("Rewordly: Mouse left tooltip");
-      tooltipTimeout = window.setTimeout(() => {
-        // Check if any highlight for this error is still hovered
-        const allHighlightsForError =
-          highlightsContent?.querySelectorAll(
-            `[data-error-id="${error.id}"]`
-          ) || [];
-        const isAnyHighlightHovered = Array.from(allHighlightsForError).some(
-          (h) => (h as HTMLElement).matches(":hover")
-        );
+    // Track mouse state for tooltip and highlight
+    let isMouseOverTooltip = false;
+    let isMouseOverHighlight = true; // Start as true since tooltip opens on highlight hover
 
-        if (!isAnyHighlightHovered && !tooltip.matches(":hover")) {
-          console.log("Girdi");
-          closeTooltip();
-        }
-      }, 100);
+    // Function to cancel tooltip close
+    const cancelClose = () => {
+      if (tooltipTimeout !== null) {
+        clearTimeout(tooltipTimeout);
+        tooltipTimeout = null;
+      }
+    };
+
+    // Add mouseenter/mouseleave to the current highlight
+    highlight.addEventListener("mouseenter", () => {
+      isMouseOverHighlight = true;
+      cancelClose();
     });
+
+    highlight.addEventListener("mouseleave", () => {
+      // Don't set to false immediately - allow time to move to tooltip
+      // Check will happen in timeout
+    });
+
+    // Get all highlights for this error (multi-line support) and add listeners
+    // Use requestAnimationFrame to ensure all highlights are created
+    requestAnimationFrame(() => {
+      const allHighlightsForError =
+        highlightsContent?.querySelectorAll(`[data-error-id="${error.id}"]`) ||
+        [];
+
+      allHighlightsForError.forEach((h) => {
+        (h as HTMLElement).addEventListener("mouseenter", () => {
+          isMouseOverHighlight = true;
+          cancelClose();
+        });
+        (h as HTMLElement).addEventListener("mouseleave", () => {
+          // Don't set to false immediately
+        });
+      });
+    });
+
+    // Global mouse move handler to check if mouse is over tooltip
+    const checkMousePosition = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+
+      // Check if mouse is over tooltip or any of its children
+      if (target && (tooltip === target || tooltip.contains(target))) {
+        isMouseOverTooltip = true;
+        cancelClose();
+        return;
+      }
+
+      // Check if mouse is over any highlight for this error by checking position
+      // Since highlights are in shadow DOM, we check by coordinates
+      const mouseX = e.clientX;
+      const mouseY = e.clientY;
+
+      const allHighlightsForError =
+        highlightsContent?.querySelectorAll(`[data-error-id="${error.id}"]`) ||
+        [];
+
+      let isOverAnyHighlight = false;
+      allHighlightsForError.forEach((h) => {
+        const rect = (h as HTMLElement).getBoundingClientRect();
+        if (
+          mouseX >= rect.left &&
+          mouseX <= rect.right &&
+          mouseY >= rect.top &&
+          mouseY <= rect.bottom
+        ) {
+          isOverAnyHighlight = true;
+        }
+      });
+
+      if (isOverAnyHighlight) {
+        isMouseOverHighlight = true;
+        cancelClose();
+      } else if (!tooltip.contains(target)) {
+        // Mouse is not over tooltip or highlight
+        isMouseOverTooltip = false;
+        isMouseOverHighlight = false;
+
+        // Only start timeout if not already started
+        if (tooltipTimeout === null) {
+          tooltipTimeout = window.setTimeout(() => {
+            if (!isMouseOverTooltip && !isMouseOverHighlight) {
+              closeTooltip();
+              document.removeEventListener("mousemove", checkMousePosition);
+            }
+          }, 300);
+        }
+      }
+    };
+
+    // Add global mousemove listener for tooltip tracking
+    document.addEventListener("mousemove", checkMousePosition);
+
+    // Store handler reference for cleanup
+    mouseMoveHandler = checkMousePosition;
   });
 }
 

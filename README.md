@@ -47,12 +47,54 @@ This extension is now properly bundled using Webpack with the following security
    ```bash
    npm run build
    ```
+   
+   The build process will:
+   - Bundle all TypeScript files into JavaScript
+   - Copy `manifest.json` and all static assets to `dist/`
+   - Validate that all required files are present
+   - Output files use deterministic names (no hashing): `content.js`, `background.js`, etc.
 
 4. Load the extension in Chrome:
    - Open Chrome and go to `chrome://extensions/`
-   - Enable "Developer mode"
+   - Enable "Developer mode" (toggle in top-right)
    - Click "Load unpacked"
-   - Select the `dist` folder
+   - **IMPORTANT**: Select the `dist` folder (not the root folder or any other folder)
+   - The extension should now be loaded and active
+
+5. Verify the extension is working:
+   - Navigate to `https://www.reddit.com`
+   - Open the browser console (F12)
+   - You should see: `[REWORDLY][NEW] content.ts loaded`
+   - The extension will only be active on sites with enabled adapters (currently Reddit)
+
+### Build Output Structure
+
+The build creates a `dist/` folder with the following structure:
+
+```
+dist/
+├── manifest.json              # Extension manifest (references all files below)
+├── content.js                 # Content script bundle (deterministic name)
+├── background.js              # Background service worker (deterministic name)
+├── popup.js                    # Popup script
+├── popup.html                  # Popup HTML
+├── welcome.js                  # Welcome page script
+├── welcome.html                # Welcome page HTML
+├── changelog.js                # Changelog script
+├── changelog.html              # Changelog HTML
+├── styles.css                  # Global styles
+├── icons/                      # Extension icons
+│   ├── icon16.png
+│   ├── icon48.png
+│   └── icon128.png
+└── *.gif                       # Web accessible resources (if any)
+```
+
+**Key Points:**
+- All file names are deterministic (no hashing) for consistent loading
+- `manifest.json` references use relative paths that match the actual files
+- The build validation script ensures all required files are present
+- Always load the extension from the `dist/` folder in Chrome
 
 ### Production Installation
 
@@ -64,10 +106,26 @@ This extension is now properly bundled using Webpack with the following security
 
 ### Build Commands
 
-- `npm run build` - Build for production (minified and obfuscated)
-- `npm run build:dev` - Build for development (with source maps)
+- `npm run build` - Build for production (minified and obfuscated) with validation
+- `npm run build:dev` - Build for development (with source maps) with validation
 - `npm run dev` - Development mode with watch
+- `npm run validate` - Validate that dist/ contains all required files
 - `npm run package` - Create a ZIP file for distribution
+
+### Build Output
+
+The build process creates a `dist/` folder containing:
+- `manifest.json` - Extension manifest
+- `content.js` - Content script bundle (no hashing)
+- `background.js` - Background service worker bundle (no hashing)
+- `popup.js`, `popup.html` - Popup interface
+- `welcome.js`, `welcome.html` - Welcome page
+- `changelog.js`, `changelog.html` - Changelog page
+- `styles.css` - Global styles
+- `icons/` - Extension icons
+- Any web_accessible_resources (GIFs, etc.)
+
+**Always load the extension from the `dist/` folder in Chrome.** The build validation script ensures all required files are present.
 
 ### Project Structure
 

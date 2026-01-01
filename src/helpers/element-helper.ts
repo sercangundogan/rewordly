@@ -6,9 +6,10 @@
  * Basitçe: Element bul, kontrol et, ignore et gibi işlemler.
  */
 
-import { isGrammarCheckAllowedSite } from "./config-helper";
-import { checkAndPerformGrammarCheckForExistingText } from "./grammar-check-helper";
-import { EditableElementContext } from "./element-context";
+// Legacy imports removed - not used by new architecture
+// import { isGrammarCheckAllowedSite } from "./config-helper";
+// import { checkAndPerformGrammarCheckForExistingText } from "./grammar-check-helper";
+// import { EditableElementContext } from "./element-context";
 
 /**
  * Element editable mi kontrol et
@@ -517,56 +518,24 @@ export function getInputTextareaSelectionRect(
 
 /**
  * Set up scroll listeners for a specific editable element
- * Updates highlight positions when scrollable containers are scrolled
- * Tek sorumluluk: Scroll listener'ları yönetmek
+ * @deprecated Not used by new architecture - Reddit adapter handles this internally
  */
 export function setupElementScrollListeners(
-  element: HTMLElement,
-  context: EditableElementContext
+  _element: HTMLElement,
+  _context: any
 ): void {
-  // Remove existing listeners for this element
-  context.removeElementScrollListeners(element);
-
-  // Find scrollable containers
-  const containers = findScrollableContainers(element);
-  context.scrollableContainers.set(element, containers);
-
-  // Add scroll listeners to each scrollable container
-  containers.forEach((container) => {
-    // Check if we already have a listener for this container
-    if (!context.scrollListeners.has(container)) {
-      const updateAllForContainer = () => {
-        // Update highlights for all elements that have this container as a scrollable parent
-        context.scrollableContainers.forEach((containers, el) => {
-          if (containers.has(container) && context.grammarErrors.has(el)) {
-            context.highlightHelper.updatePositions(
-              el,
-              context.grammarErrors.get(el) || [],
-              (error: any) =>
-                context.getErrorTextRects(el, error.start, error.end)
-            );
-          }
-        });
-      };
-
-      container.addEventListener("scroll", updateAllForContainer, {
-        passive: true,
-      });
-      context.scrollListeners.set(container, updateAllForContainer);
-    }
-  });
+  // Legacy function - not used by new architecture
 }
 
 /**
  * Remove scroll listeners for a specific editable element
- * Tek sorumluluk: Scroll listener'ları kaldırmak
- * Not: Bu fonksiyon artık context içinde, burada sadece export ediliyor
+ * @deprecated Not used by new architecture - Reddit adapter handles this internally
  */
 export function removeElementScrollListeners(
-  element: HTMLElement,
-  context: EditableElementContext
+  _element: HTMLElement,
+  _context: any
 ): void {
-  context.removeElementScrollListeners(element);
+  // Legacy function - not used by new architecture
 }
 
 /**
@@ -590,17 +559,11 @@ export function disableSpellCheck(element: HTMLElement): void {
 
 /**
  * Check and queue grammar check for existing text
- * Tek sorumluluk: Mevcut text için grammar check yapmak
+ * @deprecated Not used by new architecture - orchestrator handles grammar checks
  */
 export function checkExistingTextForGrammar(
-  element: HTMLElement,
-  context: EditableElementContext
+  _element: HTMLElement,
+  _context: any
 ): void {
-  checkAndPerformGrammarCheckForExistingText(element, {
-    isGrammarCheckAllowedSite: () => isGrammarCheckAllowedSite(),
-    config: context.config,
-    queueGrammarCheck: context.queueGrammarCheck,
-    isEditableElement,
-    isElementVisible,
-  });
+  // Legacy function - not used by new architecture
 }
