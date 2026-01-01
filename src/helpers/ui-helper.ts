@@ -43,14 +43,16 @@ export class RewriteButtonHelper {
 
     const button = document.createElement("div");
     button.id = "rewordly-rewrite-button";
-    button.className = "rewordly-rewrite-button";
+    button.className = "rewordly-rewrite-button-container";
     button.innerHTML = `
-      <button class="rewordly-rewrite-btn" title="Rewrite with AI">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M12 20h9"></path>
-          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+      <button class="rewordly-ai-btn" title="Rewrite with AI">
+        <svg class="rewordly-sparkle-icon" width="18" height="18" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path fill="#FFAC33" d="M34.347 16.893l-8.899-3.294-3.323-10.891a1 1 0 0 0-1.912 0l-3.322 10.891-8.9 3.294a1 1 0 0 0 0 1.876l8.895 3.293 3.324 11.223a1 1 0 0 0 1.918-.001l3.324-11.223 8.896-3.293a.998.998 0 0 0-.001-1.875z"/>
+          <path fill="#FFCC4D" d="M14.347 27.894l-2.314-.856-.9-3.3a.998.998 0 0 0-1.929-.001l-.9 3.3-2.313.856a1 1 0 0 0 0 1.876l2.301.853.907 3.622a1 1 0 0 0 1.94-.001l.907-3.622 2.301-.853a.997.997 0 0 0 0-1.874zM10.009 6.231l-2.364-.875-.876-2.365a.999.999 0 0 0-1.876 0l-.875 2.365-2.365.875a1 1 0 0 0 0 1.876l2.365.875.875 2.365a1 1 0 0 0 1.876 0l.875-2.365 2.365-.875a1 1 0 0 0 0-1.876z"/>
         </svg>
-        <span>AI</span>
+        <span class="rewordly-sparkle rewordly-sparkle-1">✨</span>
+        <span class="rewordly-sparkle rewordly-sparkle-2">✨</span>
+        <span class="rewordly-sparkle rewordly-sparkle-3">✨</span>
       </button>
     `;
 
@@ -194,7 +196,7 @@ export class RewriteButtonHelper {
       elementRect = element.getBoundingClientRect();
     }
 
-    const buttonSize = 28; // Button size (reduced from 32)
+    const buttonSize = 36; // Button size (original size with sparkles)
     const offset = 8; // Offset from edge
 
     // Check if element is single-line

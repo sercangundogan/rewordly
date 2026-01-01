@@ -23,8 +23,6 @@ import {
   getElementId,
   findEditableInElement,
   removeElementScrollListeners,
-  findAndAttachToEditableElements,
-  attachToEditableElement,
   EditableElementContext,
   GrammarCheckContext,
   UIStateContext,
@@ -286,25 +284,24 @@ class RewordlyContentScript {
     // Wait for DOM to be ready
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", () => {
-        this.findAndAttachToEditableElements();
+        this.editableElementContext!.findAndAttachToEditableElements();
       });
     } else {
-      this.findAndAttachToEditableElements();
+      this.editableElementContext!.findAndAttachToEditableElements();
     }
 
     // Watch for new editable elements being added to the DOM
     const observer = new MutationObserver((mutations) => {
       mutations.forEach((mutation) => {
         // Handle added nodes
-        const attachToElement = this.createAttachToEditableElementCallback();
         mutation.addedNodes.forEach((node) => {
           if (node.nodeType === Node.ELEMENT_NODE) {
             const element = node as HTMLElement;
-            attachToElement(element);
-            // Also check children (including Shadow DOM)
+            this.editableElementContext!.attachToEditableElement(element);
+            // Also check child ren (including Shadow DOM)
             const editableChildren = findEditableInElement(element);
             editableChildren.forEach((el) => {
-              attachToElement(el);
+              this.editableElementContext!.attachToEditableElement(el);
             });
           }
         });
@@ -388,7 +385,7 @@ class RewordlyContentScript {
 
     // Periodically scan for new editable elements (for very dynamic pages)
     setInterval(() => {
-      this.findAndAttachToEditableElements();
+      this.editableElementContext!.findAndAttachToEditableElements();
     }, 2000);
   }
 
@@ -654,28 +651,6 @@ class RewordlyContentScript {
 
   private set aiButtonScrollListener(value: (() => void) | null) {
     this.getUIStateContext().aiButtonScrollListener.set(value);
-  }
-
-  /**
-   * Get attachToEditableElement callback with context
-   * Artık sadece context'i geçiyoruz, çok daha temiz!
-   */
-  private createAttachToEditableElementCallback(): (
-    element: HTMLElement
-  ) => void {
-    const context = this.getEditableElementContext();
-    return (element: HTMLElement) => {
-      attachToEditableElement(element, context);
-    };
-  }
-
-  /**
-   * Find all editable elements and attach listeners
-   */
-  private findAndAttachToEditableElements(): void {
-    findAndAttachToEditableElements({
-      attachToEditableElement: this.createAttachToEditableElementCallback(),
-    });
   }
 
   /**

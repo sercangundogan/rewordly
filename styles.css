@@ -61,15 +61,15 @@
   display: flex !important;
 }
 
-/* AI Button styles - circular button with AI icon */
+/* AI Button styles - circular button with AI icon and sparkles */
 .rewordly-ai-btn {
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
   position: relative !important;
   padding: 0 !important;
-  width: 28px !important;
-  height: 28px !important;
+  width: 36px !important;
+  height: 36px !important;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
   color: white !important;
   border: none !important;
@@ -105,11 +105,70 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
 }
 
-.rewordly-ai-btn svg {
-  width: 16px !important;
-  height: 16px !important;
-  fill: currentColor !important;
-  color: white !important;
+.rewordly-ai-btn .rewordly-sparkle-icon {
+  width: 18px !important;
+  height: 18px !important;
+  position: relative !important;
+  z-index: 2 !important;
+}
+
+/* Sparkles animation */
+.rewordly-sparkle {
+  position: absolute !important;
+  font-size: 12px !important;
+  line-height: 1 !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+  animation: rewordly-sparkle-float 2.5s ease-in-out infinite !important;
+  z-index: 3 !important;
+}
+
+.rewordly-sparkle-1 {
+  top: -10px !important;
+  left: 50% !important;
+  margin-left: -6px !important;
+  animation-delay: 0s !important;
+}
+
+.rewordly-sparkle-2 {
+  top: 50% !important;
+  right: -10px !important;
+  margin-top: -6px !important;
+  animation-delay: 0.5s !important;
+}
+
+.rewordly-sparkle-3 {
+  bottom: -10px !important;
+  left: 50% !important;
+  margin-left: -6px !important;
+  animation-delay: 1s !important;
+}
+
+@keyframes rewordly-sparkle-float {
+  0% {
+    opacity: 0 !important;
+    transform: translateY(0) scale(0.5) rotate(0deg) !important;
+  }
+  20% {
+    opacity: 1 !important;
+    transform: translateY(-12px) scale(1) rotate(180deg) !important;
+  }
+  40% {
+    opacity: 0.8 !important;
+    transform: translateY(-16px) scale(0.9) rotate(360deg) !important;
+  }
+  60% {
+    opacity: 0.6 !important;
+    transform: translateY(-20px) scale(0.8) rotate(540deg) !important;
+  }
+  100% {
+    opacity: 0 !important;
+    transform: translateY(-24px) scale(0.5) rotate(720deg) !important;
+  }
+}
+
+.rewordly-ai-btn:hover .rewordly-sparkle {
+  animation-duration: 1.8s !important;
 }
 
 /* Combined button styles - capsule shape with green quarter moon (legacy) */

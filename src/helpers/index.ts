@@ -25,8 +25,6 @@ export {
   removeElementScrollListeners,
   isSingleLineElement,
   getInputTextareaSelectionRect,
-  findAndAttachToEditableElements,
-  attachToEditableElement,
 } from "./element-helper";
 
 // Contexts

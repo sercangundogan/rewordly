@@ -570,29 +570,10 @@ export function removeElementScrollListeners(
 }
 
 /**
- * Find all editable elements and attach listeners
- */
-export function findAndAttachToEditableElements(options: {
-  attachToEditableElement: (element: HTMLElement) => void;
-}): void {
-  const { attachToEditableElement } = options;
-  const allEditable = findAllEditableElements();
-  allEditable.forEach((element) => {
-    attachToEditableElement(element);
-  });
-
-  // Check Shadow DOM
-  const shadowEditable = findEditableInShadowDOM(document.body);
-  shadowEditable.forEach((element) => {
-    attachToEditableElement(element);
-  });
-}
-
-/**
  * Disable spell check on element
  * Tek sorumluluk: Element'teki spell check'i devre dışı bırakmak
  */
-function disableSpellCheck(element: HTMLElement): void {
+export function disableSpellCheck(element: HTMLElement): void {
   // Disable browser's native spell check
   if (
     element instanceof HTMLInputElement ||
@@ -608,32 +589,10 @@ function disableSpellCheck(element: HTMLElement): void {
 }
 
 /**
- * Attach event listeners to element
- * Tek sorumluluk: Event listener'ları eklemek
- */
-function attachEventListeners(
-  element: HTMLElement,
-  context: EditableElementContext
-): void {
-  // Add multiple event listeners to catch all input types
-  // Use capture phase to catch events before they're stopped
-  element.addEventListener("input", context.boundHandleInput, true);
-  element.addEventListener("beforeinput", context.boundHandleInput, true);
-  element.addEventListener("keyup", context.boundHandleInput, true);
-  element.addEventListener("focus", context.boundHandleFocus, true);
-  element.addEventListener("blur", context.boundHandleBlur, true);
-
-  // For contenteditable, also listen to textInput
-  if (element.getAttribute("contenteditable") === "true") {
-    element.addEventListener("textInput", context.boundHandleInput, true);
-  }
-}
-
-/**
  * Check and queue grammar check for existing text
  * Tek sorumluluk: Mevcut text için grammar check yapmak
  */
-function checkExistingTextForGrammar(
+export function checkExistingTextForGrammar(
   element: HTMLElement,
   context: EditableElementContext
 ): void {
@@ -644,44 +603,4 @@ function checkExistingTextForGrammar(
     isEditableElement,
     isElementVisible,
   });
-}
-
-/**
- * Attach event listeners to an editable element
- * Ana koordinatör fonksiyon - diğer helper fonksiyonları çağırır
- */
-export function attachToEditableElement(
-  element: HTMLElement,
-  context: EditableElementContext
-): void {
-  // Validation
-  if (!isEditableElement(element)) {
-    return;
-  }
-
-  if (context.editableElements.has(element)) {
-    return;
-  }
-
-  // Track element
-  context.editableElements.add(element);
-
-  // Check if this element should be ignored (e.g., Gmail's "To" field)
-  if (shouldIgnoreElement(element)) {
-    const elementId = getElementId(element);
-    context.ignoredElementIds.add(elementId);
-    return; // Don't attach grammar checking to ignored elements
-  }
-
-  // Disable spell check
-  disableSpellCheck(element);
-
-  // Attach event listeners
-  attachEventListeners(element, context);
-
-  // Check existing text for grammar errors
-  checkExistingTextForGrammar(element, context);
-
-  // Set up scroll listeners
-  setupElementScrollListeners(element, context);
 }

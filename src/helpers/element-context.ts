@@ -11,6 +11,16 @@ import { GrammarCheckContext } from "./grammar-check-context";
 import { UIStateContext } from "./ui-state-context";
 import { EventContext } from "./event-context";
 import { ConfigContext } from "./config-context";
+import {
+  getElementId,
+  isEditableElement,
+  shouldIgnoreElement,
+  disableSpellCheck,
+  checkExistingTextForGrammar,
+  setupElementScrollListeners,
+  findAllEditableElements,
+  findEditableInShadowDOM,
+} from "./element-helper";
 
 /**
  * Editable element işlemleri için context
@@ -35,6 +45,101 @@ export class EditableElementContext {
       end: number
     ) => DOMRect[]
   ) {}
+
+  // Convenience getters for nested context properties
+  get grammarErrors(): Map<HTMLElement, GrammarError[]> {
+    return this.grammarCheckContext.grammarErrors;
+  }
+
+  get highlightHelper(): HighlightContainerHelper {
+    return this.uiStateContext.highlightHelper;
+  }
+
+  get config() {
+    return this.configContext.config;
+  }
+
+  get boundHandleInput() {
+    return this.eventContext.boundHandleInput;
+  }
+
+  get boundHandleFocus() {
+    return this.eventContext.boundHandleFocus;
+  }
+
+  get boundHandleBlur() {
+    return this.eventContext.boundHandleBlur;
+  }
+
+  /**
+   * Attach an editable element to the context
+   */
+  attachToEditableElement(element: HTMLElement): void {
+    // Validation
+    if (!isEditableElement(element)) {
+      return;
+    }
+
+    if (this.editableElements.has(element)) {
+      return;
+    }
+
+    // Track element
+    this.editableElements.add(element);
+
+    // Check if this element should be ignored (e.g., Gmail's "To" field)
+    if (shouldIgnoreElement(element)) {
+      const elementId = getElementId(element);
+      this.ignoredElementIds.add(elementId);
+      return; // Don't attach grammar checking to ignored elements
+    }
+
+    // Disable spell check
+    disableSpellCheck(element);
+
+    // Attach event listeners
+    this.attachEventListeners(element);
+
+    // Check existing text for grammar errors
+    checkExistingTextForGrammar(element, this);
+
+    // Set up scroll listeners
+    setupElementScrollListeners(element, this);
+  }
+
+  /**
+   * Attach event listeners to an editable element
+   */
+  attachEventListeners(element: HTMLElement): void {
+    // Add multiple event listeners to catch all input types
+    // Use capture phase to catch events before they're stopped
+    element.addEventListener("input", this.boundHandleInput, true);
+    element.addEventListener("beforeinput", this.boundHandleInput, true);
+    element.addEventListener("keyup", this.boundHandleInput, true);
+    element.addEventListener("focus", this.boundHandleFocus, true);
+    element.addEventListener("blur", this.boundHandleBlur, true);
+
+    // For contenteditable, also listen to textInput
+    if (element.getAttribute("contenteditable") === "true") {
+      element.addEventListener("textInput", this.boundHandleInput, true);
+    }
+  }
+
+  /**
+   * Find all editable elements and attach listeners
+   */
+  findAndAttachToEditableElements(): void {
+    const allEditable = findAllEditableElements();
+    allEditable.forEach((element) => {
+      this.attachToEditableElement(element);
+    });
+
+    // Check Shadow DOM
+    const shadowEditable = findEditableInShadowDOM(document.body);
+    shadowEditable.forEach((element) => {
+      this.attachToEditableElement(element);
+    });
+  }
 
   /**
    * Element için scroll listener'ları kaldır
@@ -63,30 +168,5 @@ export class EditableElementContext {
     });
 
     this.scrollableContainers.delete(element);
-  }
-
-  // Convenience getters for nested context properties
-  get grammarErrors(): Map<HTMLElement, GrammarError[]> {
-    return this.grammarCheckContext.grammarErrors;
-  }
-
-  get highlightHelper(): HighlightContainerHelper {
-    return this.uiStateContext.highlightHelper;
-  }
-
-  get config() {
-    return this.configContext.config;
-  }
-
-  get boundHandleInput() {
-    return this.eventContext.boundHandleInput;
-  }
-
-  get boundHandleFocus() {
-    return this.eventContext.boundHandleFocus;
-  }
-
-  get boundHandleBlur() {
-    return this.eventContext.boundHandleBlur;
   }
 }
