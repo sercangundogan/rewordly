@@ -21,7 +21,6 @@ import {
 } from "../../core/contracts";
 import {
   isEditableElement,
-  extractTextFromElement,
   getElementId,
   disableSpellCheck,
 } from "../../helpers/element-helper";
@@ -465,7 +464,10 @@ export class RedditPlatformAdapter implements PlatformAdapter {
       };
     }
 
-    const text = extractTextFromElement(element);
+    // Use extractTextExcludingSignature to match the text used in highlight helper
+    // This ensures API positions match DOM text positions exactly
+    const { text } = extractTextExcludingSignature(element);
+
     // Get version from map, or initialize to 0 if not tracked
     let version = this.versionMap.get(element);
     if (version === undefined) {
@@ -885,7 +887,7 @@ export class RedditPlatformAdapter implements PlatformAdapter {
   private checkExistingTextAndNotify(): void {
     // Find first editable element with text
     for (const element of this.editableElements) {
-      const text = extractTextFromElement(element);
+      const { text } = extractTextExcludingSignature(element);
       if (text.trim().length > 0) {
         // Found element with text, set as current and notify
         this.currentElement = element;
@@ -907,7 +909,7 @@ export class RedditPlatformAdapter implements PlatformAdapter {
 
     // Always trigger check on focus (even if text is empty or unchanged)
     // This ensures connection is established immediately and highlights are shown
-    const text = extractTextFromElement(element);
+    const { text } = extractTextExcludingSignature(element);
     // Initialize lastText for this element if not set
     if (!this.lastTextMap.has(element)) {
       this.lastTextMap.set(element, text);
@@ -927,7 +929,7 @@ export class RedditPlatformAdapter implements PlatformAdapter {
       return;
     }
 
-    const currentText = extractTextFromElement(element);
+    const { text: currentText } = extractTextExcludingSignature(element);
     const lastTextForElement = this.lastTextMap.get(element) || "";
 
     // Notify if text changed OR if forced (e.g., on focus)

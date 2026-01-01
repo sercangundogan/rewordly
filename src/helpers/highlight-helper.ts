@@ -17,6 +17,7 @@ import {
   formatSuggestionForDisplay,
   mapInnerTextToTextNodes,
 } from "./text-processing-helper";
+import { removeInvisibleCharacters } from "../core/text";
 
 /**
  * Highlight Container Helper
@@ -1447,6 +1448,18 @@ export function validateAndRemoveInvalidHighlights(
     return;
   }
 
+  // Normalize DOM text the same way it's normalized before sending to API
+  const normalizeTextForAPI = (text: string): string => {
+    return text
+      .replace(/\r\n/g, "\n") // Normalize line breaks
+      .replace(/\r/g, "\n")
+      .replace(/\n/g, "") // Remove all newlines (API receives text without newlines)
+      .replace(/[ \t]+/g, " ") // Collapse multiple spaces/tabs to single space
+      .trim();
+  };
+
+  const normalizedText = normalizeTextForAPI(text);
+
   const elementId = getElementId(element);
   const highlights = highlightsContent.querySelectorAll(
     `[data-element-id="${elementId}"]`
@@ -1462,10 +1475,10 @@ export function validateAndRemoveInvalidHighlights(
     try {
       const error: GrammarError = JSON.parse(errorData);
 
-      // Check if error position is still valid
+      // Check if error position is still valid (against normalized text)
       if (
         error.start < 0 ||
-        error.end > text.length ||
+        error.end > normalizedText.length ||
         error.start >= error.end
       ) {
         // Position out of bounds, remove highlight
@@ -1473,12 +1486,28 @@ export function validateAndRemoveInvalidHighlights(
         return;
       }
 
-      // Check if the error word still matches at that position
-      const errorWord = text.substring(error.start, error.end);
-      // Strict matching: word must match exactly (case-insensitive, whitespace variations allowed)
-      // If the word at that position has changed (e.g., "asd" -> "asdf"), highlight should be removed
-      const isStillValid =
-        errorWord.toLowerCase().trim() === error.word.toLowerCase().trim();
+      // Check if the error word still matches at that position in cleaned text
+      if (!error.word) {
+        // No word to match, consider invalid
+        highlight.remove();
+        return;
+      }
+
+      // Clean text the same way as orchestrator
+      const cleanText = (text: string): string => {
+        return text
+          .replace(/[\u200B-\u200D\uFEFF]/g, "") // Zero-width spaces
+          .replace(/\u00A0/g, " "); // Non-breaking space -> regular space
+      };
+
+      const cleanedText = cleanText(text);
+
+      // Compare in cleaned text space (API positions reference cleaned text which matches DOM)
+      const errorWord = cleanedText.substring(error.start, error.end);
+      const normalizedErrorWord = errorWord.toLowerCase().trim();
+      const normalizedExpectedWord = error.word.toLowerCase().trim();
+
+      const isStillValid = normalizedErrorWord === normalizedExpectedWord;
 
       if (!isStillValid) {
         // Word changed or deleted, remove highlight immediately
@@ -1491,16 +1520,28 @@ export function validateAndRemoveInvalidHighlights(
   });
 
   // Update stored errors - remove invalid ones
+  // Use cleaned text for validation (API positions are based on cleaned text)
+  const cleanText = (text: string): string => {
+    return text
+      .replace(/[\u200B-\u200D\uFEFF]/g, "") // Zero-width spaces, zero-width joiner/non-joiner, BOM
+      .replace(/\u00A0/g, " "); // Non-breaking space -> regular space
+  };
+
+  const cleanedText = cleanText(text);
+
   const validErrors = currentErrors.filter((error) => {
     if (
       error.start < 0 ||
-      error.end > text.length ||
+      error.end > cleanedText.length ||
       error.start >= error.end
     ) {
       return false;
     }
-    const errorWord = text.substring(error.start, error.end);
-    // Strict matching: word must match exactly (case-insensitive, whitespace variations allowed)
+    if (!error.word) {
+      return false;
+    }
+    // Compare in cleaned text space (matches DOM text)
+    const errorWord = cleanedText.substring(error.start, error.end);
     return errorWord.toLowerCase().trim() === error.word.toLowerCase().trim();
   });
 
@@ -1826,27 +1867,43 @@ export function displayGrammarErrors(
   // Use the same text extraction method as grammar check to ensure positions match
   const { text } = extractTextExcludingSignature(element);
 
+  // Clean text the same way as orchestrator (only remove invisible characters)
+  // This ensures positions match - newlines and whitespace are preserved
+  // Import removeInvisibleCharacters from core/text
+  const cleanedText = removeInvisibleCharacters(text);
+
   // Filter out errors that are no longer valid (text changed, error position out of bounds)
   const validErrors = errorsWithIds.filter((error) => {
+    // Check bounds against cleaned text (API positions are based on cleaned text)
     if (
       error.start < 0 ||
-      error.end > text.length ||
+      error.end > cleanedText.length ||
       error.start >= error.end
     ) {
       console.warn("Rewordly: Error position out of bounds", {
         error,
-        textLength: text.length,
+        cleanedTextLength: cleanedText.length,
+        originalTextLength: text.length,
         start: error.start,
         end: error.end,
       });
       return false;
     }
-    // Check if the error word still matches at that position
-    const errorWord = text.substring(error.start, error.end);
-    // Strict matching: word must match exactly (case-insensitive, whitespace variations allowed)
-    // If the word at that position has changed (e.g., "asd" -> "asdf"), highlight should be removed
-    const isValid =
-      errorWord.toLowerCase().trim() === error.word.toLowerCase().trim();
+
+    // Check if the error word still matches at that position in cleaned text
+    if (!error.word) {
+      return false;
+    }
+
+    // Compare in cleaned text space (API positions reference cleaned text which matches DOM)
+    const errorWord = cleanedText.substring(error.start, error.end);
+    const normalizedErrorWord = errorWord.toLowerCase().trim();
+    const normalizedExpectedWord = error.word.toLowerCase().trim();
+
+    let isValid = normalizedErrorWord === normalizedExpectedWord;
+
+    // If exact match fails, the word at that position has changed
+    // No need to search - API positions are accurate for normalized text
 
     if (!isValid) {
       console.warn("Rewordly: Error word mismatch", {
@@ -1884,7 +1941,14 @@ export function displayGrammarErrors(
   grammarErrors.set(element, validErrors);
 
   // Update or create highlights for each valid error
+  // Positions are already correct (cleaned text matches DOM text, only invisible chars removed)
   validErrors.forEach((error, index) => {
+    // Positions are already correct - cleaned text matches DOM text structure
+    // Only invisible characters are removed, so positions align directly
+    const highlightError: GrammarError = {
+      ...error,
+      // Positions are already correct for DOM text
+    };
     // First try to match by error ID
     let existingHighlight = existingErrorMap.get(error.id);
 
@@ -1954,10 +2018,10 @@ export function displayGrammarErrors(
         textForAdjustment = element.innerText || element.textContent || "";
       }
 
-      // Adjust positions for multi-word grammar errors
+      // Adjust positions for multi-word grammar errors (use DOM positions)
       const adjustedPositions = textForAdjustment
-        ? adjustErrorPositionsForMultiWord(textForAdjustment, error)
-        : { start: error.start, end: error.end };
+        ? adjustErrorPositionsForMultiWord(textForAdjustment, highlightError)
+        : { start: highlightError.start, end: highlightError.end };
       const highlightRects = getErrorTextRects(
         element,
         adjustedPositions.start,
@@ -2098,7 +2162,8 @@ export function displayGrammarErrors(
       }
     } else {
       // New error or error position changed, create new highlight with animation
-      createHighlight(element, error, index, true);
+      // Use highlightError which has DOM positions mapped from normalized positions
+      createHighlight(element, highlightError, index, true);
     }
   });
 

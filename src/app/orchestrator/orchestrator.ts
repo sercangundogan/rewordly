@@ -22,7 +22,7 @@ import {
 } from "../../platform/base/PlatformAdapter";
 import { DocumentSnapshot, Issue, DebugEvent } from "../../core/contracts";
 import { globalEventBuffer } from "../debug/eventBuffer";
-import { normalizeText } from "../../core/text";
+import { removeInvisibleCharacters } from "../../core/text";
 
 /**
  * Options for creating an orchestrator
@@ -167,30 +167,24 @@ export class Orchestrator {
         return;
       }
 
-      // STEP 3: Normalize text before grammar check
-      // Grammar check offsets MUST reference normalized text only
-      const normalizedText = normalizeText(snapshot.text);
-      const normalizedSnapshot: DocumentSnapshot = {
+      // STEP 3: Minimal text cleaning (only invisible characters)
+      // Keep newlines and whitespace as-is so positions match DOM text
+      // LanguageTool API supports newlines, so we don't need to normalize them
+      const cleanedText = removeInvisibleCharacters(snapshot.text);
+      const cleanedSnapshot: DocumentSnapshot = {
         ...snapshot,
-        text: normalizedText,
+        text: cleanedText,
       };
-
-      // Emit text normalized event
-      this.emitDebugEvent("text_normalized", {
-        snapshotVersion: snapshot.version,
-        originalLength: snapshot.text.length,
-        normalizedLength: normalizedText.length,
-      });
 
       // Emit grammar check started event
       this.emitDebugEvent("grammar_check_started", {
         snapshotVersion: snapshot.version,
-        textLength: normalizedText.length,
+        textLength: cleanedText.length,
       });
 
-      // Call grammar check with normalized snapshot
-      // All offsets in returned issues are relative to normalized text
-      const issues = await this.checkGrammar(normalizedSnapshot);
+      // Call grammar check with cleaned snapshot
+      // All offsets in returned issues are relative to cleaned text (which matches DOM text)
+      const issues = await this.checkGrammar(cleanedSnapshot);
 
       const timeSpent = performance.now() - startTime;
 
