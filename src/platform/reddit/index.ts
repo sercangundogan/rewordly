@@ -68,6 +68,7 @@ export class RedditPlatformAdapter implements PlatformAdapter {
     new Map();
   private resizeObservers: Map<HTMLElement, ResizeObserver> = new Map();
   private isCommentSearchOpen: boolean = false;
+  private isPerformingReplace: boolean = false; // Flag to track replace operations
 
   /**
    * Check if adapter is enabled for current page
@@ -564,10 +565,17 @@ export class RedditPlatformAdapter implements PlatformAdapter {
           replaceGrammarError(el, targetError, replacement, {
             grammarErrors: this.grammarErrors,
             highlightsContent: this.highlightHelper.getContent(),
-            isPerformingReplace: { get: () => false, set: () => {} },
+            isPerformingReplace: {
+              get: () => this.isPerformingReplace,
+              set: (value: boolean) => {
+                this.isPerformingReplace = value;
+              },
+            },
             highlightHelper: this.highlightHelper,
             scheduledBlurHandlers: this.scheduledBlurHandlers,
-            performGrammarCheck: async () => {},
+            performGrammarCheck: async () => {
+              // Grammar check will be triggered after replace is complete
+            },
           });
         },
         closeAllGrammarTooltips,
@@ -591,6 +599,7 @@ export class RedditPlatformAdapter implements PlatformAdapter {
       createHighlight: createHighlightWrapper,
       attachHighlightHoverListener: attachHighlightHoverListenerWrapper,
       highlightsContent: this.highlightHelper.getContent(),
+      isPerformingReplace: this.isPerformingReplace,
     });
   }
 
@@ -621,13 +630,23 @@ export class RedditPlatformAdapter implements PlatformAdapter {
           type: "grammar",
         };
 
+        // Set flag to prevent highlight validation during replace
+        this.isPerformingReplace = true;
+
         replaceGrammarError(element, grammarError, change.text, {
-          grammarErrors: new Map(),
-          highlightsContent: null,
-          isPerformingReplace: { get: () => false, set: () => {} },
+          grammarErrors: this.grammarErrors,
+          highlightsContent: this.highlightHelper.getContent(),
+          isPerformingReplace: {
+            get: () => this.isPerformingReplace,
+            set: (value: boolean) => {
+              this.isPerformingReplace = value;
+            },
+          },
           highlightHelper: this.highlightHelper,
-          scheduledBlurHandlers: new Map(),
-          performGrammarCheck: async () => {},
+          scheduledBlurHandlers: this.scheduledBlurHandlers,
+          performGrammarCheck: async () => {
+            // Grammar check will be triggered after replace is complete
+          },
         });
 
         // Increment version
@@ -863,6 +882,16 @@ export class RedditPlatformAdapter implements PlatformAdapter {
       return;
     }
 
+    // Ignore programmatic input events (triggered by replace operations)
+    if ((event as any).__rewordlyProgrammatic) {
+      return;
+    }
+
+    // Don't validate highlights during replace operations
+    if (this.isPerformingReplace) {
+      return;
+    }
+
     this.currentElement = element;
 
     // Validate and remove invalid highlights when text changes
@@ -874,7 +903,7 @@ export class RedditPlatformAdapter implements PlatformAdapter {
         this.grammarErrors,
         extractText,
         getElementId,
-        false // isPerformingReplace
+        this.isPerformingReplace
       );
     }
 

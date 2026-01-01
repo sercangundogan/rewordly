@@ -1759,6 +1759,7 @@ export function displayGrammarErrors(
       element: HTMLElement
     ) => void;
     highlightsContent: HTMLElement | null; // Legacy reference
+    isPerformingReplace?: boolean; // Flag to prevent highlight removal during replace
   }
 ): void {
   const {
@@ -1769,6 +1770,7 @@ export function displayGrammarErrors(
     createHighlight,
     attachHighlightHoverListener,
     highlightsContent,
+    isPerformingReplace = false,
   } = options;
 
   const isGoogleDocsElement = (element as any).__rewordlyIsGoogleDocs === true;
@@ -2168,17 +2170,21 @@ export function displayGrammarErrors(
   });
 
   // Remove highlights that no longer exist (errors that were fixed or removed)
+  // BUT: Don't remove highlights during replace operations - positions are being updated
   const currentErrorIds = new Set(validErrors.map((err) => err.id));
   existingErrorMap.forEach((highlight, errorId) => {
     if (!currentErrorIds.has(errorId)) {
-      // Remove all highlights for this error (multi-line support)
-      if (highlightsContent) {
-        const allErrorHighlights = highlightsContent.querySelectorAll(
-          `[data-element-id="${elementId}"][data-error-id="${errorId}"]`
-        );
-        allErrorHighlights.forEach((h) => h.remove());
-      } else {
-        highlight.remove();
+      // Only remove if not performing replace - during replace, highlights are updated, not removed
+      if (!isPerformingReplace) {
+        // Remove all highlights for this error (multi-line support)
+        if (highlightsContent) {
+          const allErrorHighlights = highlightsContent.querySelectorAll(
+            `[data-element-id="${elementId}"][data-error-id="${errorId}"]`
+          );
+          allErrorHighlights.forEach((h) => h.remove());
+        } else {
+          highlight.remove();
+        }
       }
     } else {
       // Also check if this error is dismissed (double-check to be safe)
