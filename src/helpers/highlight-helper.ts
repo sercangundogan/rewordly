@@ -2671,7 +2671,7 @@ export function attachHighlightHoverListener(
               closeTooltip();
               document.removeEventListener("mousemove", checkMousePosition);
             }
-          }, 300);
+          }, 150);
         }
       }
     };

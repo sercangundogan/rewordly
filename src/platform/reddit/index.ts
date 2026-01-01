@@ -183,19 +183,46 @@ export class RedditPlatformAdapter implements PlatformAdapter {
             target.classList?.toString().toLowerCase().includes("toolbar") ||
             target.classList?.toString().toLowerCase().includes("format") ||
             target.closest?.("reddit-rte") ||
-            target.closest?.('[contenteditable="true"]');
+            target.closest?.('[contenteditable="true"]') ||
+            target.closest?.('[slot="toolbar"]') ||
+            target.closest?.('[slot="rte-toolbar"]') ||
+            target.closest?.('[slot="toolbar-additions"]');
 
           if (isToolbarRelated) {
             shouldUpdatePositions = true;
+          }
+
+          // Also check for style/class changes that might affect layout
+          if (
+            mutation.attributeName === "style" ||
+            mutation.attributeName === "class" ||
+            mutation.attributeName === "hidden" ||
+            mutation.attributeName === "aria-expanded"
+          ) {
+            // Check if this is near the editable element
+            if (currentElement) {
+              const isNearEditable =
+                target === currentElement ||
+                target.contains(currentElement) ||
+                currentElement.contains(target) ||
+                target.closest?.("reddit-rte") ===
+                  currentElement.closest?.("reddit-rte");
+
+              if (isNearEditable) {
+                shouldUpdatePositions = true;
+              }
+            }
           }
         }
       });
 
       // Check if element position changed (indicates layout shift)
+      // Also check parent container position for toolbar-related shifts
       if (currentElement) {
         const rect = currentElement.getBoundingClientRect();
         const lastPosition = this.elementPositions.get(currentElement);
 
+        // Check element position
         if (lastPosition) {
           const positionChanged =
             Math.abs(rect.top - lastPosition.top) > 1 ||
@@ -204,6 +231,31 @@ export class RedditPlatformAdapter implements PlatformAdapter {
           if (positionChanged) {
             shouldUpdatePositions = true;
           }
+        }
+
+        // Also check parent container (reddit-rte) position for toolbar shifts
+        const parentContainer = currentElement.closest("reddit-rte");
+        if (parentContainer) {
+          const parentRect = parentContainer.getBoundingClientRect();
+          const lastParentPosition = this.elementPositions.get(
+            parentContainer as HTMLElement
+          );
+
+          if (lastParentPosition) {
+            const parentPositionChanged =
+              Math.abs(parentRect.top - lastParentPosition.top) > 1 ||
+              Math.abs(parentRect.left - lastParentPosition.left) > 1;
+
+            if (parentPositionChanged) {
+              shouldUpdatePositions = true;
+            }
+          }
+
+          // Update stored parent position
+          this.elementPositions.set(parentContainer as HTMLElement, {
+            top: parentRect.top,
+            left: parentRect.left,
+          });
         }
 
         // Update stored position
@@ -218,15 +270,18 @@ export class RedditPlatformAdapter implements PlatformAdapter {
         if (this.grammarErrors.has(currentElement)) {
           const errors = this.grammarErrors.get(currentElement) || [];
           if (errors.length > 0) {
-            // Use requestAnimationFrame with a small delay to ensure DOM has settled
+            // Use multiple requestAnimationFrame calls to ensure DOM has fully settled
+            // Toolbar animations can take time
             requestAnimationFrame(() => {
               requestAnimationFrame(() => {
-                this.highlightHelper.updatePositions(
-                  currentElement!,
-                  errors,
-                  (error: GrammarError) =>
-                    getErrorTextRects(currentElement!, error.start, error.end)
-                );
+                requestAnimationFrame(() => {
+                  this.highlightHelper.updatePositions(
+                    currentElement!,
+                    errors,
+                    (error: GrammarError) =>
+                      getErrorTextRects(currentElement!, error.start, error.end)
+                  );
+                });
               });
             });
           }
@@ -693,22 +748,23 @@ export class RedditPlatformAdapter implements PlatformAdapter {
 
     this.currentElement = element;
 
-    // Always trigger check on focus (even if text is empty)
-    // This ensures connection is established immediately
+    // Always trigger check on focus (even if text is empty or unchanged)
+    // This ensures connection is established immediately and highlights are shown
     const text = extractTextFromElement(element);
     // Initialize lastText for this element if not set
     if (!this.lastTextMap.has(element)) {
       this.lastTextMap.set(element, text);
     }
-    // Trigger check immediately on focus
-    this.notifyChange();
+    // Force check on focus - even if text hasn't changed
+    this.notifyChange(true); // Pass true to force notification
   };
 
   /**
    * Notify change callbacks when document changes
    * STEP 4: Ensure version increments on every meaningful change
+   * @param force - If true, notify even if text hasn't changed (useful for focus events)
    */
-  private notifyChange(): void {
+  private notifyChange(force: boolean = false): void {
     const element = this.currentElement || this.getFirstEditableElement();
     if (!element) {
       return;
@@ -717,9 +773,11 @@ export class RedditPlatformAdapter implements PlatformAdapter {
     const currentText = extractTextFromElement(element);
     const lastTextForElement = this.lastTextMap.get(element) || "";
 
-    // Only notify if text actually changed for this specific element
-    if (currentText !== lastTextForElement) {
-      this.lastTextMap.set(element, currentText);
+    // Notify if text changed OR if forced (e.g., on focus)
+    if (force || currentText !== lastTextForElement) {
+      if (currentText !== lastTextForElement) {
+        this.lastTextMap.set(element, currentText);
+      }
 
       // Increment version for this element on every meaningful change
       const currentVersion = this.versionMap.get(element) || 0;
