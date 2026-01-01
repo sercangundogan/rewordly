@@ -14,8 +14,16 @@ export class EventContext {
     public readonly boundHandleFocus: (event: Event) => void,
     public readonly boundHandleBlur: (event: Event) => void,
     public readonly scheduledBlurHandlers: Map<HTMLElement, NodeJS.Timeout>,
-    public readonly isPerformingReplace: { get: () => boolean; set: (value: boolean) => void },
-    public readonly isPerformingDismiss: { get: () => boolean; set: (value: boolean) => void }
+    public readonly isPerformingReplace: {
+      get: () => boolean;
+      set: (value: boolean) => void;
+    },
+    public readonly isPerformingDismiss: {
+      get: () => boolean;
+      set: (value: boolean) => void;
+    }
   ) {}
 }
+
+
 

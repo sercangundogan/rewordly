@@ -100,8 +100,4 @@ export {
 } from "./text-replacement-helper";
 
 // Event Handler Helpers
-export {
-  handleInput,
-  handleFocus,
-  handleBlur,
-} from "./event-handler-helper";
+export { handleInput, handleFocus, handleBlur } from "./event-handler-helper";

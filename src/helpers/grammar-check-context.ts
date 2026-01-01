@@ -20,13 +20,24 @@ export class GrammarCheckContext {
       element: HTMLElement;
       priority?: number;
     }>,
-    public readonly isProcessingQueue: { get: () => boolean; set: (value: boolean) => void },
-    public readonly grammarCheckTimeout: { get: () => number | null; set: (value: number | null) => void },
-    public readonly grammarCheckThrottle: { get: () => number | null; set: (value: number | null) => void },
+    public readonly isProcessingQueue: {
+      get: () => boolean;
+      set: (value: boolean) => void;
+    },
+    public readonly grammarCheckTimeout: {
+      get: () => number | null;
+      set: (value: number | null) => void;
+    },
+    public readonly grammarCheckThrottle: {
+      get: () => number | null;
+      set: (value: number | null) => void;
+    },
     public readonly apiUtil: RewordlyAPIUtil,
     public readonly BATCH_SIZE: number,
     public readonly BATCH_DELAY: number,
     public readonly GRAMMAR_CHECK_THROTTLE: number
   ) {}
 }
+
+
 
