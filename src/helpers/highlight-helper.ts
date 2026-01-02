@@ -291,6 +291,11 @@ export class HighlightContainerHelper {
         10
       );
 
+      // Check if highlight is hidden by search - if so, keep it hidden
+      const isHiddenBySearch = (highlight as HTMLElement).hasAttribute(
+        "data-hidden-by-search"
+      );
+
       if (errorId) {
         const error = errors.find((e) => e.id === errorId);
         if (error) {
@@ -301,8 +306,12 @@ export class HighlightContainerHelper {
             (highlight as HTMLElement).style.top = `${rect.top}px`;
             (highlight as HTMLElement).style.width = `${rect.width}px`;
             (highlight as HTMLElement).style.height = `${rect.height}px`;
-            // Ensure highlight is visible
-            (highlight as HTMLElement).style.display = "";
+            // Only show highlight if not hidden by search
+            if (isHiddenBySearch) {
+              (highlight as HTMLElement).style.display = "none";
+            } else {
+              (highlight as HTMLElement).style.display = "";
+            }
             (highlight as HTMLElement).style.opacity = "1";
           } else if (rects.length > 0) {
             // If specific lineIndex rect not found but rects exist, use the last rect
@@ -314,8 +323,12 @@ export class HighlightContainerHelper {
               (highlight as HTMLElement).style.top = `${lastRect.top}px`;
               (highlight as HTMLElement).style.width = `${lastRect.width}px`;
               (highlight as HTMLElement).style.height = `${lastRect.height}px`;
-              // Ensure highlight is visible
-              (highlight as HTMLElement).style.display = "";
+              // Only show highlight if not hidden by search
+              if (isHiddenBySearch) {
+                (highlight as HTMLElement).style.display = "none";
+              } else {
+                (highlight as HTMLElement).style.display = "";
+              }
               (highlight as HTMLElement).style.opacity = "1";
             }
           } else {
@@ -324,9 +337,14 @@ export class HighlightContainerHelper {
             // Don't hide it - it will be updated on next position calculation
             // This is especially important for last-line highlights during replace
             // Force visibility to prevent highlights from disappearing
-            (highlight as HTMLElement).style.display = "";
+            // But respect data-hidden-by-search if set
+            if (isHiddenBySearch) {
+              (highlight as HTMLElement).style.display = "none";
+            } else {
+              (highlight as HTMLElement).style.display = "";
+            }
             (highlight as HTMLElement).style.opacity = "1";
-            // Remove any hidden attributes that might have been set
+            // Remove any hidden attributes that might have been set (except data-hidden-by-search)
             (highlight as HTMLElement).removeAttribute("data-hidden-by-blur");
             (highlight as HTMLElement).removeAttribute("data-hidden-by-modal");
             (highlight as HTMLElement).removeAttribute("data-hidden-by-scroll");
@@ -334,7 +352,12 @@ export class HighlightContainerHelper {
         } else {
           // Error not found in errors array - might be during replace operation
           // Keep highlight visible to prevent flickering
-          (highlight as HTMLElement).style.display = "";
+          // But respect data-hidden-by-search if set
+          if (isHiddenBySearch) {
+            (highlight as HTMLElement).style.display = "none";
+          } else {
+            (highlight as HTMLElement).style.display = "";
+          }
           (highlight as HTMLElement).style.opacity = "1";
         }
       }
@@ -2794,6 +2817,14 @@ export function attachHighlightHoverListener(
         closeTooltip();
         closeAllGrammarTooltips();
 
+        // CRITICAL: Clear ALL selections before replacement
+        // This must be done here, at the click handler level, to ensure
+        // any user selection is cleared before replaceGrammarError is called
+        const selection = window.getSelection();
+        if (selection) {
+          selection.removeAllRanges();
+        }
+
         // Use the error directly from highlight - no need to search in maps
         replaceGrammarError(element, targetError, suggestion);
       });
@@ -3263,11 +3294,30 @@ export function showAllGrammarHighlights(options: {
   if (!highlightsContent) return;
 
   // Show all highlights that were hidden by search
+  // Find all highlights with data-hidden-by-search attribute
   const allHighlights = highlightsContent.querySelectorAll(
     "[data-element-id][data-hidden-by-search]"
   );
   allHighlights.forEach((highlight) => {
     (highlight as HTMLElement).style.display = "";
     (highlight as HTMLElement).removeAttribute("data-hidden-by-search");
+  });
+
+  // Also check for any highlights that might have display: none but no attribute
+  // This handles edge cases where highlights were hidden but attribute wasn't set
+  const allElementHighlights =
+    highlightsContent.querySelectorAll("[data-element-id]");
+  allElementHighlights.forEach((highlight) => {
+    const htmlHighlight = highlight as HTMLElement;
+    // If highlight has display: none but no data-hidden-by-search, show it
+    // (unless it has other hidden attributes like data-hidden-by-blur or data-hidden-by-modal)
+    if (
+      htmlHighlight.style.display === "none" &&
+      !htmlHighlight.hasAttribute("data-hidden-by-search") &&
+      !htmlHighlight.hasAttribute("data-hidden-by-blur") &&
+      !htmlHighlight.hasAttribute("data-hidden-by-modal")
+    ) {
+      htmlHighlight.style.display = "";
+    }
   });
 }

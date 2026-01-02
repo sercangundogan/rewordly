@@ -239,7 +239,24 @@ export class RedditPlatformAdapter implements PlatformAdapter {
           ) {
             // Especially check for class changes (hidden class being added/removed)
             if (mutation.attributeName === "class") {
-              this.checkCommentSearchState();
+              // Directly check if hidden class is present and hide/show highlights immediately
+              const isHidden = target.classList.contains("hidden");
+              if (isHidden && !this.isCommentSearchOpen) {
+                // Search just opened - hide highlights immediately
+                this.isCommentSearchOpen = true;
+                hideAllGrammarHighlights({
+                  highlightHelper: this.highlightHelper,
+                });
+              } else if (!isHidden && this.isCommentSearchOpen) {
+                // Search just closed - show highlights immediately
+                this.isCommentSearchOpen = false;
+                showAllGrammarHighlights({
+                  highlightHelper: this.highlightHelper,
+                });
+              } else {
+                // Fallback to full state check
+                this.checkCommentSearchState();
+              }
             }
           }
 
@@ -272,6 +289,41 @@ export class RedditPlatformAdapter implements PlatformAdapter {
             mutation.attributeName === "hidden" ||
             mutation.attributeName === "aria-expanded"
           ) {
+            // Check if this is related to comment search (check state when hidden/class changes)
+            if (
+              target.tagName?.toLowerCase() === "pdp-comment-search-input" ||
+              target.closest?.("pdp-comment-search-input") ||
+              (target.tagName?.toLowerCase() === "shreddit-async-loader" &&
+                target.getAttribute("bundlename") === "comment_composer") ||
+              target.closest?.(
+                'shreddit-async-loader[bundlename="comment_composer"]'
+              )
+            ) {
+              // Directly check if hidden class is present for shreddit-async-loader
+              if (
+                target.tagName?.toLowerCase() === "shreddit-async-loader" &&
+                target.getAttribute("bundlename") === "comment_composer"
+              ) {
+                const isHidden = target.classList.contains("hidden");
+                if (isHidden && !this.isCommentSearchOpen) {
+                  // Search just opened - hide highlights immediately
+                  this.isCommentSearchOpen = true;
+                  hideAllGrammarHighlights({
+                    highlightHelper: this.highlightHelper,
+                  });
+                } else if (!isHidden && this.isCommentSearchOpen) {
+                  // Search just closed - show highlights immediately
+                  this.isCommentSearchOpen = false;
+                  showAllGrammarHighlights({
+                    highlightHelper: this.highlightHelper,
+                  });
+                }
+              } else {
+                // Fallback to full state check for other elements
+                this.checkCommentSearchState();
+              }
+            }
+
             // Check if this is near the editable element
             if (currentElement) {
               const isNearEditable =
@@ -965,13 +1017,14 @@ export class RedditPlatformAdapter implements PlatformAdapter {
           });
         });
 
-        // Update last text and notify change
-        this.changeEmitter.setLastText(element, currentText);
+        // Notify change BEFORE updating last text so change can be detected
         this.changeEmitter.notifyChange(
           () => this.getFirstEditableElement(),
           extractText,
           getElementId
         );
+        // Update last text after notifying (notifyChange updates it internally, but we ensure it's set)
+        this.changeEmitter.setLastText(element, currentText);
         return; // Early return - we've already handled validation and position updates
       }
     }
@@ -990,14 +1043,14 @@ export class RedditPlatformAdapter implements PlatformAdapter {
       );
     }
 
-    // Update last text
-    this.changeEmitter.setLastText(element, currentText);
-
+    // Notify change BEFORE updating last text so change can be detected
     this.changeEmitter.notifyChange(
       () => this.getFirstEditableElement(),
       extractText,
       getElementId
     );
+    // Update last text after notifying (notifyChange updates it internally, but we ensure it's set)
+    this.changeEmitter.setLastText(element, currentText);
   };
 
   /**
@@ -1087,6 +1140,7 @@ export class RedditPlatformAdapter implements PlatformAdapter {
       'shreddit-async-loader[bundlename="comment_composer"]'
     ) as HTMLElement | null;
 
+    // Primary check: If shreddit-async-loader has 'hidden' class, search is open
     const isSearchOpen =
       commentComposerLoader !== null &&
       commentComposerLoader.classList.contains("hidden");

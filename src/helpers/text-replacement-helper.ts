@@ -29,8 +29,15 @@ export function replaceTextInDraftJS(
     return false;
   }
 
+  // CRITICAL: Clear any existing selection before starting replacement
+  // This prevents replacement from happening at user-selected text locations
+  selection.removeAllRanges();
+
   // Focus the element first to ensure Draft.js is ready
   element.focus();
+
+  // CRITICAL: Clear selection again after focus, as focus might restore a selection
+  selection.removeAllRanges();
 
   // Helper function to attempt replacement with retry
   const attemptReplacement = (retryCount: number = 0): boolean => {
@@ -107,6 +114,30 @@ export function replaceTextInDraftJS(
       try {
         selection.removeAllRanges();
         selection.addRange(range);
+
+        // CRITICAL: Verify selection is set correctly before execCommand
+        // Double-check that we have exactly one range and it's the one we want
+        if (selection.rangeCount !== 1) {
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+
+        // CRITICAL: Verify the range matches what we expect
+        // Check that the selection is actually on the target range, not somewhere else
+        if (selection.rangeCount > 0) {
+          const currentRange = selection.getRangeAt(0);
+          // Compare range boundaries to ensure we're selecting the right text
+          if (
+            currentRange.startContainer !== range.startContainer ||
+            currentRange.startOffset !== range.startOffset ||
+            currentRange.endContainer !== range.endContainer ||
+            currentRange.endOffset !== range.endOffset
+          ) {
+            // Selection doesn't match - reset it
+            selection.removeAllRanges();
+            selection.addRange(range);
+          }
+        }
       } catch (e) {
         if (retryCount < maxRetries) {
           setTimeout(
@@ -117,6 +148,17 @@ export function replaceTextInDraftJS(
         }
         console.error("Rewordly: Could not set selection in Draft.js", e);
         return false;
+      }
+
+      // CRITICAL: Clear ALL selections one more time RIGHT BEFORE execCommand
+      // This is the final safeguard - some editors may restore selections at the last moment
+      selection.removeAllRanges();
+      selection.addRange(range);
+
+      // Final verification - ensure we have exactly the range we want
+      if (selection.rangeCount !== 1) {
+        selection.removeAllRanges();
+        selection.addRange(range);
       }
 
       // Use execCommand('insertText') - this is the most reliable way for Draft.js
@@ -216,6 +258,10 @@ export function replaceTextInContentEditable(
     return;
   }
 
+  // CRITICAL: Clear any existing selection before starting replacement
+  // This prevents replacement from happening at user-selected text locations
+  selection.removeAllRanges();
+
   // Map innerText positions to text node positions
   const mapping = mapInnerTextToTextNodes(element, start, end);
 
@@ -230,6 +276,9 @@ export function replaceTextInContentEditable(
   try {
     // Focus the element first to ensure Lexical is ready
     element.focus();
+
+    // CRITICAL: Clear selection again after focus, as focus might restore a selection
+    selection.removeAllRanges();
 
     // Create range for the text to replace
     const range = document.createRange();
@@ -285,10 +334,75 @@ export function replaceTextInContentEditable(
     selection.removeAllRanges();
     selection.addRange(range);
 
+    // CRITICAL: Verify selection is set correctly before execCommand
+    // Double-check that we have exactly one range and it's the one we want
+    if (selection.rangeCount !== 1) {
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+
+    // CRITICAL: Verify the range matches what we expect
+    // Check that the selection is actually on the target range, not somewhere else
+    if (selection.rangeCount > 0) {
+      const currentRange = selection.getRangeAt(0);
+      // Compare range boundaries to ensure we're selecting the right text
+      if (
+        currentRange.startContainer !== range.startContainer ||
+        currentRange.startOffset !== range.startOffset ||
+        currentRange.endContainer !== range.endContainer ||
+        currentRange.endOffset !== range.endOffset
+      ) {
+        // Selection doesn't match - reset it
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+    }
+
     if (useExecCommand) {
+      // CRITICAL: Clear ALL selections in the entire document before execCommand
+      // This is the key fix - we must clear selections everywhere, not just in our element
+      const allSelections = document.getSelection();
+      if (allSelections) {
+        allSelections.removeAllRanges();
+      }
+
+      // Also clear selection in any iframes that might be present
+      try {
+        const iframes = document.querySelectorAll("iframe");
+        iframes.forEach((iframe) => {
+          try {
+            const iframeDoc =
+              iframe.contentDocument || iframe.contentWindow?.document;
+            if (iframeDoc) {
+              const iframeSelection = iframeDoc.getSelection();
+              if (iframeSelection) {
+                iframeSelection.removeAllRanges();
+              }
+            }
+          } catch (e) {
+            // Cross-origin iframe - ignore
+          }
+        });
+      } catch (e) {
+        // Ignore iframe errors
+      }
+
+      // Now set ONLY our target range
+      selection.removeAllRanges();
+      selection.addRange(range);
+
+      // Final verification - ensure we have exactly the range we want
+      if (selection.rangeCount !== 1) {
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+
       // Use execCommand to replace text - this ensures Lexical's internal state is updated correctly
       // Lexical listens to execCommand and updates its internal state accordingly
       const success = document.execCommand("insertText", false, replacement);
+
+      // CRITICAL: Immediately clear selection after execCommand to prevent any side effects
+      selection.removeAllRanges();
 
       if (!success) {
         // Fallback: try using beforeinput/input events
@@ -386,6 +500,40 @@ export function replaceGrammarError(
 
   // Close all tooltips before replacement
   closeAllGrammarTooltips();
+
+  // CRITICAL: Clear any existing text selection before replacement
+  // This prevents replacement from happening at both the highlight location AND any user-selected text
+  // Clear ALL selections in the document, not just the current one
+  const selection = window.getSelection();
+  if (selection) {
+    selection.removeAllRanges();
+  }
+
+  // CRITICAL: Also try to clear Lexical's internal selection if it exists
+  // Lexical may maintain its own selection state that we need to clear
+  try {
+    // Check if Lexical's selection API is available
+    const lexicalEditor = (element as any).__lexicalEditor;
+    if (lexicalEditor) {
+      const lexicalState = lexicalEditor.getEditorState();
+      if (lexicalState && lexicalState._selection) {
+        // Try to clear Lexical's selection by setting it to null
+        lexicalEditor.update(() => {
+          const root = lexicalEditor.getRootElement();
+          if (root) {
+            root.focus();
+          }
+        });
+      }
+    }
+  } catch (e) {
+    // Lexical API not available or error - ignore
+  }
+
+  // CRITICAL: Force clear selection one more time after potential Lexical operations
+  if (selection) {
+    selection.removeAllRanges();
+  }
 
   // Get current errors for position updates
   const currentErrors = grammarErrors.get(element) || [];
@@ -498,9 +646,7 @@ export function replaceGrammarError(
 
     const text = element.value;
     const newText =
-      text.substring(0, actualStart) +
-      replacement +
-      text.substring(actualEnd);
+      text.substring(0, actualStart) + replacement + text.substring(actualEnd);
     const replacementLength = replacement.length;
     const originalLength = actualEnd - actualStart;
     const lengthDiff = replacementLength - originalLength;
@@ -567,7 +713,7 @@ export function replaceGrammarError(
           (error: GrammarError) =>
             getErrorTextRects(element, error.start, error.end)
         );
-        
+
         // Additional update after a short delay to catch any delayed DOM changes
         setTimeout(() => {
           highlightHelper.updatePositions(
@@ -706,7 +852,7 @@ export function replaceGrammarError(
             (error: GrammarError) =>
               getErrorTextRects(element, error.start, error.end)
           );
-          
+
           // Second update after a delay to catch any delayed DOM changes
           setTimeout(() => {
             highlightHelper.updatePositions(
@@ -942,12 +1088,22 @@ export function replaceGrammarError(
         // Use an async IIFE to handle the async operations
         (async () => {
           try {
+            // CRITICAL: Clear any existing selection before starting replacement
+            const initialSelection = window.getSelection();
+            if (initialSelection) {
+              initialSelection.removeAllRanges();
+            }
+
             // Focus the element first
             element.focus();
 
+            // CRITICAL: Clear selection again after focus, as focus might restore a selection
+            if (initialSelection) {
+              initialSelection.removeAllRanges();
+            }
+
             // Get current text to validate positions
-            const currentText =
-              element.innerText || element.textContent || "";
+            const currentText = element.innerText || element.textContent || "";
             if (
               actualStart < 0 ||
               actualEnd > currentText.length ||
@@ -971,6 +1127,9 @@ export function replaceGrammarError(
               return;
             }
 
+            // CRITICAL: Ensure selection is clear before proceeding
+            selection.removeAllRanges();
+
             // Map innerText positions to text node positions
             const mapping = mapInnerTextToTextNodes(
               element,
@@ -991,10 +1150,7 @@ export function replaceGrammarError(
 
             // Set range start
             const startNodeLength = mapping.startNode.textContent!.length;
-            const startOffset = Math.min(
-              mapping.startOffset,
-              startNodeLength
-            );
+            const startOffset = Math.min(mapping.startOffset, startNodeLength);
             range.setStart(mapping.startNode, startOffset);
 
             // Set range end
@@ -1010,6 +1166,13 @@ export function replaceGrammarError(
             // Select the text first - this is important for Slate.js
             selection.removeAllRanges();
             selection.addRange(range);
+
+            // CRITICAL: Verify selection is set correctly
+            // Double-check that we have exactly one range and it's the one we want
+            if (selection.rangeCount !== 1) {
+              selection.removeAllRanges();
+              selection.addRange(range);
+            }
 
             // Wait a bit for Slate.js to recognize the selection
             await new Promise((resolve) => setTimeout(resolve, 20));
@@ -1291,8 +1454,7 @@ export function replaceGrammarError(
               );
 
               // Cancel blur handlers
-              const existingBlurTimeout =
-                scheduledBlurHandlers.get(element);
+              const existingBlurTimeout = scheduledBlurHandlers.get(element);
               if (existingBlurTimeout) {
                 clearTimeout(existingBlurTimeout);
                 scheduledBlurHandlers.delete(element);
@@ -1375,12 +1537,22 @@ export function replaceGrammarError(
         // Use an async IIFE to handle the async operations
         (async () => {
           try {
+            // CRITICAL: Clear any existing selection before starting replacement
+            const initialSelection = window.getSelection();
+            if (initialSelection) {
+              initialSelection.removeAllRanges();
+            }
+
             // Focus the element first
             element.focus();
 
+            // CRITICAL: Clear selection again after focus, as focus might restore a selection
+            if (initialSelection) {
+              initialSelection.removeAllRanges();
+            }
+
             // Get current text to validate positions
-            const currentText =
-              element.innerText || element.textContent || "";
+            const currentText = element.innerText || element.textContent || "";
             if (
               actualStart < 0 ||
               actualEnd > currentText.length ||
@@ -1404,6 +1576,9 @@ export function replaceGrammarError(
               return;
             }
 
+            // CRITICAL: Ensure selection is clear before proceeding
+            selection.removeAllRanges();
+
             // For Notion, we need to create a range that spans the correct text nodes
             // Notion's DOM has nested spans, so we need to be careful
             const range = document.createRange();
@@ -1425,10 +1600,7 @@ export function replaceGrammarError(
 
             // Set range start
             const startNodeLength = mapping.startNode.textContent!.length;
-            const startOffset = Math.min(
-              mapping.startOffset,
-              startNodeLength
-            );
+            const startOffset = Math.min(mapping.startOffset, startNodeLength);
             range.setStart(mapping.startNode, startOffset);
 
             // Set range end
@@ -1445,17 +1617,20 @@ export function replaceGrammarError(
             selection.removeAllRanges();
             selection.addRange(range);
 
+            // CRITICAL: Verify selection is set correctly before execCommand
+            // Double-check that we have exactly one range and it's the one we want
+            if (selection.rangeCount !== 1) {
+              selection.removeAllRanges();
+              selection.addRange(range);
+            }
+
             // Wait a bit for Notion to recognize the selection
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             // Try execCommand first (some browsers still support it)
             let success = false;
             try {
-              success = document.execCommand(
-                "insertText",
-                false,
-                replacement
-              );
+              success = document.execCommand("insertText", false, replacement);
             } catch (e) {
               // execCommand might fail, use fallback
               success = false;
@@ -1519,14 +1694,11 @@ export function replaceGrammarError(
             (compositionStartEvent as any).__rewordlyProgrammatic = true;
             element.dispatchEvent(compositionStartEvent);
 
-            const compositionEndEvent = new CompositionEvent(
-              "compositionend",
-              {
-                bubbles: true,
-                cancelable: true,
-                data: replacement,
-              }
-            );
+            const compositionEndEvent = new CompositionEvent("compositionend", {
+              bubbles: true,
+              cancelable: true,
+              data: replacement,
+            });
             (compositionEndEvent as any).__rewordlyProgrammatic = true;
             element.dispatchEvent(compositionEndEvent);
 
@@ -1584,8 +1756,7 @@ export function replaceGrammarError(
               );
 
               // Cancel blur handlers
-              const existingBlurTimeout =
-                scheduledBlurHandlers.get(element);
+              const existingBlurTimeout = scheduledBlurHandlers.get(element);
               if (existingBlurTimeout) {
                 clearTimeout(existingBlurTimeout);
                 scheduledBlurHandlers.delete(element);
@@ -1642,6 +1813,10 @@ export function replaceGrammarError(
           isPerformingReplace.set(false);
           return;
         }
+
+        // CRITICAL: Clear any existing selection before starting replacement
+        // This prevents replacement from happening at user-selected text locations
+        selection.removeAllRanges();
 
         // Get current text to validate positions
         const currentText = element.innerText || element.textContent || "";
@@ -1743,6 +1918,13 @@ export function replaceGrammarError(
           selection.removeAllRanges();
           selection.addRange(range);
 
+          // CRITICAL: Verify selection is set correctly
+          // Double-check that we have exactly one range and it's the one we want
+          if (selection.rangeCount !== 1) {
+            selection.removeAllRanges();
+            selection.addRange(range);
+          }
+
           // Replace selected text
           range.deleteContents();
           const textNode = document.createTextNode(replacement);
@@ -1791,9 +1973,9 @@ export function replaceGrammarError(
               `[data-element-id="${elementId}"]`
             );
             highlights.forEach((highlight) => {
-              const highlightErrorId = (
-                highlight as HTMLElement
-              ).getAttribute("data-error-id");
+              const highlightErrorId = (highlight as HTMLElement).getAttribute(
+                "data-error-id"
+              );
               if (!highlightErrorId) return;
 
               // Find the updated error by ID
