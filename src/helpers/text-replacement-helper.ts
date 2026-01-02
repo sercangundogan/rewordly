@@ -180,12 +180,61 @@ export function replaceTextAtRange(
           target.normalize();
 
           // Set caret position
+          // After normalize(), the textNode might be merged, so we calculate position from text content
           const newRange = document.createRange();
-          newRange.setStartAfter(textNode);
-          newRange.collapse(true);
+          try {
+            // Calculate cursor position from text content (start + replacement length)
+            const cursorPosition = start + replacement.length;
+            const cursorMapping = mapInnerTextToTextNodes(
+              target,
+              cursorPosition,
+              cursorPosition
+            );
+
+            if (
+              cursorMapping &&
+              cursorMapping.startNode &&
+              isNodeInDocument(cursorMapping.startNode)
+            ) {
+              newRange.setStart(
+                cursorMapping.startNode,
+                Math.min(
+                  cursorMapping.startOffset,
+                  cursorMapping.startNode.textContent!.length
+                )
+              );
+              newRange.collapse(true);
+            } else {
+              // Fallback: set to end of target
+              newRange.selectNodeContents(target);
+              newRange.collapse(false);
+            }
+          } catch (e) {
+            // If all else fails, set cursor to end of target
+            try {
+              newRange.selectNodeContents(target);
+              newRange.collapse(false);
+            } catch (e2) {
+              // If even that fails, just focus the element
+              console.warn(
+                "Rewordly: Could not set cursor position after replacement",
+                e2
+              );
+            }
+          }
+
           if (selection) {
-            selection.removeAllRanges();
-            selection.addRange(newRange);
+            try {
+              selection.removeAllRanges();
+              selection.addRange(newRange);
+            } catch (e) {
+              // Range is invalid, just focus the element
+              console.warn(
+                "Rewordly: Could not set selection after replacement",
+                e
+              );
+              target.focus();
+            }
           }
 
           // Trigger input event
