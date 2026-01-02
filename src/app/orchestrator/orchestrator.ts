@@ -23,6 +23,12 @@ import {
 import { DocumentSnapshot, Issue, DebugEvent } from "../../core/contracts";
 import { globalEventBuffer } from "../debug/eventBuffer";
 import { removeInvisibleCharacters } from "../../core/text";
+import {
+  HighlightAnchor,
+  remapAnchors,
+  mergeAnchorsWithIssues,
+  anchorsToIssues,
+} from "../../core/highlights/anchors";
 
 /**
  * Options for creating an orchestrator
@@ -49,6 +55,10 @@ export class Orchestrator {
   private lastSnapshotVersion: number = -1;
   private isProcessing: boolean = false;
   private staleDiscardCount: number = 0; // Track how many stale results were discarded
+
+  // Anchor state for highlight stability
+  private lastSnapshotText: string = "";
+  private currentAnchors: Map<string, HighlightAnchor> = new Map();
 
   private readonly debounceMs: number;
   private readonly minTextLength: number;
@@ -113,6 +123,7 @@ export class Orchestrator {
   /**
    * Handle document change
    * Debounced to avoid excessive grammar checks
+   * STEP 3: Remap anchors immediately on change (before grammar check)
    */
   private handleChange(snapshot: DocumentSnapshot): void {
     // Skip if already processing
@@ -135,6 +146,69 @@ export class Orchestrator {
       snapshotVersion: snapshot.version,
       textLength: snapshot.text.length,
     });
+
+    // STEP 3: Remap anchors immediately if we have existing anchors and text changed
+    if (
+      this.currentAnchors.size > 0 &&
+      this.lastSnapshotText !== snapshot.text
+    ) {
+      const cleanedText = removeInvisibleCharacters(snapshot.text);
+      const cleanedLastText = removeInvisibleCharacters(this.lastSnapshotText);
+
+      if (cleanedLastText !== cleanedText) {
+        // Remap anchors to new text positions
+        const remapResult = remapAnchors(
+          cleanedLastText,
+          cleanedText,
+          this.currentAnchors
+        );
+
+        // Update last snapshot text
+        this.lastSnapshotText = cleanedText;
+
+        // Emit remapping debug event
+        this.emitDebugEvent("anchors_remapped", {
+          snapshotVersion: snapshot.version,
+          kept: remapResult.kept.length,
+          updated: remapResult.updated.length,
+          removed: remapResult.removed.length,
+          contextRelocated: remapResult.contextRelocated,
+        });
+
+        // Remove invalidated anchors
+        for (const removed of remapResult.removed) {
+          this.currentAnchors.delete(removed.id);
+        }
+
+        // If we have valid anchors after remapping, render them immediately
+        // This provides instant feedback while grammar check is in progress
+        if (this.currentAnchors.size > 0) {
+          const remappedIssues = anchorsToIssues(
+            this.currentAnchors,
+            snapshot.version
+          );
+
+          if (remappedIssues.length > 0) {
+            this.adapter.renderIssues(remappedIssues, snapshot.version);
+
+            this.emitDebugEvent("highlights_rendered", {
+              snapshotVersion: snapshot.version,
+              issueCount: remappedIssues.length,
+              source: "anchor_remap",
+            });
+          }
+        } else {
+          // All anchors were invalidated
+          this.emitDebugEvent("anchors_invalidated", {
+            snapshotVersion: snapshot.version,
+            count: remapResult.removed.length,
+          });
+        }
+      }
+    } else if (this.lastSnapshotText === "") {
+      // First snapshot - initialize
+      this.lastSnapshotText = removeInvisibleCharacters(snapshot.text);
+    }
 
     // Debounce the grammar check
     this.debounceTimeout = window.setTimeout(() => {
@@ -175,6 +249,11 @@ export class Orchestrator {
         ...snapshot,
         text: cleanedText,
       };
+
+      // Update last snapshot text if not already updated in handleChange
+      if (this.lastSnapshotText !== cleanedText) {
+        this.lastSnapshotText = cleanedText;
+      }
 
       // Emit grammar check started event
       this.emitDebugEvent("grammar_check_started", {
@@ -227,14 +306,29 @@ export class Orchestrator {
         timeSpent,
       });
 
-      // Only render valid issues
-      if (validIssues.length > 0) {
-        this.adapter.renderIssues(validIssues, snapshot.version);
+      // STEP 3: Merge new issues with existing anchors
+      // This updates existing anchors and creates new ones
+      mergeAnchorsWithIssues(
+        this.currentAnchors,
+        validIssues,
+        cleanedText,
+        snapshot.version
+      );
+
+      // Convert anchors to issues for rendering
+      const finalIssues = anchorsToIssues(
+        this.currentAnchors,
+        snapshot.version
+      );
+
+      // Render final set of issues (includes remapped + new)
+      if (finalIssues.length > 0) {
+        this.adapter.renderIssues(finalIssues, snapshot.version);
 
         // Emit render issues event
         this.emitDebugEvent("render_issues", {
           snapshotVersion: snapshot.version,
-          issueCount: validIssues.length,
+          issueCount: finalIssues.length,
         });
       }
 

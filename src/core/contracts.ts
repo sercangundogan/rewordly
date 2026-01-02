@@ -167,6 +167,8 @@ export interface DebugEvent {
     | "stale_issues_discarded"
     | "highlights_rendered"
     | "change_applied"
+    | "anchors_remapped"
+    | "anchors_invalidated"
     | "error";
 
   /** Event data */

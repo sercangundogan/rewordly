@@ -184,17 +184,12 @@ export class RedditPlatformAdapter implements PlatformAdapter {
             this.currentElement = editableElement;
             this.changeEmitter.setCurrentElement(editableElement);
 
-            // Immediately validate and remove invalid highlights when text changes
-            if (this.grammarErrors.has(editableElement)) {
-              validateAndRemoveInvalidHighlights(
-                editableElement,
-                this.highlightHelper.getContent(),
-                this.grammarErrors,
-                extractText,
-                getElementId,
-                false // isPerformingReplace
-              );
-            }
+            // STEP 4: Skip aggressive validation - anchor system handles remapping
+            // The orchestrator will remap anchors immediately on change, so we don't need
+            // to validate and remove highlights here. This prevents highlights from
+            // disappearing before the anchor remapping happens.
+            // validateAndRemoveInvalidHighlights is now only called during replace operations
+            // where it's needed to prevent stale highlights.
 
             this.changeEmitter.notifyChange(
               () => this.getFirstEditableElement(),
@@ -528,6 +523,10 @@ export class RedditPlatformAdapter implements PlatformAdapter {
   /**
    * Render issues on the document
    * Maps platform-agnostic issues to DOM highlights
+   *
+   * STEP 4: With anchor system, issues already have remapped positions.
+   * The displayGrammarErrors function will reuse existing highlights by issue.id
+   * and update their positions instead of recreating them.
    */
   renderIssues(issues: Issue[], _snapshotVersion: number): void {
     const element = this.currentElement || this.getFirstEditableElement();

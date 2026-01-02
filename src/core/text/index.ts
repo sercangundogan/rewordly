@@ -11,3 +11,12 @@ export {
   normalizeLineBreaks,
   removeInvisibleCharacters,
 } from "./normalize";
+
+export {
+  mapOffset,
+  mapRange,
+  computeDiffSummary,
+  type OffsetMapping,
+  type RangeMapping,
+  type DiffSummary,
+} from "./diff";
