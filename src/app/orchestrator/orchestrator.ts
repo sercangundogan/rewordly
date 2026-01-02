@@ -59,6 +59,7 @@ export class Orchestrator {
   // Anchor state for highlight stability
   private lastSnapshotText: string = "";
   private currentAnchors: Map<string, HighlightAnchor> = new Map();
+  private lastElementId: string | undefined = undefined;
 
   private readonly debounceMs: number;
   private readonly minTextLength: number;
@@ -121,6 +122,18 @@ export class Orchestrator {
   }
 
   /**
+   * Clear all anchors (useful when page changes)
+   */
+  clearAnchors(): void {
+    this.currentAnchors.clear();
+    this.lastSnapshotText = "";
+    this.lastSnapshotVersion = -1;
+    this.emitDebugEvent("anchors_cleared", {
+      message: "All anchors cleared due to page change",
+    });
+  }
+
+  /**
    * Handle document change
    * Debounced to avoid excessive grammar checks
    * STEP 3: Remap anchors immediately on change (before grammar check)
@@ -146,6 +159,28 @@ export class Orchestrator {
       snapshotVersion: snapshot.version,
       textLength: snapshot.text.length,
     });
+
+    // Check if element ID changed (indicates page navigation)
+    const currentElementId = snapshot.meta?.elementId;
+    if (
+      currentElementId !== undefined &&
+      currentElementId !== this.lastElementId
+    ) {
+      // Element ID changed - this means we're on a different page/element
+      // Clear all anchors since they're for a different element
+      if (this.currentAnchors.size > 0) {
+        this.currentAnchors.clear();
+        this.emitDebugEvent("anchors_cleared", {
+          message: "Anchors cleared due to element ID change",
+          oldElementId: this.lastElementId,
+          newElementId: currentElementId,
+        });
+      }
+      this.lastElementId = currentElementId;
+      this.lastSnapshotText = ""; // Reset to force fresh anchor creation
+    } else if (currentElementId !== undefined) {
+      this.lastElementId = currentElementId;
+    }
 
     // STEP 3: Remap anchors immediately if we have existing anchors and text changed
     if (

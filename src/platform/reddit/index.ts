@@ -26,7 +26,6 @@ import {
 } from "../../helpers/element-helper";
 import {
   displayGrammarErrors,
-  clearAllGrammarErrors,
   HighlightContainerHelper,
   createHighlight as createHighlightHelper,
   attachHighlightHoverListener as attachHighlightHoverListenerHelper,
@@ -67,6 +66,8 @@ export class RedditPlatformAdapter implements PlatformAdapter {
   private resizeObservers: Map<HTMLElement, ResizeObserver> = new Map();
   private isCommentSearchOpen: boolean = false;
   private isPerformingReplace: boolean = false; // Flag to track replace operations
+  private currentUrl: string = "";
+  private urlCheckInterval: number | null = null;
 
   constructor() {
     this.changeEmitter = new ChangeEmitter(this.platform);
@@ -456,6 +457,9 @@ export class RedditPlatformAdapter implements PlatformAdapter {
     // Check for existing text in editable elements and trigger initial check
     this.checkExistingTextAndNotify();
 
+    // Set up URL change detection for SPA navigation
+    this.setupUrlChangeDetection();
+
     this.isInitialized = true;
   }
 
@@ -472,6 +476,9 @@ export class RedditPlatformAdapter implements PlatformAdapter {
 
     // Remove event listeners
     this.removeInputListeners();
+
+    // Remove URL change detection
+    this.removeUrlChangeDetection();
 
     // Cleanup change emitter
     this.changeEmitter.cleanup();
@@ -498,6 +505,7 @@ export class RedditPlatformAdapter implements PlatformAdapter {
     this.currentElement = null;
     this.changeEmitter.setCurrentElement(null);
     this.isInitialized = false;
+    this.currentUrl = "";
   }
 
   /**
@@ -738,13 +746,24 @@ export class RedditPlatformAdapter implements PlatformAdapter {
    * Clear all rendered issues
    */
   clearIssues(): void {
-    const element = this.currentElement || this.getFirstEditableElement();
-    if (element) {
-      clearAllGrammarErrors({
-        grammarErrors: new Map(),
-        clearGrammarErrors: () => {},
+    // Clear all highlights from the highlight helper
+    const highlightsContent = this.highlightHelper.getContent();
+    if (highlightsContent) {
+      const allHighlights =
+        highlightsContent.querySelectorAll("[data-element-id]");
+      allHighlights.forEach((highlight) => {
+        highlight.remove();
       });
     }
+
+    // Clear all grammar errors
+    this.grammarErrors.clear();
+    this.dismissedErrors.clear();
+
+    // Clear tracked elements in highlight helper
+    this.highlightHelper.cleanup();
+    // Recreate the highlight helper container
+    this.highlightHelper = new HighlightContainerHelper();
   }
 
   // Private helper methods
@@ -1161,4 +1180,71 @@ export class RedditPlatformAdapter implements PlatformAdapter {
       }
     }
   }
+
+  /**
+   * Set up URL change detection for Reddit SPA navigation
+   * Reddit uses client-side routing, so we need to detect URL changes
+   */
+  private setupUrlChangeDetection(): void {
+    // Initialize current URL
+    this.currentUrl = window.location.href;
+
+    // Listen for popstate events (browser back/forward)
+    window.addEventListener("popstate", this.handleUrlChange);
+
+    // Monitor URL changes via interval (for programmatic navigation)
+    // Reddit uses pushState/replaceState which doesn't trigger popstate
+    this.urlCheckInterval = window.setInterval(() => {
+      const newUrl = window.location.href;
+      if (newUrl !== this.currentUrl) {
+        this.handleUrlChange();
+      }
+    }, 500); // Check every 500ms
+  }
+
+  /**
+   * Remove URL change detection
+   */
+  private removeUrlChangeDetection(): void {
+    window.removeEventListener("popstate", this.handleUrlChange);
+    if (this.urlCheckInterval !== null) {
+      clearInterval(this.urlCheckInterval);
+      this.urlCheckInterval = null;
+    }
+  }
+
+  /**
+   * Handle URL change - clear all highlights and reset state
+   */
+  private handleUrlChange = (): void => {
+    const newUrl = window.location.href;
+
+    // Only clear if URL actually changed (not just a hash change within same page)
+    const currentPath = new URL(this.currentUrl).pathname;
+    const newPath = new URL(newUrl).pathname;
+
+    if (currentPath !== newPath) {
+      console.log("Rewordly: Reddit page changed, clearing highlights");
+
+      // Clear all highlights
+      this.clearIssues();
+
+      // Reset element tracking
+      this.editableElements.clear();
+      this.currentElement = null;
+      this.changeEmitter.setCurrentElement(null);
+
+      // Update current URL
+      this.currentUrl = newUrl;
+
+      // Re-find editable elements for the new page
+      // Small delay to ensure DOM is ready
+      setTimeout(() => {
+        this.findAndAttachToEditableElements();
+      }, 100);
+    } else {
+      // Just update URL (hash change or query param change)
+      this.currentUrl = newUrl;
+    }
+  };
 }

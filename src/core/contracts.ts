@@ -169,6 +169,7 @@ export interface DebugEvent {
     | "change_applied"
     | "anchors_remapped"
     | "anchors_invalidated"
+    | "anchors_cleared"
     | "error";
 
   /** Event data */
