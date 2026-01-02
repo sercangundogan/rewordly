@@ -556,15 +556,28 @@ export function replaceGrammarError(
     }
 
     // Update highlight positions after DOM has updated (for proper text wrapping calculation)
-    // Use requestAnimationFrame to ensure text wrapping is recalculated after replace
+    // Use multiple requestAnimationFrame calls to ensure text wrapping is recalculated after replace
     // This will also update data-error attributes again, ensuring consistency
+    // IMPORTANT: Use multiple delayed updates to ensure DOM has fully settled, especially for last-line highlights
     requestAnimationFrame(() => {
-      highlightHelper.updatePositions(
-        element,
-        updatedErrorsAfterReplace,
-        (error: GrammarError) =>
-          getErrorTextRects(element, error.start, error.end)
-      );
+      requestAnimationFrame(() => {
+        highlightHelper.updatePositions(
+          element,
+          updatedErrorsAfterReplace,
+          (error: GrammarError) =>
+            getErrorTextRects(element, error.start, error.end)
+        );
+        
+        // Additional update after a short delay to catch any delayed DOM changes
+        setTimeout(() => {
+          highlightHelper.updatePositions(
+            element,
+            updatedErrorsAfterReplace,
+            (error: GrammarError) =>
+              getErrorTextRects(element, error.start, error.end)
+          );
+        }, 100);
+      });
     });
 
     // Cancel any scheduled blur handlers for this element
@@ -684,13 +697,25 @@ export function replaceGrammarError(
 
         // Wait for Lexical to update its DOM before repositioning highlights
         // Also keep flag true longer to catch any input events triggered by execCommand
+        // Use multiple delayed updates to ensure DOM has fully settled
         setTimeout(() => {
+          // First update attempt - DOM might still be updating
           highlightHelper.updatePositions(
             element,
             updatedErrorsAfterReplace,
             (error: GrammarError) =>
               getErrorTextRects(element, error.start, error.end)
           );
+          
+          // Second update after a delay to catch any delayed DOM changes
+          setTimeout(() => {
+            highlightHelper.updatePositions(
+              element,
+              updatedErrorsAfterReplace,
+              (error: GrammarError) =>
+                getErrorTextRects(element, error.start, error.end)
+            );
+          }, 100);
 
           // Cancel any scheduled blur handlers for this element
           const existingBlurTimeout = scheduledBlurHandlers.get(element);

@@ -301,7 +301,41 @@ export class HighlightContainerHelper {
             (highlight as HTMLElement).style.top = `${rect.top}px`;
             (highlight as HTMLElement).style.width = `${rect.width}px`;
             (highlight as HTMLElement).style.height = `${rect.height}px`;
+            // Ensure highlight is visible
+            (highlight as HTMLElement).style.display = "";
+            (highlight as HTMLElement).style.opacity = "1";
+          } else if (rects.length > 0) {
+            // If specific lineIndex rect not found but rects exist, use the last rect
+            // This prevents highlights from disappearing during replace operations
+            // when DOM is temporarily in an inconsistent state
+            const lastRect = rects[rects.length - 1];
+            if (lastRect) {
+              (highlight as HTMLElement).style.left = `${lastRect.left}px`;
+              (highlight as HTMLElement).style.top = `${lastRect.top}px`;
+              (highlight as HTMLElement).style.width = `${lastRect.width}px`;
+              (highlight as HTMLElement).style.height = `${lastRect.height}px`;
+              // Ensure highlight is visible
+              (highlight as HTMLElement).style.display = "";
+              (highlight as HTMLElement).style.opacity = "1";
+            }
+          } else {
+            // If no rects found at all (e.g., during replace when DOM is updating),
+            // keep the highlight visible with current position
+            // Don't hide it - it will be updated on next position calculation
+            // This is especially important for last-line highlights during replace
+            // Force visibility to prevent highlights from disappearing
+            (highlight as HTMLElement).style.display = "";
+            (highlight as HTMLElement).style.opacity = "1";
+            // Remove any hidden attributes that might have been set
+            (highlight as HTMLElement).removeAttribute("data-hidden-by-blur");
+            (highlight as HTMLElement).removeAttribute("data-hidden-by-modal");
+            (highlight as HTMLElement).removeAttribute("data-hidden-by-scroll");
           }
+        } else {
+          // Error not found in errors array - might be during replace operation
+          // Keep highlight visible to prevent flickering
+          (highlight as HTMLElement).style.display = "";
+          (highlight as HTMLElement).style.opacity = "1";
         }
       }
     });
@@ -1448,17 +1482,10 @@ export function validateAndRemoveInvalidHighlights(
     return;
   }
 
-  // Normalize DOM text the same way it's normalized before sending to API
-  const normalizeTextForAPI = (text: string): string => {
-    return text
-      .replace(/\r\n/g, "\n") // Normalize line breaks
-      .replace(/\r/g, "\n")
-      .replace(/\n/g, "") // Remove all newlines (API receives text without newlines)
-      .replace(/[ \t]+/g, " ") // Collapse multiple spaces/tabs to single space
-      .trim();
-  };
-
-  const normalizedText = normalizeTextForAPI(text);
+  // Clean text the same way as orchestrator (only remove invisible characters)
+  // This ensures positions match - newlines and whitespace are preserved
+  // Orchestrator uses removeInvisibleCharacters, so we use the same here
+  const cleanedText = removeInvisibleCharacters(text);
 
   const elementId = getElementId(element);
   const highlights = highlightsContent.querySelectorAll(
@@ -1475,10 +1502,10 @@ export function validateAndRemoveInvalidHighlights(
     try {
       const error: GrammarError = JSON.parse(errorData);
 
-      // Check if error position is still valid (against normalized text)
+      // Check if error position is still valid (against cleaned text - same as orchestrator)
       if (
         error.start < 0 ||
-        error.end > normalizedText.length ||
+        error.end > cleanedText.length ||
         error.start >= error.end
       ) {
         // Position out of bounds, remove highlight
@@ -1492,15 +1519,6 @@ export function validateAndRemoveInvalidHighlights(
         highlight.remove();
         return;
       }
-
-      // Clean text the same way as orchestrator
-      const cleanText = (text: string): string => {
-        return text
-          .replace(/[\u200B-\u200D\uFEFF]/g, "") // Zero-width spaces
-          .replace(/\u00A0/g, " "); // Non-breaking space -> regular space
-      };
-
-      const cleanedText = cleanText(text);
 
       // Compare in cleaned text space (API positions reference cleaned text which matches DOM)
       const errorWord = cleanedText.substring(error.start, error.end);
@@ -1521,13 +1539,7 @@ export function validateAndRemoveInvalidHighlights(
 
   // Update stored errors - remove invalid ones
   // Use cleaned text for validation (API positions are based on cleaned text)
-  const cleanText = (text: string): string => {
-    return text
-      .replace(/[\u200B-\u200D\uFEFF]/g, "") // Zero-width spaces, zero-width joiner/non-joiner, BOM
-      .replace(/\u00A0/g, " "); // Non-breaking space -> regular space
-  };
-
-  const cleanedText = cleanText(text);
+  // cleanedText is already defined above using removeInvisibleCharacters
 
   const validErrors = currentErrors.filter((error) => {
     if (
@@ -1955,33 +1967,129 @@ export function displayGrammarErrors(
     let existingHighlight = existingErrorMap.get(error.id);
 
     // If not found by ID, try to match by position and word (for cases where API returns new IDs after replace)
+    // Also try fuzzy matching for cases where position changed slightly (e.g., after replace)
     if (
       !existingHighlight &&
       error.start !== undefined &&
       error.end !== undefined &&
       error.word
     ) {
+      // First try exact position match
       const positionKey = `${error.start}-${error.end}-${error.word
         .toLowerCase()
         .trim()}`;
       existingHighlight = existingErrorByPositionMap.get(positionKey);
 
-      // If found by position, update the error ID in the highlight to match the new error
+      // If not found, try fuzzy matching: check if any existing highlight has similar position and word
+      // This handles cases where replace operation changed the position slightly
+      if (!existingHighlight) {
+        const errorWordLower = error.word.toLowerCase().trim();
+        const errorLength = error.end - error.start;
+
+        // Check all existing highlights for fuzzy match
+        existingHighlights.forEach((highlight) => {
+          const errorData = (highlight as HTMLElement).getAttribute(
+            "data-error"
+          );
+          if (!errorData) return;
+
+          try {
+            const highlightError: GrammarError = JSON.parse(errorData);
+            if (
+              highlightError.start !== undefined &&
+              highlightError.end !== undefined &&
+              highlightError.word
+            ) {
+              const highlightWordLower = highlightError.word
+                .toLowerCase()
+                .trim();
+              const highlightLength = highlightError.end - highlightError.start;
+
+              // Check if positions are close (±10 characters for replace operations) and words are similar
+              // This handles cases like "sharingg" -> "sharing" where position changes after replace
+              const positionDiff = Math.abs(highlightError.start - error.start);
+              const lengthDiff = Math.abs(highlightLength - errorLength);
+              const endDiff = Math.abs(highlightError.end - error.end);
+
+              // Words are similar if one contains the other or they're very close
+              // For replace operations, be more lenient with word matching
+              const wordsSimilar =
+                errorWordLower === highlightWordLower ||
+                errorWordLower.includes(highlightWordLower) ||
+                highlightWordLower.includes(errorWordLower) ||
+                (errorWordLower.length > 3 &&
+                  highlightWordLower.length > 3 &&
+                  Math.abs(errorWordLower.length - highlightWordLower.length) <=
+                    3 &&
+                  // Check if they share a common prefix (for cases like "sharingg" -> "sharing")
+                  (errorWordLower.substring(
+                    0,
+                    Math.min(
+                      4,
+                      errorWordLower.length,
+                      highlightWordLower.length
+                    )
+                  ) ===
+                    highlightWordLower.substring(
+                      0,
+                      Math.min(
+                        4,
+                        errorWordLower.length,
+                        highlightWordLower.length
+                      )
+                    ) ||
+                    errorWordLower.substring(
+                      0,
+                      Math.min(
+                        6,
+                        errorWordLower.length,
+                        highlightWordLower.length
+                      )
+                    ) ===
+                      highlightWordLower.substring(
+                        0,
+                        Math.min(
+                          6,
+                          errorWordLower.length,
+                          highlightWordLower.length
+                        )
+                      )));
+
+              // Match if position is close (within 10 chars for replace operations) and words are similar
+              // Be more lenient for replace operations where positions can shift
+              if (
+                positionDiff <= 10 &&
+                lengthDiff <= 5 &&
+                wordsSimilar &&
+                endDiff <= 10
+              ) {
+                existingHighlight = highlight as HTMLElement;
+                return; // Break out of forEach
+              }
+            }
+          } catch (e) {
+            // Error parsing, skip
+          }
+        });
+      }
+
+      // If found by position (exact or fuzzy), update the error ID in the highlight to match the new error
       if (existingHighlight) {
         // Update error ID in all highlights for this position
         const highlightsContentForUpdate = highlightHelper.getContent();
         if (highlightsContentForUpdate) {
-          const allHighlightsForPosition = Array.from(
-            highlightsContentForUpdate.querySelectorAll(
-              `[data-element-id="${elementId}"][data-error-id="${existingHighlight.getAttribute(
-                "data-error-id"
-              )}"]`
-            )
-          ) as HTMLElement[];
-          allHighlightsForPosition.forEach((h) => {
-            h.setAttribute("data-error-id", error.id);
-            h.setAttribute("data-error", JSON.stringify(error));
-          });
+          const oldErrorId = existingHighlight.getAttribute("data-error-id");
+          if (oldErrorId) {
+            const allHighlightsForPosition = Array.from(
+              highlightsContentForUpdate.querySelectorAll(
+                `[data-element-id="${elementId}"][data-error-id="${oldErrorId}"]`
+              )
+            ) as HTMLElement[];
+            allHighlightsForPosition.forEach((h) => {
+              h.setAttribute("data-error-id", error.id);
+              h.setAttribute("data-error", JSON.stringify(error));
+            });
+          }
         }
         // Update the map to reflect the new ID
         existingErrorMap.set(error.id, existingHighlight);
@@ -2070,18 +2178,23 @@ export function displayGrammarErrors(
             highlight.style.height = `${highlightRect.height}px`;
             highlight.style.opacity = "1";
             highlight.style.overflow = "visible";
+            highlight.style.display = ""; // Ensure visible
 
             const highlightsContentForAppend = highlightHelper.getContent();
             if (highlightsContentForAppend) {
               highlightsContentForAppend.appendChild(highlight);
             }
+          } else {
+            // Existing highlight found - update position smoothly without removing
+            highlight.style.top = `${highlightRect.top}px`;
+            highlight.style.left = `${highlightRect.left}px`;
+            highlight.style.width = `${highlightRect.width}px`;
+            highlight.style.height = `${highlightRect.height}px`;
+            highlight.style.display = ""; // Ensure visible
+            highlight.style.opacity = "1"; // Ensure visible
           }
 
-          // Update position and size
-          highlight.style.top = `${highlightRect.top}px`;
-          highlight.style.left = `${highlightRect.left}px`;
-          highlight.style.width = `${highlightRect.width}px`;
-          highlight.style.height = `${highlightRect.height}px`;
+          // Update error data
           highlight.setAttribute("data-error", JSON.stringify(error));
           highlight.setAttribute("data-error-index", index.toString());
         });
@@ -2113,6 +2226,22 @@ export function displayGrammarErrors(
         });
 
         // Remove extra highlights if rect count decreased
+        // BUT: For errors near the end of text, be more conservative - don't remove highlights
+        // if they might be the last line (text wrapping can change after replace)
+        let currentText = "";
+        if (
+          element instanceof HTMLInputElement ||
+          element instanceof HTMLTextAreaElement
+        ) {
+          currentText = element.value;
+        } else if (
+          element.getAttribute("contenteditable") === "true" ||
+          element.isContentEditable
+        ) {
+          currentText = element.innerText || element.textContent || "";
+        }
+        const isNearEndOfText = error.end >= currentText.length - 20; // Within last 20 chars
+
         const finalErrorHighlights = Array.from(
           highlightsContentForUpdate.querySelectorAll(
             `[data-element-id="${getElementId(element)}"][data-error-id="${
@@ -2126,13 +2255,46 @@ export function displayGrammarErrors(
             highlight.getAttribute("data-line-index") || "0",
             10
           );
-          if (lineIndex >= highlightRects.length) {
+          // Only remove if rect count decreased AND not near end of text
+          // For end-of-text highlights, keep them even if rect count changed (text wrapping might have changed)
+          // IMPORTANT: During replace operations, be extra conservative - don't remove any highlights
+          // that might be valid after DOM settles
+          if (
+            lineIndex >= highlightRects.length &&
+            !isNearEndOfText &&
+            !isPerformingReplace
+          ) {
             highlight.remove();
+          } else if (
+            lineIndex >= highlightRects.length &&
+            (isNearEndOfText || isPerformingReplace)
+          ) {
+            // For end-of-text highlights OR during replace operations, try to keep them but update position if possible
+            // Use the last available rect if exists
+            if (highlightRects.length > 0) {
+              const lastRect = highlightRects[highlightRects.length - 1];
+              if (lastRect) {
+                highlight.style.top = `${lastRect.top}px`;
+                highlight.style.left = `${lastRect.left}px`;
+                highlight.style.width = `${lastRect.width}px`;
+                highlight.style.height = `${lastRect.height}px`;
+                highlight.style.display = "";
+                highlight.style.opacity = "1";
+              }
+            } else {
+              // If no rects available during replace, keep the highlight visible with current position
+              // Don't hide it - it will be updated on next position calculation after DOM settles
+              highlight.style.display = "";
+              highlight.style.opacity = "1";
+            }
+            // If no rects available, keep the highlight anyway (don't remove it)
+            // It will be updated on next position calculation
           }
         });
       } else {
-        // Position calculation failed - for Draft.js (Twitter), keep the highlight
+        // Position calculation failed - keep the highlight visible
         // It will be updated on the next position update after DOM settles
+        // This is especially important during replace operations when DOM is updating
         console.warn(
           "Rewordly: Could not calculate position for existing error:",
           error.id
@@ -2140,6 +2302,33 @@ export function displayGrammarErrors(
         // Update error data anyway
         existingHighlight.setAttribute("data-error", JSON.stringify(error));
         existingHighlight.setAttribute("data-error-index", index.toString());
+        // Ensure highlight remains visible even if position calculation failed
+        // This prevents highlights from disappearing during replace operations
+        existingHighlight.style.display = "";
+        existingHighlight.style.opacity = "1";
+        // Remove any hidden attributes
+        existingHighlight.removeAttribute("data-hidden-by-blur");
+        existingHighlight.removeAttribute("data-hidden-by-modal");
+        existingHighlight.removeAttribute("data-hidden-by-scroll");
+
+        // Also ensure all highlights for this error remain visible
+        const highlightsContentForVisibility = highlightHelper.getContent();
+        if (highlightsContentForVisibility) {
+          const allErrorHighlights = Array.from(
+            highlightsContentForVisibility.querySelectorAll(
+              `[data-element-id="${getElementId(element)}"][data-error-id="${
+                error.id
+              }"]`
+            )
+          ) as HTMLElement[];
+          allErrorHighlights.forEach((h) => {
+            h.style.display = "";
+            h.style.opacity = "1";
+            h.removeAttribute("data-hidden-by-blur");
+            h.removeAttribute("data-hidden-by-modal");
+            h.removeAttribute("data-hidden-by-scroll");
+          });
+        }
       }
 
       // If element has text, ensure highlight is visible (even if not focused)
@@ -2163,9 +2352,117 @@ export function displayGrammarErrors(
         existingHighlight.removeAttribute("data-hidden-by-blur");
       }
     } else {
-      // New error or error position changed, create new highlight with animation
-      // Use highlightError which has DOM positions mapped from normalized positions
-      createHighlight(element, highlightError, index, true);
+      // New error or error position changed significantly
+      // Try one more time to find by word similarity and nearby position (for replace operations)
+      let foundByWord = false;
+      if (error.word) {
+        const errorWordLower = error.word.toLowerCase().trim();
+        existingHighlights.forEach((highlight) => {
+          if (foundByWord) return; // Already found
+          const errorData = (highlight as HTMLElement).getAttribute(
+            "data-error"
+          );
+          if (!errorData) return;
+          try {
+            const highlightError: GrammarError = JSON.parse(errorData);
+            if (
+              highlightError.word &&
+              highlightError.start !== undefined &&
+              highlightError.end !== undefined
+            ) {
+              const highlightWordLower = highlightError.word
+                .toLowerCase()
+                .trim();
+              // Check if words are similar (one contains the other or very close)
+              const wordsSimilar =
+                errorWordLower === highlightWordLower ||
+                errorWordLower.includes(errorWordLower) ||
+                errorWordLower.includes(highlightWordLower) ||
+                (errorWordLower.length > 3 &&
+                  highlightWordLower.length > 3 &&
+                  Math.abs(errorWordLower.length - highlightWordLower.length) <=
+                    2 &&
+                  errorWordLower.substring(
+                    0,
+                    Math.min(errorWordLower.length, highlightWordLower.length)
+                  ) ===
+                    highlightWordLower.substring(
+                      0,
+                      Math.min(errorWordLower.length, highlightWordLower.length)
+                    ));
+
+              // Check if position is nearby (within 10 characters)
+              const positionDiff = Math.abs(highlightError.start - error.start);
+
+              if (wordsSimilar && positionDiff <= 10) {
+                // Found similar error - update it instead of creating new
+                foundByWord = true;
+                const highlightsContentForUpdate = highlightHelper.getContent();
+                if (highlightsContentForUpdate) {
+                  const oldErrorId = highlightError.id;
+                  if (oldErrorId) {
+                    const allHighlightsForError = Array.from(
+                      highlightsContentForUpdate.querySelectorAll(
+                        `[data-element-id="${elementId}"][data-error-id="${oldErrorId}"]`
+                      )
+                    ) as HTMLElement[];
+                    allHighlightsForError.forEach((h) => {
+                      h.setAttribute("data-error-id", error.id);
+                      h.setAttribute("data-error", JSON.stringify(error));
+                    });
+                  }
+                }
+                // Update position using updatePositions
+                const highlightsContentForUpdate2 =
+                  highlightHelper.getContent();
+                if (highlightsContentForUpdate2) {
+                  const highlightRects = getErrorTextRects(
+                    element,
+                    error.start,
+                    error.end
+                  );
+                  if (highlightRects.length > 0) {
+                    const errorHighlights = Array.from(
+                      highlightsContentForUpdate2.querySelectorAll(
+                        `[data-element-id="${getElementId(
+                          element
+                        )}"][data-error-id="${error.id}"]`
+                      )
+                    ) as HTMLElement[];
+                    highlightRects.forEach((rect, lineIndex) => {
+                      let highlight = errorHighlights.find(
+                        (h) =>
+                          h.getAttribute("data-line-index") ===
+                          lineIndex.toString()
+                      );
+                      if (highlight) {
+                        highlight.style.top = `${rect.top}px`;
+                        highlight.style.left = `${rect.left}px`;
+                        highlight.style.width = `${rect.width}px`;
+                        highlight.style.height = `${rect.height}px`;
+                        highlight.style.display = "";
+                        highlight.style.opacity = "1";
+                      } else if (lineIndex === 0) {
+                        // Create new highlight for first line if doesn't exist
+                        createHighlight(element, error, index, false);
+                      }
+                    });
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            // Error parsing, skip
+          }
+        });
+      }
+
+      // Only create new highlight if not found by word similarity
+      if (!foundByWord) {
+        // New error or error position changed, create new highlight with animation
+        // Use highlightError which has DOM positions mapped from normalized positions
+        createHighlight(element, highlightError, index, true);
+      }
     }
   });
 

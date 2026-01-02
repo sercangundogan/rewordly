@@ -894,8 +894,104 @@ export class RedditPlatformAdapter implements PlatformAdapter {
 
     this.currentElement = element;
 
+    // Get current and previous text to detect changes
+    const { text: currentText } = extractText(element);
+    const previousText = this.lastTextMap.get(element) || "";
+
+    // If text changed and we have errors, update their positions
+    if (currentText !== previousText && this.grammarErrors.has(element)) {
+      const errors = this.grammarErrors.get(element) || [];
+
+      if (errors.length > 0) {
+        // Calculate where the change occurred by finding the first difference
+        const changePosition = this.findChangePosition(
+          previousText,
+          currentText
+        );
+        const lengthDiff = currentText.length - previousText.length;
+
+        // Update error positions based on the change
+        const updatedErrors = errors.map((error) => {
+          // If error is after the change position, adjust its position
+          if (error.start >= changePosition) {
+            return {
+              ...error,
+              start: Math.max(0, error.start + lengthDiff),
+              end: Math.max(0, error.end + lengthDiff),
+            };
+          }
+          // If error overlaps with the change position, it might be invalid
+          // (validateAndRemoveInvalidHighlights will handle this)
+          return error;
+        });
+
+        // Update grammar errors with new positions
+        this.grammarErrors.set(element, updatedErrors);
+
+        // Immediately update highlight data-error attributes to reflect new positions
+        // This must be done BEFORE validateAndRemoveInvalidHighlights so it uses updated positions
+        const highlightsContent = this.highlightHelper.getContent();
+        if (highlightsContent) {
+          const elementId = getElementId(element);
+          const highlights = highlightsContent.querySelectorAll(
+            `[data-element-id="${elementId}"]`
+          );
+          highlights.forEach((highlight) => {
+            const errorId = (highlight as HTMLElement).getAttribute(
+              "data-error-id"
+            );
+            if (errorId) {
+              const updatedError = updatedErrors.find((e) => e.id === errorId);
+              if (updatedError) {
+                (highlight as HTMLElement).setAttribute(
+                  "data-error",
+                  JSON.stringify(updatedError)
+                );
+              }
+            }
+          });
+        }
+
+        // Now validate with updated positions - this will only remove highlights where the word changed
+        // (not where only position changed, since we've already updated data-error attributes)
+        validateAndRemoveInvalidHighlights(
+          element,
+          this.highlightHelper.getContent(),
+          this.grammarErrors,
+          extractText,
+          getElementId,
+          this.isPerformingReplace
+        );
+
+        // Immediately update highlight positions to reflect the new error positions
+        // Use requestAnimationFrame to ensure DOM has updated
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            if (this.grammarErrors.has(element)) {
+              const currentErrors = this.grammarErrors.get(element) || [];
+              if (currentErrors.length > 0) {
+                // Update highlight positions with new positions
+                this.highlightHelper.updatePositions(
+                  element,
+                  currentErrors,
+                  (error: GrammarError) =>
+                    getErrorTextRects(element, error.start, error.end)
+                );
+              }
+            }
+          });
+        });
+
+        // Update last text and notify change
+        this.lastTextMap.set(element, currentText);
+        this.notifyChange();
+        return; // Early return - we've already handled validation and position updates
+      }
+    }
+
     // Validate and remove invalid highlights when text changes
     // This ensures highlights for changed words are removed immediately
+    // BUT: Only if we haven't already updated positions above (text didn't change or no errors)
     if (this.grammarErrors.has(element)) {
       validateAndRemoveInvalidHighlights(
         element,
@@ -906,6 +1002,9 @@ export class RedditPlatformAdapter implements PlatformAdapter {
         this.isPerformingReplace
       );
     }
+
+    // Update last text
+    this.lastTextMap.set(element, currentText);
 
     this.notifyChange();
   };
@@ -993,6 +1092,27 @@ export class RedditPlatformAdapter implements PlatformAdapter {
       return null;
     }
     return Array.from(this.editableElements)[0] || null;
+  }
+
+  /**
+   * Find the position where text changed between oldText and newText
+   * Returns the position of the first difference
+   */
+  private findChangePosition(oldText: string, newText: string): number {
+    // Find the first position where texts differ
+    const minLength = Math.min(oldText.length, newText.length);
+    let changePosition = minLength;
+
+    for (let i = 0; i < minLength; i++) {
+      if (oldText[i] !== newText[i]) {
+        changePosition = i;
+        break;
+      }
+    }
+
+    // If texts are identical up to minLength, change is at the end
+    // (either insertion or deletion)
+    return changePosition;
   }
 
   /**
