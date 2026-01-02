@@ -77,8 +77,8 @@ export function mapOffset(
 
   // Find common suffix (after prefix)
   let suffixLength = 0;
-  const oldSuffixStart = oldText.length - suffixLength;
-  const newSuffixStart = newText.length - suffixLength;
+  //   const oldSuffixStart = oldText.length - suffixLength;
+  //   const newSuffixStart = newText.length - suffixLength;
 
   while (
     suffixLength < oldText.length - prefixLength &&
