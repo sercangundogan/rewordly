@@ -14,6 +14,209 @@ import { closeAllGrammarTooltips } from "./highlight-helper";
 import { HighlightContainerHelper } from "./highlight-helper";
 
 /**
+ * Replace text at a specific range in any editable element
+ * This is the new, robust replacement method that does NOT use execCommand
+ *
+ * @param target - The editable element (input, textarea, or contenteditable)
+ * @param start - Start position in innerText/textContent
+ * @param end - End position in innerText/textContent
+ * @param replacement - The replacement text
+ * @returns true if replacement succeeded, false otherwise
+ */
+export function replaceTextAtRange(
+  target: HTMLElement,
+  start: number,
+  end: number,
+  replacement: string
+): boolean {
+  const elementId = getElementId(target);
+
+  // Get current text for debug logging
+  let currentText = "";
+  if (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement
+  ) {
+    currentText = target.value;
+  } else {
+    currentText = target.innerText || target.textContent || "";
+  }
+
+  const oldTextSlice = currentText.substring(
+    Math.max(0, start - 10),
+    Math.min(currentText.length, end + 10)
+  );
+
+  // Validate positions
+  if (start < 0 || end > currentText.length || start >= end) {
+    console.error("Rewordly: Invalid range for replacement", {
+      elementId,
+      start,
+      end,
+      textLength: currentText.length,
+    });
+    return false;
+  }
+
+  // Wrap in requestAnimationFrame to ensure selection is stable
+  requestAnimationFrame(() => {
+    try {
+      // Clear all selections first
+      const selection = window.getSelection();
+      if (selection) {
+        selection.removeAllRanges();
+      }
+
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement
+      ) {
+        // For input/textarea: use setRangeText (most reliable)
+        try {
+          target.setRangeText(replacement, start, end, "end");
+
+          // Trigger input event
+          const inputEvent = new Event("input", { bubbles: true });
+          (inputEvent as any).__rewordlyProgrammatic = true;
+          target.dispatchEvent(inputEvent);
+
+          // Set focus and cursor position
+          target.focus();
+          const newCursorPos = start + replacement.length;
+          target.setSelectionRange(newCursorPos, newCursorPos);
+
+          console.log("Rewordly: Replacement successful (input/textarea)", {
+            elementId,
+            start,
+            end,
+            oldTextSlice,
+            newTextSlice: replacement,
+          });
+        } catch (err) {
+          console.error("Rewordly: setRangeText failed", { elementId, err });
+        }
+      } else if (
+        target.getAttribute("contenteditable") === "true" ||
+        target.isContentEditable
+      ) {
+        // For contenteditable: use Range API
+        const mapping = mapInnerTextToTextNodes(target, start, end);
+
+        if (!mapping || !mapping.startNode) {
+          console.error("Rewordly: Could not map positions to text nodes", {
+            elementId,
+            start,
+            end,
+          });
+          return;
+        }
+
+        // Create range
+        const range = document.createRange();
+        const startNodeLength = mapping.startNode.textContent!.length;
+
+        if (mapping.endNode && mapping.startNode !== mapping.endNode) {
+          // Spans multiple nodes
+          const endNodeLength = mapping.endNode.textContent!.length;
+          range.setStart(
+            mapping.startNode,
+            Math.min(mapping.startOffset, startNodeLength)
+          );
+          range.setEnd(
+            mapping.endNode,
+            Math.min(mapping.endOffset, endNodeLength)
+          );
+        } else {
+          // Single node
+          range.setStart(
+            mapping.startNode,
+            Math.min(mapping.startOffset, startNodeLength)
+          );
+          range.setEnd(
+            mapping.startNode,
+            Math.min(mapping.endOffset, startNodeLength)
+          );
+        }
+
+        // Try modern editor approach first: dispatch beforeinput event
+        const beforeInputEvent = new InputEvent("beforeinput", {
+          bubbles: true,
+          cancelable: true,
+          inputType: "insertText",
+          data: replacement,
+        });
+
+        // Add getTargetRanges for modern editors (Lexical, etc.)
+        (beforeInputEvent as any).getTargetRanges = () => [range.cloneRange()];
+        (beforeInputEvent as any).__rewordlyProgrammatic = true;
+
+        const cancelled = !target.dispatchEvent(beforeInputEvent);
+
+        if (!cancelled) {
+          // Editor didn't handle it, do manual replacement
+          // Clear selection first
+          if (selection) {
+            selection.removeAllRanges();
+            selection.addRange(range);
+          }
+
+          // Delete and insert
+          range.deleteContents();
+          const textNode = document.createTextNode(replacement);
+          range.insertNode(textNode);
+
+          // Normalize to merge adjacent text nodes
+          target.normalize();
+
+          // Set caret position
+          const newRange = document.createRange();
+          newRange.setStartAfter(textNode);
+          newRange.collapse(true);
+          if (selection) {
+            selection.removeAllRanges();
+            selection.addRange(newRange);
+          }
+
+          // Trigger input event
+          const inputEvent = new InputEvent("input", {
+            bubbles: true,
+            cancelable: false,
+            inputType: "insertText",
+            data: replacement,
+          });
+          (inputEvent as any).__rewordlyProgrammatic = true;
+          target.dispatchEvent(inputEvent);
+        }
+
+        // Clear selection after replacement
+        if (selection) {
+          selection.removeAllRanges();
+        }
+
+        console.log("Rewordly: Replacement successful (contenteditable)", {
+          elementId,
+          start,
+          end,
+          oldTextSlice,
+          newTextSlice: replacement,
+        });
+      } else {
+        console.error("Rewordly: Element is not editable", { elementId });
+      }
+    } catch (err) {
+      console.error("Rewordly: Error in replaceTextAtRange", {
+        elementId,
+        start,
+        end,
+        err,
+      });
+    }
+  });
+
+  return true;
+}
+
+/**
  * Replace text in Draft.js editor (Twitter)
  * Uses execCommand for reliable text replacement that Draft.js recognizes
  */
@@ -361,9 +564,13 @@ export function replaceTextInContentEditable(
     if (useExecCommand) {
       // CRITICAL: Clear ALL selections in the entire document before execCommand
       // This is the key fix - we must clear selections everywhere, not just in our element
-      const allSelections = document.getSelection();
-      if (allSelections) {
-        allSelections.removeAllRanges();
+      // Do this multiple times to ensure it sticks
+      for (let i = 0; i < 3; i++) {
+        const allSelections = document.getSelection();
+        console.log("All selections", allSelections);
+        if (allSelections) {
+          allSelections.removeAllRanges();
+        }
       }
 
       // Also clear selection in any iframes that might be present
@@ -387,12 +594,37 @@ export function replaceTextInContentEditable(
         // Ignore iframe errors
       }
 
-      // Now set ONLY our target range
-      selection.removeAllRanges();
-      selection.addRange(range);
+      // Now set ONLY our target range - do this multiple times to ensure it sticks
+      for (let i = 0; i < 3; i++) {
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
 
-      // Final verification - ensure we have exactly the range we want
+      // CRITICAL: Final verification - ensure we have exactly the range we want
+      // and that it matches our target range
       if (selection.rangeCount !== 1) {
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+
+      // CRITICAL: Verify the range is actually our target range
+      // Check that no other selection exists
+      if (selection.rangeCount > 0) {
+        const currentRange = selection.getRangeAt(0);
+        if (
+          currentRange.startContainer !== range.startContainer ||
+          currentRange.startOffset !== range.startOffset ||
+          currentRange.endContainer !== range.endContainer ||
+          currentRange.endOffset !== range.endOffset
+        ) {
+          // Selection doesn't match - reset it one more time
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+      }
+
+      // CRITICAL: One final check - if there are multiple ranges, clear all and set only ours
+      if (selection.rangeCount > 1) {
         selection.removeAllRanges();
         selection.addRange(range);
       }
@@ -403,6 +635,43 @@ export function replaceTextInContentEditable(
 
       // CRITICAL: Immediately clear selection after execCommand to prevent any side effects
       selection.removeAllRanges();
+
+      if (!success) {
+        // Fallback: try using beforeinput/input events
+        console.warn("Rewordly: execCommand failed, trying fallback method");
+
+        // Delete the selected content first
+        range.deleteContents();
+
+        // Insert the replacement text
+        const textNode = document.createTextNode(replacement);
+        range.insertNode(textNode);
+
+        // Move cursor after the inserted text
+        range.setStartAfter(textNode);
+        range.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(range);
+
+        // Trigger input events to notify editor
+        const beforeInputEvent = new InputEvent("beforeinput", {
+          bubbles: true,
+          cancelable: true,
+          inputType: "insertText",
+          data: replacement,
+        });
+        (beforeInputEvent as any).__rewordlyProgrammatic = true;
+        element.dispatchEvent(beforeInputEvent);
+
+        const inputEvent = new InputEvent("input", {
+          bubbles: true,
+          cancelable: false,
+          inputType: "insertText",
+          data: replacement,
+        });
+        (inputEvent as any).__rewordlyProgrammatic = true;
+        element.dispatchEvent(inputEvent);
+      }
 
       if (!success) {
         // Fallback: try using beforeinput/input events
@@ -640,18 +909,31 @@ export function replaceGrammarError(
     element instanceof HTMLInputElement ||
     element instanceof HTMLTextAreaElement
   ) {
-    // For input/textarea
+    // For input/textarea - use replaceTextAtRange (no execCommand)
     // Set flag to prevent blur handler from hiding highlights during replace
     isPerformingReplace.set(true);
 
-    const text = element.value;
-    const newText =
-      text.substring(0, actualStart) + replacement + text.substring(actualEnd);
+    // Use the new replaceTextAtRange function
+    const success = replaceTextAtRange(
+      element,
+      actualStart,
+      actualEnd,
+      replacement
+    );
+
+    if (!success) {
+      console.error("Rewordly: replaceTextAtRange failed for input/textarea", {
+        elementId: getElementId(element),
+        start: actualStart,
+        end: actualEnd,
+      });
+      isPerformingReplace.set(false);
+      return;
+    }
+
     const replacementLength = replacement.length;
     const originalLength = actualEnd - actualStart;
     const lengthDiff = replacementLength - originalLength;
-
-    element.value = newText;
 
     // Update error positions for remaining errors (they may have shifted)
     const updatedErrorsAfterReplace = updatedErrors.map((err) => {
@@ -777,19 +1059,28 @@ export function replaceGrammarError(
       element.closest(".DraftEditor-root") !== null;
 
     if (isLexical) {
-      // For Lexical editors (Reddit), use execCommand to maintain editor state
-      // This simulates user typing, which Lexical handles correctly
+      // For Lexical editors (Reddit), use replaceTextAtRange (no execCommand)
+      // This uses beforeinput events which Lexical handles correctly
       isPerformingReplace.set(true);
 
       try {
-        // Use execCommand('insertText') which is safest for Lexical
-        replaceTextInContentEditable(
+        // Use the new replaceTextAtRange function (no execCommand)
+        const success = replaceTextAtRange(
           element,
           actualStart,
           actualEnd,
-          replacement,
-          true
+          replacement
         );
+
+        if (!success) {
+          console.error("Rewordly: replaceTextAtRange failed for Lexical", {
+            elementId: getElementId(element),
+            start: actualStart,
+            end: actualEnd,
+          });
+          isPerformingReplace.set(false);
+          return;
+        }
 
         // Calculate length difference for position adjustment
         const replacementLength = replacement.length;
@@ -910,8 +1201,8 @@ export function replaceGrammarError(
       // Store original text for verification
       const originalText = element.innerText || element.textContent || "";
 
-      // For Draft.js editors (Twitter), use execCommand-based replacement
-      const replaceSuccess = replaceTextInDraftJS(
+      // For Draft.js editors (Twitter), use replaceTextAtRange (no execCommand)
+      const replaceSuccess = replaceTextAtRange(
         element,
         actualStart,
         actualEnd,
@@ -919,7 +1210,11 @@ export function replaceGrammarError(
       );
 
       if (!replaceSuccess) {
-        console.error("Rewordly: Failed to replace text in Draft.js");
+        console.error("Rewordly: Failed to replace text in Draft.js", {
+          elementId: getElementId(element),
+          start: actualStart,
+          end: actualEnd,
+        });
         isPerformingReplace.set(false);
         return; // Don't update highlights if replace failed
       }
@@ -1804,264 +2099,140 @@ export function replaceGrammarError(
         // Return early since we're handling everything in the async IIFE
         return;
       } else {
-        // For regular contenteditable
+        // For regular contenteditable - use replaceTextAtRange (no execCommand)
         // Set flag to prevent blur handler from hiding highlights during replace
         isPerformingReplace.set(true);
 
-        const selection = window.getSelection();
-        if (!selection) {
-          isPerformingReplace.set(false);
-          return;
-        }
-
-        // CRITICAL: Clear any existing selection before starting replacement
-        // This prevents replacement from happening at user-selected text locations
-        selection.removeAllRanges();
-
-        // Get current text to validate positions
-        const currentText = element.innerText || element.textContent || "";
-        if (
-          actualStart < 0 ||
-          actualEnd > currentText.length ||
-          actualStart >= actualEnd
-        ) {
-          console.error("Rewordly: Invalid positions for replacement", {
-            start: actualStart,
-            end: actualEnd,
-            textLength: currentText.length,
-            currentErrors: grammarErrors.get(element),
-          });
-          isPerformingReplace.set(false);
-          return;
-        }
-
-        // Map innerText positions to text node positions
-        const mapping = mapInnerTextToTextNodes(
+        // Use the new replaceTextAtRange function
+        const success = replaceTextAtRange(
           element,
           actualStart,
-          actualEnd
+          actualEnd,
+          replacement
         );
 
-        if (!mapping || !mapping.startNode) {
+        if (!success) {
           console.error(
-            "Rewordly: Could not map innerText positions to text nodes",
+            "Rewordly: replaceTextAtRange failed for contenteditable",
             {
+              elementId: getElementId(element),
               start: actualStart,
               end: actualEnd,
-              textLength: currentText.length,
-              innerText: currentText.substring(
-                Math.max(0, actualStart - 10),
-                Math.min(currentText.length, actualEnd + 10)
-              ),
             }
           );
           isPerformingReplace.set(false);
           return;
         }
 
-        try {
-          const range = document.createRange();
+        // Calculate length difference for position adjustment
+        const replacementLength = replacement.length;
+        const originalLength = actualEnd - actualStart;
+        const lengthDiff = replacementLength - originalLength;
 
-          // Validate positions
-          const startNodeLength = mapping.startNode.textContent!.length;
-          if (
-            mapping.startOffset < 0 ||
-            mapping.startOffset > startNodeLength
-          ) {
-            console.error("Rewordly: Invalid start offset in text node", {
-              startOffset: mapping.startOffset,
-              nodeLength: startNodeLength,
-              globalStart: actualStart,
-            });
-            return;
+        // Update stored errors - adjust positions but keep IDs intact
+        const updatedErrorsAfterReplace = updatedErrors.map((err) => {
+          // If error is after the replaced text, adjust its position (keep ID!)
+          if (err.start > actualEnd) {
+            return {
+              ...err,
+              start: err.start + lengthDiff,
+              end: err.end + lengthDiff,
+            };
           }
+          // If error overlaps with replaced text, it's already removed
+          return err;
+        });
+        grammarErrors.set(element, updatedErrorsAfterReplace);
 
-          if (mapping.endNode && mapping.startNode !== mapping.endNode) {
-            // Error spans multiple text nodes
-            const endNodeLength = mapping.endNode.textContent!.length;
-            if (mapping.endOffset < 0 || mapping.endOffset > endNodeLength) {
-              console.error("Rewordly: Invalid end offset in text node", {
-                endOffset: mapping.endOffset,
-                nodeLength: endNodeLength,
-                globalEnd: actualEnd,
-              });
-              return;
-            }
-
-            range.setStart(
-              mapping.startNode,
-              Math.min(mapping.startOffset, startNodeLength)
+        // Update all highlight data-error attributes with new positions - match by ID
+        if (highlightsContent) {
+          const elementId = getElementId(element);
+          const highlights = highlightsContent.querySelectorAll(
+            `[data-element-id="${elementId}"]`
+          );
+          highlights.forEach((highlight) => {
+            const highlightErrorId = (highlight as HTMLElement).getAttribute(
+              "data-error-id"
             );
-            range.setEnd(
-              mapping.endNode,
-              Math.min(mapping.endOffset, endNodeLength)
+            if (!highlightErrorId) return;
+
+            // Find the updated error by ID
+            const updatedError = updatedErrorsAfterReplace.find(
+              (err) => err.id === highlightErrorId
             );
-          } else {
-            // Error is within a single text node
-            const endPos = mapping.endOffset;
 
-            if (endPos > startNodeLength) {
-              console.error("Rewordly: Invalid end position in text node", {
-                startOffset: mapping.startOffset,
-                endPos,
-                nodeLength: startNodeLength,
-                globalStart: actualStart,
-                globalEnd: actualEnd,
-              });
-              return;
-            }
-
-            range.setStart(mapping.startNode, mapping.startOffset);
-            range.setEnd(mapping.startNode, endPos);
-          }
-
-          selection.removeAllRanges();
-          selection.addRange(range);
-
-          // CRITICAL: Verify selection is set correctly
-          // Double-check that we have exactly one range and it's the one we want
-          if (selection.rangeCount !== 1) {
-            selection.removeAllRanges();
-            selection.addRange(range);
-          }
-
-          // Replace selected text
-          range.deleteContents();
-          const textNode = document.createTextNode(replacement);
-          range.insertNode(textNode);
-
-          // Clear selection
-          selection.removeAllRanges();
-
-          // Trigger multiple events to ensure contenteditable picks it up
-          const events = ["beforeinput", "input", "textInput"];
-          events.forEach((eventType) => {
-            const event = new Event(eventType, {
-              bubbles: true,
-              cancelable: true,
-            });
-            (event as any).data = replacement;
-            // Mark as programmatic to prevent handleInput from processing it
-            (event as any).__rewordlyProgrammatic = true;
-            element.dispatchEvent(event);
-          });
-
-          // Calculate length difference for position adjustment
-          const replacementLength = replacement.length;
-          const originalLength = actualEnd - actualStart;
-          const lengthDiff = replacementLength - originalLength;
-
-          // Update stored errors - adjust positions but keep IDs intact
-          const updatedErrorsAfterReplace = updatedErrors.map((err) => {
-            // If error is after the replaced text, adjust its position (keep ID!)
-            if (err.start > actualEnd) {
-              return {
-                ...err,
-                start: err.start + lengthDiff,
-                end: err.end + lengthDiff,
-              };
-            }
-            // If error overlaps with replaced text, it's already removed
-            return err;
-          });
-          grammarErrors.set(element, updatedErrorsAfterReplace);
-
-          // Update all highlight data-error attributes with new positions - match by ID
-          if (highlightsContent) {
-            const elementId = getElementId(element);
-            const highlights = highlightsContent.querySelectorAll(
-              `[data-element-id="${elementId}"]`
-            );
-            highlights.forEach((highlight) => {
-              const highlightErrorId = (highlight as HTMLElement).getAttribute(
-                "data-error-id"
+            if (updatedError) {
+              // Update data-error attribute with new positions (ID remains the same)
+              (highlight as HTMLElement).setAttribute(
+                "data-error",
+                JSON.stringify(updatedError)
               );
-              if (!highlightErrorId) return;
-
-              // Find the updated error by ID
-              const updatedError = updatedErrorsAfterReplace.find(
-                (err) => err.id === highlightErrorId
-              );
-
-              if (updatedError) {
-                // Update data-error attribute with new positions (ID remains the same)
-                (highlight as HTMLElement).setAttribute(
-                  "data-error",
-                  JSON.stringify(updatedError)
-                );
-              } else {
-                // This error was removed
-                highlight.remove();
-              }
-            });
-          }
-
-          // Update highlight positions after DOM has updated (for proper text wrapping calculation)
-          // Use requestAnimationFrame to ensure text wrapping is recalculated after replace
-          requestAnimationFrame(() => {
-            highlightHelper.updatePositions(
-              element,
-              updatedErrorsAfterReplace,
-              (error: GrammarError) =>
-                getErrorTextRects(element, error.start, error.end)
-            );
+            } else {
+              // This error was removed
+              highlight.remove();
+            }
           });
+        }
 
-          // Cancel any scheduled blur handlers for this element
-          const existingBlurTimeout = scheduledBlurHandlers.get(element);
-          if (existingBlurTimeout) {
-            clearTimeout(existingBlurTimeout);
-            scheduledBlurHandlers.delete(element);
-          }
+        // Update highlight positions after DOM has updated (for proper text wrapping calculation)
+        // Use requestAnimationFrame to ensure text wrapping is recalculated after replace
+        requestAnimationFrame(() => {
+          highlightHelper.updatePositions(
+            element,
+            updatedErrorsAfterReplace,
+            (error: GrammarError) =>
+              getErrorTextRects(element, error.start, error.end)
+          );
+        });
 
-          // Restore focus and set cursor position after replacement
-          // Use requestAnimationFrame to ensure DOM is ready before focusing
-          requestAnimationFrame(() => {
-            // Keep flag true during focus restore to prevent blur handler from hiding highlights
-            isPerformingReplace.set(true);
+        // Cancel any scheduled blur handlers for this element
+        const existingBlurTimeout = scheduledBlurHandlers.get(element);
+        if (existingBlurTimeout) {
+          clearTimeout(existingBlurTimeout);
+          scheduledBlurHandlers.delete(element);
+        }
 
-            element.focus();
-            // Set cursor position to the end of the replacement
-            const newCursorPosition = actualStart + replacement.length;
-            const cursorMapping = mapInnerTextToTextNodes(
-              element,
-              newCursorPosition,
-              newCursorPosition
+        // Restore focus and set cursor position after replacement
+        // Use requestAnimationFrame to ensure DOM is ready before focusing
+        requestAnimationFrame(() => {
+          // Keep flag true during focus restore to prevent blur handler from hiding highlights
+          isPerformingReplace.set(true);
+
+          element.focus();
+          // Set cursor position to the end of the replacement
+          const newCursorPosition = actualStart + replacement.length;
+          const cursorMapping = mapInnerTextToTextNodes(
+            element,
+            newCursorPosition,
+            newCursorPosition
+          );
+          if (cursorMapping && cursorMapping.startNode) {
+            const cursorRange = document.createRange();
+            const offset = Math.min(
+              cursorMapping.startOffset,
+              cursorMapping.startNode.textContent!.length
             );
-            if (cursorMapping && cursorMapping.startNode) {
-              const cursorRange = document.createRange();
-              const offset = Math.min(
-                cursorMapping.startOffset,
-                cursorMapping.startNode.textContent!.length
-              );
-              cursorRange.setStart(cursorMapping.startNode, offset);
-              cursorRange.collapse(true);
+            cursorRange.setStart(cursorMapping.startNode, offset);
+            cursorRange.collapse(true);
+            const selection = window.getSelection();
+            if (selection) {
               selection.removeAllRanges();
               selection.addRange(cursorRange);
             }
+          }
 
-            // Clear the replace flag after a short delay to ensure focus is stable
-            setTimeout(() => {
-              isPerformingReplace.set(false);
-              // Trigger grammar check after replace is complete
-              performGrammarCheck(element).catch((error) => {
-                console.error(
-                  "Rewordly: Error performing grammar check after replace:",
-                  error
-                );
-              });
-            }, 150);
-          });
-        } catch (err) {
-          console.error("Rewordly: Error replacing text:", err);
-          console.error("Rewordly: Error details:", {
-            start: actualStart,
-            end: actualEnd,
-            mapping,
-          });
-          // Clear flag even on error
-          isPerformingReplace.set(false);
-        }
+          // Clear the replace flag after a short delay to ensure focus is stable
+          setTimeout(() => {
+            isPerformingReplace.set(false);
+            // Trigger grammar check after replace is complete
+            performGrammarCheck(element).catch((error) => {
+              console.error(
+                "Rewordly: Error performing grammar check after replace:",
+                error
+              );
+            });
+          }, 150);
+        });
       }
     }
   }

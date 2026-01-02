@@ -2777,57 +2777,55 @@ export function attachHighlightHoverListener(
     tooltip.style.top = `${adjustedTop}px`;
     tooltip.style.left = `${adjustedLeft}px`;
 
-    // Attach click handlers
+    // Attach pointerdown handlers (capture phase) to prevent focus/selection changes
     const suggestionButtons = tooltip.querySelectorAll(
       ".rewordly-grammar-suggestion"
     );
     suggestionButtons.forEach((button) => {
-      button.addEventListener("click", (e) => {
-        e.stopPropagation();
-        e.preventDefault();
+      // Use pointerdown in capture phase to prevent focus/selection changes
+      button.addEventListener(
+        "pointerdown",
+        (e) => {
+          e.stopPropagation();
+          e.preventDefault();
 
-        const suggestion = (button as HTMLElement).getAttribute(
-          "data-suggestion"
-        );
-        if (!suggestion) return;
-
-        // Get error data directly from highlight - this is the most reliable source
-        const errorData = highlight.getAttribute("data-error");
-        const errorId = highlight.getAttribute("data-error-id");
-
-        if (!errorId || !errorData) {
-          console.error("Rewordly: No error data found on highlight", {
-            errorId,
-            hasErrorData: !!errorData,
-          });
-          return;
-        }
-
-        let targetError: GrammarError;
-        try {
-          targetError = JSON.parse(errorData);
-        } catch (e) {
-          console.error(
-            "Rewordly: Failed to parse error data from highlight",
-            e
+          const suggestion = (button as HTMLElement).getAttribute(
+            "data-suggestion"
           );
-          return;
-        }
+          if (!suggestion) return;
 
-        closeTooltip();
-        closeAllGrammarTooltips();
+          // Get error data directly from highlight - this is the most reliable source
+          const errorData = highlight.getAttribute("data-error");
+          const errorId = highlight.getAttribute("data-error-id");
 
-        // CRITICAL: Clear ALL selections before replacement
-        // This must be done here, at the click handler level, to ensure
-        // any user selection is cleared before replaceGrammarError is called
-        const selection = window.getSelection();
-        if (selection) {
-          selection.removeAllRanges();
-        }
+          if (!errorId || !errorData) {
+            console.error("Rewordly: No error data found on highlight", {
+              errorId,
+              hasErrorData: !!errorData,
+            });
+            return;
+          }
 
-        // Use the error directly from highlight - no need to search in maps
-        replaceGrammarError(element, targetError, suggestion);
-      });
+          let targetError: GrammarError;
+          try {
+            targetError = JSON.parse(errorData);
+          } catch (e) {
+            console.error(
+              "Rewordly: Failed to parse error data from highlight",
+              e
+            );
+            return;
+          }
+
+          closeTooltip();
+          closeAllGrammarTooltips();
+
+          // Use the error directly from highlight - no need to search in maps
+          // replaceGrammarError now uses replaceTextAtRange internally (no execCommand)
+          replaceGrammarError(element, targetError, suggestion);
+        },
+        { capture: true }
+      );
     });
 
     // Attach "see more" button handler
