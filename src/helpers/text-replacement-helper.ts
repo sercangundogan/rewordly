@@ -81,9 +81,20 @@ export function replaceTextAtRange(
           target.dispatchEvent(inputEvent);
 
           // Set focus and cursor position
-          target.focus();
-          const newCursorPos = start + replacement.length;
-          target.setSelectionRange(newCursorPos, newCursorPos);
+          // Use requestAnimationFrame to ensure focus is stable
+          requestAnimationFrame(() => {
+            target.focus();
+            const newCursorPos = start + replacement.length;
+            target.setSelectionRange(newCursorPos, newCursorPos);
+
+            // Ensure focus is maintained after a brief delay
+            setTimeout(() => {
+              if (document.activeElement !== target) {
+                target.focus();
+                target.setSelectionRange(newCursorPos, newCursorPos);
+              }
+            }, 50);
+          });
 
           console.log("Rewordly: Replacement successful (input/textarea)", {
             elementId,
@@ -192,6 +203,45 @@ export function replaceTextAtRange(
         if (selection) {
           selection.removeAllRanges();
         }
+
+        // Restore focus and cursor position after replacement
+        // Use multiple requestAnimationFrame to ensure DOM is ready and focus is stable
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            // Ensure element has focus
+            target.focus();
+
+            // Set cursor position to the end of the replacement
+            const newCursorPosition = start + replacement.length;
+            const cursorMapping = mapInnerTextToTextNodes(
+              target,
+              newCursorPosition,
+              newCursorPosition
+            );
+            if (cursorMapping && cursorMapping.startNode) {
+              try {
+                const cursorRange = document.createRange();
+                const offset = Math.min(
+                  cursorMapping.startOffset,
+                  cursorMapping.startNode.textContent!.length
+                );
+                cursorRange.setStart(cursorMapping.startNode, offset);
+                cursorRange.collapse(true);
+                const sel = window.getSelection();
+                if (sel) {
+                  sel.removeAllRanges();
+                  sel.addRange(cursorRange);
+                }
+              } catch (e) {
+                // Cursor positioning failed - ensure focus is still on element
+                target.focus();
+              }
+            } else {
+              // If cursor mapping fails, at least ensure focus is on element
+              target.focus();
+            }
+          });
+        });
 
         console.log("Rewordly: Replacement successful (contenteditable)", {
           elementId,
@@ -1162,25 +1212,60 @@ export function replaceGrammarError(
           }
 
           // Restore focus and set cursor position after replacement
-          // Use requestAnimationFrame to ensure DOM is ready before focusing
+          // Use multiple requestAnimationFrame to ensure DOM is ready and focus is stable
           requestAnimationFrame(() => {
-            // Keep flag true during focus restore to prevent blur handler from hiding highlights
-            isPerformingReplace.set(true);
+            requestAnimationFrame(() => {
+              // Keep flag true during focus restore to prevent blur handler from hiding highlights
+              isPerformingReplace.set(true);
 
-            element.focus();
+              // Ensure element has focus
+              element.focus();
 
-            // Keep flag true longer (300ms) to catch input events triggered by execCommand
-            // Lexical may trigger input events asynchronously after execCommand
-            setTimeout(() => {
-              isPerformingReplace.set(false);
-              // Trigger grammar check after replace is complete
-              performGrammarCheck(element).catch((error) => {
-                console.error(
-                  "Rewordly: Error performing grammar check after replace:",
-                  error
-                );
-              });
-            }, 300);
+              // Set cursor position to the end of the replacement
+              const newCursorPosition = actualStart + replacement.length;
+              const cursorMapping = mapInnerTextToTextNodes(
+                element,
+                newCursorPosition,
+                newCursorPosition
+              );
+              if (cursorMapping && cursorMapping.startNode) {
+                try {
+                  const cursorRange = document.createRange();
+                  const offset = Math.min(
+                    cursorMapping.startOffset,
+                    cursorMapping.startNode.textContent!.length
+                  );
+                  cursorRange.setStart(cursorMapping.startNode, offset);
+                  cursorRange.collapse(true);
+                  const sel = window.getSelection();
+                  if (sel) {
+                    sel.removeAllRanges();
+                    sel.addRange(cursorRange);
+                  }
+                } catch (e) {
+                  // Cursor positioning failed - ensure focus is still on element
+                  element.focus();
+                }
+              } else {
+                // If cursor mapping fails, at least ensure focus is on element
+                element.focus();
+              }
+
+              // Keep flag true longer (300ms) to catch input events triggered by execCommand
+              // Lexical may trigger input events asynchronously after execCommand
+              setTimeout(() => {
+                // Ensure focus is still on element after timeout
+                element.focus();
+                isPerformingReplace.set(false);
+                // Trigger grammar check after replace is complete
+                performGrammarCheck(element).catch((error) => {
+                  console.error(
+                    "Rewordly: Error performing grammar check after replace:",
+                    error
+                  );
+                });
+              }, 300);
+            });
           });
         }, 100);
       } catch (err) {
@@ -1283,43 +1368,57 @@ export function replaceGrammarError(
       });
 
       // Restore focus and cursor position
+      // Use multiple requestAnimationFrame to ensure DOM is ready and focus is stable
       requestAnimationFrame(() => {
-        element.focus();
+        requestAnimationFrame(() => {
+          // Ensure element has focus
+          element.focus();
 
-        // Set cursor position using Selection API
-        const selection = window.getSelection();
-        if (selection) {
-          const newCursorPosition = actualStart + replacement.length;
+          // Set cursor position using Selection API
+          const selection = window.getSelection();
+          if (selection) {
+            const newCursorPosition = actualStart + replacement.length;
 
-          // Map cursor position to text node
-          const cursorMapping = mapInnerTextToTextNodes(
-            element,
-            newCursorPosition,
-            newCursorPosition
-          );
-          if (cursorMapping && cursorMapping.startNode) {
-            try {
-              // Check if node is still in document before using range
-              if (isNodeInDocument(cursorMapping.startNode)) {
-                const cursorRange = document.createRange();
-                const offset = Math.min(
-                  cursorMapping.startOffset,
-                  cursorMapping.startNode.textContent!.length
+            // Map cursor position to text node
+            const cursorMapping = mapInnerTextToTextNodes(
+              element,
+              newCursorPosition,
+              newCursorPosition
+            );
+            if (cursorMapping && cursorMapping.startNode) {
+              try {
+                // Check if node is still in document before using range
+                if (isNodeInDocument(cursorMapping.startNode)) {
+                  const cursorRange = document.createRange();
+                  const offset = Math.min(
+                    cursorMapping.startOffset,
+                    cursorMapping.startNode.textContent!.length
+                  );
+                  cursorRange.setStart(cursorMapping.startNode, offset);
+                  cursorRange.collapse(true);
+                  selection.removeAllRanges();
+                  selection.addRange(cursorRange);
+                } else {
+                  // Node not in document - ensure focus is still on element
+                  element.focus();
+                }
+              } catch (e) {
+                // Cursor positioning failed - ensure focus is still on element
+                element.focus();
+                console.warn(
+                  "Rewordly: Could not set cursor position after replacement",
+                  e
                 );
-                cursorRange.setStart(cursorMapping.startNode, offset);
-                cursorRange.collapse(true);
-                selection.removeAllRanges();
-                selection.addRange(cursorRange);
               }
-            } catch (e) {
-              // Cursor positioning failed - not critical, user can click to reposition
-              console.warn(
-                "Rewordly: Could not set cursor position after replacement",
-                e
-              );
+            } else {
+              // If cursor mapping fails, at least ensure focus is on element
+              element.focus();
             }
+          } else {
+            // No selection available - ensure focus is still on element
+            element.focus();
           }
-        }
+        });
       });
 
       // For Draft.js, also do a delayed verification to catch any DOM changes that Draft.js makes asynchronously
@@ -1756,42 +1855,47 @@ export function replaceGrammarError(
               }
 
               // Restore focus and cursor position
+              // Use multiple requestAnimationFrame to ensure DOM is ready and focus is stable
               requestAnimationFrame(() => {
-                element.focus();
-                const newCursorPosition = actualStart + replacement.length;
-                const cursorMapping = mapInnerTextToTextNodes(
-                  element,
-                  newCursorPosition,
-                  newCursorPosition
-                );
-                if (cursorMapping && cursorMapping.startNode) {
-                  const cursorRange = document.createRange();
-                  const offset = Math.min(
-                    cursorMapping.startOffset,
-                    cursorMapping.startNode.textContent!.length
+                requestAnimationFrame(() => {
+                  // Ensure element has focus
+                  element.focus();
+                  const newCursorPosition = actualStart + replacement.length;
+                  const cursorMapping = mapInnerTextToTextNodes(
+                    element,
+                    newCursorPosition,
+                    newCursorPosition
                   );
-                  cursorRange.setStart(cursorMapping.startNode, offset);
-                  cursorRange.collapse(true);
-                  const sel = window.getSelection();
-                  if (sel) {
-                    sel.removeAllRanges();
-                    sel.addRange(cursorRange);
+                  if (cursorMapping && cursorMapping.startNode) {
+                    try {
+                      const cursorRange = document.createRange();
+                      const offset = Math.min(
+                        cursorMapping.startOffset,
+                        cursorMapping.startNode.textContent!.length
+                      );
+                      cursorRange.setStart(cursorMapping.startNode, offset);
+                      cursorRange.collapse(true);
+                      const sel = window.getSelection();
+                      if (sel) {
+                        sel.removeAllRanges();
+                        sel.addRange(cursorRange);
+                      }
+                    } catch (e) {
+                      // Cursor positioning failed - ensure focus is still on element
+                      element.focus();
+                    }
+                  } else {
+                    // If cursor mapping fails, at least ensure focus is on element
+                    element.focus();
                   }
-                }
 
-                // Keep flag true longer to catch any async Slate.js events
-                setTimeout(() => {
-                  // Update highlight positions again after a delay to ensure they're correct
-                  // This ensures highlights are positioned correctly after Slate.js has fully updated
+                  // Keep flag true longer to catch any async Slate.js events
                   setTimeout(() => {
-                    highlightHelper.updatePositions(
-                      element,
-                      updatedErrorsAfterReplace,
-                      (error: GrammarError) =>
-                        getErrorTextRects(element, error.start, error.end)
-                    );
+                    // Ensure focus is still on element
+                    element.focus();
 
-                    // Update again after another delay to catch any late DOM updates
+                    // Update highlight positions again after a delay to ensure they're correct
+                    // This ensures highlights are positioned correctly after Slate.js has fully updated
                     setTimeout(() => {
                       highlightHelper.updatePositions(
                         element,
@@ -1800,7 +1904,7 @@ export function replaceGrammarError(
                           getErrorTextRects(element, error.start, error.end)
                       );
 
-                      // One more update to ensure positions are stable
+                      // Update again after another delay to catch any late DOM updates
                       setTimeout(() => {
                         highlightHelper.updatePositions(
                           element,
@@ -1808,16 +1912,28 @@ export function replaceGrammarError(
                           (error: GrammarError) =>
                             getErrorTextRects(element, error.start, error.end)
                         );
-                        isPerformingReplace.set(false);
 
-                        // Don't trigger grammar check immediately after replace
-                        // The existing highlights with updated positions should be sufficient
-                        // Grammar check will happen naturally on next user input or focus change
-                        // This prevents highlights from disappearing due to re-checking
+                        // One more update to ensure positions are stable
+                        setTimeout(() => {
+                          highlightHelper.updatePositions(
+                            element,
+                            updatedErrorsAfterReplace,
+                            (error: GrammarError) =>
+                              getErrorTextRects(element, error.start, error.end)
+                          );
+                          // Ensure focus is still on element before clearing flag
+                          element.focus();
+                          isPerformingReplace.set(false);
+
+                          // Don't trigger grammar check immediately after replace
+                          // The existing highlights with updated positions should be sufficient
+                          // Grammar check will happen naturally on next user input or focus change
+                          // This prevents highlights from disappearing due to re-checking
+                        }, 200);
                       }, 200);
                     }, 200);
-                  }, 200);
-                }, 300);
+                  }, 300);
+                });
               });
             }, 200); // Increased delay to ensure Slate.js has updated its DOM
           } catch (err) {
@@ -2058,36 +2174,53 @@ export function replaceGrammarError(
               }
 
               // Restore focus and cursor position
+              // Use multiple requestAnimationFrame to ensure DOM is ready and focus is stable
               requestAnimationFrame(() => {
-                element.focus();
-                const newCursorPosition = actualStart + replacement.length;
-                const cursorMapping = mapInnerTextToTextNodes(
-                  element,
-                  newCursorPosition,
-                  newCursorPosition
-                );
-                if (cursorMapping && cursorMapping.startNode) {
-                  const cursorRange = document.createRange();
-                  const offset = Math.min(
-                    cursorMapping.startOffset,
-                    cursorMapping.startNode.textContent!.length
+                requestAnimationFrame(() => {
+                  // Ensure element has focus
+                  element.focus();
+                  const newCursorPosition = actualStart + replacement.length;
+                  const cursorMapping = mapInnerTextToTextNodes(
+                    element,
+                    newCursorPosition,
+                    newCursorPosition
                   );
-                  cursorRange.setStart(cursorMapping.startNode, offset);
-                  cursorRange.collapse(true);
-                  selection.removeAllRanges();
-                  selection.addRange(cursorRange);
-                }
+                  if (cursorMapping && cursorMapping.startNode) {
+                    try {
+                      const cursorRange = document.createRange();
+                      const offset = Math.min(
+                        cursorMapping.startOffset,
+                        cursorMapping.startNode.textContent!.length
+                      );
+                      cursorRange.setStart(cursorMapping.startNode, offset);
+                      cursorRange.collapse(true);
+                      const sel = window.getSelection();
+                      if (sel) {
+                        sel.removeAllRanges();
+                        sel.addRange(cursorRange);
+                      }
+                    } catch (e) {
+                      // Cursor positioning failed - ensure focus is still on element
+                      element.focus();
+                    }
+                  } else {
+                    // If cursor mapping fails, at least ensure focus is on element
+                    element.focus();
+                  }
 
-                setTimeout(() => {
-                  isPerformingReplace.set(false);
-                  // Trigger grammar check after replace is complete
-                  performGrammarCheck(element).catch((error) => {
-                    console.error(
-                      "Rewordly: Error performing grammar check after replace:",
-                      error
-                    );
-                  });
-                }, 150);
+                  setTimeout(() => {
+                    // Ensure focus is still on element after timeout
+                    element.focus();
+                    isPerformingReplace.set(false);
+                    // Trigger grammar check after replace is complete
+                    performGrammarCheck(element).catch((error) => {
+                      console.error(
+                        "Rewordly: Error performing grammar check after replace:",
+                        error
+                      );
+                    });
+                  }, 150);
+                });
               });
             }, 100);
           } catch (err) {
@@ -2193,45 +2326,58 @@ export function replaceGrammarError(
         }
 
         // Restore focus and set cursor position after replacement
-        // Use requestAnimationFrame to ensure DOM is ready before focusing
+        // Use multiple requestAnimationFrame to ensure DOM is ready and focus is stable
         requestAnimationFrame(() => {
-          // Keep flag true during focus restore to prevent blur handler from hiding highlights
-          isPerformingReplace.set(true);
+          requestAnimationFrame(() => {
+            // Keep flag true during focus restore to prevent blur handler from hiding highlights
+            isPerformingReplace.set(true);
 
-          element.focus();
-          // Set cursor position to the end of the replacement
-          const newCursorPosition = actualStart + replacement.length;
-          const cursorMapping = mapInnerTextToTextNodes(
-            element,
-            newCursorPosition,
-            newCursorPosition
-          );
-          if (cursorMapping && cursorMapping.startNode) {
-            const cursorRange = document.createRange();
-            const offset = Math.min(
-              cursorMapping.startOffset,
-              cursorMapping.startNode.textContent!.length
+            // Ensure element has focus
+            element.focus();
+            // Set cursor position to the end of the replacement
+            const newCursorPosition = actualStart + replacement.length;
+            const cursorMapping = mapInnerTextToTextNodes(
+              element,
+              newCursorPosition,
+              newCursorPosition
             );
-            cursorRange.setStart(cursorMapping.startNode, offset);
-            cursorRange.collapse(true);
-            const selection = window.getSelection();
-            if (selection) {
-              selection.removeAllRanges();
-              selection.addRange(cursorRange);
+            if (cursorMapping && cursorMapping.startNode) {
+              try {
+                const cursorRange = document.createRange();
+                const offset = Math.min(
+                  cursorMapping.startOffset,
+                  cursorMapping.startNode.textContent!.length
+                );
+                cursorRange.setStart(cursorMapping.startNode, offset);
+                cursorRange.collapse(true);
+                const selection = window.getSelection();
+                if (selection) {
+                  selection.removeAllRanges();
+                  selection.addRange(cursorRange);
+                }
+              } catch (e) {
+                // Cursor positioning failed - ensure focus is still on element
+                element.focus();
+              }
+            } else {
+              // If cursor mapping fails, at least ensure focus is on element
+              element.focus();
             }
-          }
 
-          // Clear the replace flag after a short delay to ensure focus is stable
-          setTimeout(() => {
-            isPerformingReplace.set(false);
-            // Trigger grammar check after replace is complete
-            performGrammarCheck(element).catch((error) => {
-              console.error(
-                "Rewordly: Error performing grammar check after replace:",
-                error
-              );
-            });
-          }, 150);
+            // Clear the replace flag after a short delay to ensure focus is stable
+            setTimeout(() => {
+              // Ensure focus is still on element after timeout
+              element.focus();
+              isPerformingReplace.set(false);
+              // Trigger grammar check after replace is complete
+              performGrammarCheck(element).catch((error) => {
+                console.error(
+                  "Rewordly: Error performing grammar check after replace:",
+                  error
+                );
+              });
+            }, 150);
+          });
         });
       }
     }
