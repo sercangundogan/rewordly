@@ -43,6 +43,7 @@ import {
 import { getDismissKey } from "../../helpers/grammar-check-helper";
 import { replaceGrammarError } from "../../helpers/text-replacement-helper";
 import { GrammarError } from "../../types";
+import { ChangeEmitter } from "../shared/changeEmitter";
 
 /**
  * Reddit Platform Adapter
@@ -53,11 +54,8 @@ export class RedditPlatformAdapter implements PlatformAdapter {
 
   private editableElements: Set<HTMLElement> = new Set();
   private observer: MutationObserver | null = null;
-  private changeCallbacks: Set<ChangeCallback> = new Set();
-  private snapshotVersion: number = 0;
+  private changeEmitter: ChangeEmitter;
   private currentElement: HTMLElement | null = null;
-  private lastTextMap: Map<HTMLElement, string> = new Map(); // Track last text per element
-  private versionMap: Map<HTMLElement, number> = new Map();
   private isInitialized: boolean = false; // Prevent double initialization
   private highlightHelper: HighlightContainerHelper =
     new HighlightContainerHelper();
@@ -69,6 +67,10 @@ export class RedditPlatformAdapter implements PlatformAdapter {
   private resizeObservers: Map<HTMLElement, ResizeObserver> = new Map();
   private isCommentSearchOpen: boolean = false;
   private isPerformingReplace: boolean = false; // Flag to track replace operations
+
+  constructor() {
+    this.changeEmitter = new ChangeEmitter(this.platform);
+  }
 
   /**
    * Check if adapter is enabled for current page
@@ -180,6 +182,7 @@ export class RedditPlatformAdapter implements PlatformAdapter {
 
           if (editableElement) {
             this.currentElement = editableElement;
+            this.changeEmitter.setCurrentElement(editableElement);
 
             // Immediately validate and remove invalid highlights when text changes
             if (this.grammarErrors.has(editableElement)) {
@@ -193,7 +196,11 @@ export class RedditPlatformAdapter implements PlatformAdapter {
               );
             }
 
-            this.notifyChange();
+            this.changeEmitter.notifyChange(
+              () => this.getFirstEditableElement(),
+              extractText,
+              getElementId
+            );
           }
         }
 
@@ -419,13 +426,11 @@ export class RedditPlatformAdapter implements PlatformAdapter {
     // Remove event listeners
     this.removeInputListeners();
 
-    // Clear all callbacks (they should have been unsubscribed, but clear anyway)
-    this.changeCallbacks.clear();
+    // Cleanup change emitter
+    this.changeEmitter.cleanup();
 
     // Clear element tracking
     this.editableElements.clear();
-    this.versionMap.clear();
-    this.lastTextMap.clear();
     this.elementPositions.clear();
 
     // Disconnect all ResizeObservers
@@ -444,6 +449,7 @@ export class RedditPlatformAdapter implements PlatformAdapter {
 
     // Reset state
     this.currentElement = null;
+    this.changeEmitter.setCurrentElement(null);
     this.isInitialized = false;
   }
 
@@ -453,48 +459,18 @@ export class RedditPlatformAdapter implements PlatformAdapter {
    * STEP 4: Ensure version increments correctly on every meaningful change
    */
   getSnapshot(): DocumentSnapshot {
-    const element = this.currentElement || this.getFirstEditableElement();
-
-    if (!element) {
-      return {
-        text: "",
-        version: this.snapshotVersion,
-        meta: {
-          platform: this.platform,
-        },
-      };
-    }
-
-    // Use extractText to get the text content
-    // This ensures API positions match DOM text positions exactly
-    const { text } = extractText(element);
-
-    // Get version from map, or initialize to 0 if not tracked
-    let version = this.versionMap.get(element);
-    if (version === undefined) {
-      version = 0;
-      this.versionMap.set(element, version);
-    }
-
-    return {
-      text,
-      version,
-      meta: {
-        elementId: getElementId(element),
-        platform: this.platform,
-      },
-    };
+    return this.changeEmitter.getSnapshot(
+      () => this.getFirstEditableElement(),
+      extractText,
+      getElementId
+    );
   }
 
   /**
    * Observe document changes
    */
   observeChanges(callback: ChangeCallback): Unsubscribe {
-    this.changeCallbacks.add(callback);
-
-    return () => {
-      this.changeCallbacks.delete(callback);
-    };
+    return this.changeEmitter.observeChanges(callback);
   }
 
   /**
@@ -610,9 +586,11 @@ export class RedditPlatformAdapter implements PlatformAdapter {
     const element = this.currentElement || this.getFirstEditableElement();
 
     if (!element) {
+      const version = 0;
+
       return {
         success: false,
-        newVersion: this.snapshotVersion,
+        newVersion: version,
         error: "No editable element available",
       };
     }
@@ -650,9 +628,7 @@ export class RedditPlatformAdapter implements PlatformAdapter {
         });
 
         // Increment version
-        const currentVersion = this.versionMap.get(element) || 0;
-        const newVersion = currentVersion + 1;
-        this.versionMap.set(element, newVersion);
+        const newVersion = this.changeEmitter.incrementVersion(element);
 
         return {
           success: true,
@@ -661,29 +637,35 @@ export class RedditPlatformAdapter implements PlatformAdapter {
         };
       } else if (change.type === "insert") {
         // TODO: Implement insert
+        const version = this.changeEmitter.getVersion(element);
         return {
           success: false,
-          newVersion: this.snapshotVersion,
+          newVersion: version,
           error: "Insert not yet implemented",
         };
       } else if (change.type === "delete") {
         // TODO: Implement delete
+        const version = this.changeEmitter.getVersion(element);
         return {
           success: false,
-          newVersion: this.snapshotVersion,
+          newVersion: version,
           error: "Delete not yet implemented",
         };
       }
 
+      const version = this.changeEmitter.getVersion(element);
       return {
         success: false,
-        newVersion: this.snapshotVersion,
+        newVersion: version,
         error: "Unknown change type",
       };
     } catch (error) {
+      const element = this.currentElement || this.getFirstEditableElement();
+      const version = element ? this.changeEmitter.getVersion(element) : 0;
+
       return {
         success: false,
-        newVersion: this.snapshotVersion,
+        newVersion: version,
         error: error instanceof Error ? error.message : String(error),
       };
     }
@@ -804,7 +786,7 @@ export class RedditPlatformAdapter implements PlatformAdapter {
     }
 
     this.editableElements.add(element);
-    this.versionMap.set(element, 0);
+    this.changeEmitter.initializeElement(element);
 
     // Disable browser's native spellcheck
     disableSpellCheck(element);
@@ -893,10 +875,11 @@ export class RedditPlatformAdapter implements PlatformAdapter {
     }
 
     this.currentElement = element;
+    this.changeEmitter.setCurrentElement(element);
 
     // Get current and previous text to detect changes
     const { text: currentText } = extractText(element);
-    const previousText = this.lastTextMap.get(element) || "";
+    const previousText = this.changeEmitter.getLastText(element) || "";
 
     // If text changed and we have errors, update their positions
     if (currentText !== previousText && this.grammarErrors.has(element)) {
@@ -983,8 +966,12 @@ export class RedditPlatformAdapter implements PlatformAdapter {
         });
 
         // Update last text and notify change
-        this.lastTextMap.set(element, currentText);
-        this.notifyChange();
+        this.changeEmitter.setLastText(element, currentText);
+        this.changeEmitter.notifyChange(
+          () => this.getFirstEditableElement(),
+          extractText,
+          getElementId
+        );
         return; // Early return - we've already handled validation and position updates
       }
     }
@@ -1004,9 +991,13 @@ export class RedditPlatformAdapter implements PlatformAdapter {
     }
 
     // Update last text
-    this.lastTextMap.set(element, currentText);
+    this.changeEmitter.setLastText(element, currentText);
 
-    this.notifyChange();
+    this.changeEmitter.notifyChange(
+      () => this.getFirstEditableElement(),
+      extractText,
+      getElementId
+    );
   };
 
   /**
@@ -1019,9 +1010,14 @@ export class RedditPlatformAdapter implements PlatformAdapter {
       if (text.trim().length > 0) {
         // Found element with text, set as current and notify
         this.currentElement = element;
-        this.lastTextMap.set(element, text);
+        this.changeEmitter.setCurrentElement(element);
+        this.changeEmitter.setLastText(element, text);
         // Trigger initial check by notifying change
-        this.notifyChange();
+        this.changeEmitter.notifyChange(
+          () => this.getFirstEditableElement(),
+          extractText,
+          getElementId
+        );
         break; // Only check first element with text
       }
     }
@@ -1034,58 +1030,23 @@ export class RedditPlatformAdapter implements PlatformAdapter {
     }
 
     this.currentElement = element;
+    this.changeEmitter.setCurrentElement(element);
 
     // Always trigger check on focus (even if text is empty or unchanged)
     // This ensures connection is established immediately and highlights are shown
     const { text } = extractText(element);
     // Initialize lastText for this element if not set
-    if (!this.lastTextMap.has(element)) {
-      this.lastTextMap.set(element, text);
+    if (!this.changeEmitter.getLastText(element)) {
+      this.changeEmitter.setLastText(element, text);
     }
     // Force check on focus - even if text hasn't changed
-    this.notifyChange(true); // Pass true to force notification
+    this.changeEmitter.notifyChange(
+      () => this.getFirstEditableElement(),
+      extractText,
+      getElementId,
+      true // Pass true to force notification
+    );
   };
-
-  /**
-   * Notify change callbacks when document changes
-   * STEP 4: Ensure version increments on every meaningful change
-   * @param force - If true, notify even if text hasn't changed (useful for focus events)
-   */
-  private notifyChange(force: boolean = false): void {
-    const element = this.currentElement || this.getFirstEditableElement();
-    if (!element) {
-      return;
-    }
-
-    const { text: currentText } = extractText(element);
-    const lastTextForElement = this.lastTextMap.get(element) || "";
-
-    // Notify if text changed OR if forced (e.g., on focus)
-    if (force || currentText !== lastTextForElement) {
-      if (currentText !== lastTextForElement) {
-        this.lastTextMap.set(element, currentText);
-      }
-
-      // Increment version for this element on every meaningful change
-      const currentVersion = this.versionMap.get(element) || 0;
-      const newVersion = currentVersion + 1;
-      this.versionMap.set(element, newVersion);
-
-      // Get updated snapshot with new version
-      const updatedSnapshot = this.getSnapshot();
-
-      // Notify all callbacks (they should handle debouncing)
-      // Use Array.from to avoid issues if callbacks modify the Set during iteration
-      const callbacks = Array.from(this.changeCallbacks);
-      callbacks.forEach((callback) => {
-        try {
-          callback(updatedSnapshot);
-        } catch (error) {
-          console.error("Rewordly: Error in change callback:", error);
-        }
-      });
-    }
-  }
 
   private getFirstEditableElement(): HTMLElement | null {
     if (this.editableElements.size === 0) {
