@@ -300,7 +300,7 @@ export function replaceTextAtRange(
           newTextSlice: replacement,
         });
       } else {
-        console.error("Rewordly: Element is not editable", { elementId });
+        // console.error("Rewordly: Element is not editable", { elementId });
       }
     } catch (err) {
       console.error("Rewordly: Error in replaceTextAtRange", {

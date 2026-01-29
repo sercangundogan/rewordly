@@ -64,10 +64,12 @@ export class RedditPlatformAdapter implements PlatformAdapter {
   private elementPositions: Map<HTMLElement, { top: number; left: number }> =
     new Map();
   private resizeObservers: Map<HTMLElement, ResizeObserver> = new Map();
+  private scrollListeners: Map<HTMLElement, () => void> = new Map(); // Scroll listeners for each element
   private isCommentSearchOpen: boolean = false;
   private isPerformingReplace: boolean = false; // Flag to track replace operations
   private currentUrl: string = "";
   private urlCheckInterval: number | null = null;
+  private messageTextareaScanInterval: number | null = null;
 
   constructor() {
     this.changeEmitter = new ChangeEmitter(this.platform);
@@ -121,8 +123,133 @@ export class RedditPlatformAdapter implements PlatformAdapter {
         mutation.addedNodes.forEach((node) => {
           if (node.nodeType === Node.ELEMENT_NODE) {
             const element = node as HTMLElement;
+
+            // Check if this element itself is a message textarea
+            if (element.tagName?.toLowerCase() === "textarea") {
+              const name = element.getAttribute("name");
+              const ariaLabel = element.getAttribute("aria-label");
+              const placeholder = element.getAttribute("placeholder");
+              const isMessageTextarea =
+                name === "message" ||
+                ariaLabel === "Write message" ||
+                placeholder === "Message";
+
+              if (isMessageTextarea) {
+                console.log(
+                  "Rewordly: MutationObserver detected message textarea directly",
+                  {
+                    element,
+                    name,
+                    ariaLabel,
+                    placeholder,
+                    alreadyAttached: this.editableElements.has(element),
+                  }
+                );
+                this.attachToEditableElement(element);
+              }
+            }
+
             this.attachToEditableElement(element);
             this.findEditableInElement(element);
+
+            // Special handling for message-box and form elements
+            // These might contain textareas that need to be attached
+            if (
+              element.classList?.contains("message-box") ||
+              element.tagName?.toLowerCase() === "form" ||
+              element.querySelector?.(".message-box") ||
+              element.closest?.(".message-box")
+            ) {
+              // Find textarea inside message-box or form
+              const messageTextarea = element.querySelector?.(
+                'textarea[name="message"], textarea[aria-label="Write message"], textarea[placeholder="Message"]'
+              ) as HTMLTextAreaElement | null;
+
+              if (
+                messageTextarea &&
+                !this.editableElements.has(messageTextarea)
+              ) {
+                console.log(
+                  "Rewordly: Found message textarea in message-box/form",
+                  {
+                    messageTextarea,
+                    parent: element,
+                    name: messageTextarea.getAttribute("name"),
+                    ariaLabel: messageTextarea.getAttribute("aria-label"),
+                    placeholder: messageTextarea.getAttribute("placeholder"),
+                  }
+                );
+                this.attachToEditableElement(messageTextarea);
+              }
+            }
+
+            // If a textarea is added, check if it's inside a message-box or form with message-box
+            if (element.tagName?.toLowerCase() === "textarea") {
+              const messageBox = element.closest?.(".message-box");
+              const formWithMessageBox = element.closest?.(
+                "form:has(.message-box)"
+              );
+              if (
+                (messageBox || formWithMessageBox) &&
+                !this.editableElements.has(element)
+              ) {
+                const name = element.getAttribute("name");
+                const ariaLabel = element.getAttribute("aria-label");
+                const placeholder = element.getAttribute("placeholder");
+                console.log(
+                  "Rewordly: Found textarea inside message-box/form",
+                  {
+                    element,
+                    name,
+                    ariaLabel,
+                    placeholder,
+                    messageBox: !!messageBox,
+                    formWithMessageBox: !!formWithMessageBox,
+                  }
+                );
+                this.attachToEditableElement(element);
+              }
+            }
+
+            // Also check parent chain for message-box or form containing message textarea
+            let parent = element.parentElement;
+            let depth = 0;
+            while (parent && depth < 5) {
+              const messageTextareaInParent = parent.querySelector?.(
+                'textarea[name="message"], textarea[aria-label="Write message"], textarea[placeholder="Message"]'
+              ) as HTMLTextAreaElement | null;
+
+              if (
+                messageTextareaInParent &&
+                !this.editableElements.has(messageTextareaInParent)
+              ) {
+                const hasMessageBox =
+                  parent.classList?.contains("message-box") ||
+                  parent.querySelector?.(".message-box") ||
+                  parent.closest?.(".message-box");
+                const isForm = parent.tagName?.toLowerCase() === "form";
+
+                if (hasMessageBox || isForm) {
+                  console.log(
+                    "Rewordly: Found message textarea in parent chain",
+                    {
+                      messageTextarea: messageTextareaInParent,
+                      parent,
+                      depth,
+                      name: messageTextareaInParent.getAttribute("name"),
+                      ariaLabel:
+                        messageTextareaInParent.getAttribute("aria-label"),
+                      placeholder:
+                        messageTextareaInParent.getAttribute("placeholder"),
+                    }
+                  );
+                  this.attachToEditableElement(messageTextareaInParent);
+                  break; // Found it, no need to continue
+                }
+              }
+              parent = parent.parentElement;
+              depth++;
+            }
 
             // Check if this is the comment search input or shreddit-async-loader
             if (
@@ -135,6 +262,182 @@ export class RedditPlatformAdapter implements PlatformAdapter {
               )
             ) {
               this.checkCommentSearchState();
+            }
+
+            // CRITICAL: Check if this is Reddit chat related (nested shadow DOM)
+            // Reddit chat uses: rs-app -> rs-room -> rs-message-composer (all with shadow roots)
+            const isRedditChatRelated =
+              element.tagName?.toLowerCase() === "rs-app" ||
+              element.tagName?.toLowerCase() === "rs-room" ||
+              element.tagName?.toLowerCase() === "rs-message-composer" ||
+              element.querySelector?.("rs-app") ||
+              element.querySelector?.("rs-room") ||
+              element.querySelector?.("rs-message-composer") ||
+              element.closest?.("rs-app") ||
+              element.closest?.("rs-room") ||
+              element.closest?.("rs-message-composer") ||
+              element.getAttribute?.("data-testid") === "reddit-chat-client";
+
+            if (isRedditChatRelated) {
+              console.log(
+                "Rewordly: MutationObserver detected Reddit chat related element",
+                element.tagName
+              );
+
+              // Use specialized function to find message textarea in nested shadow DOM
+              // Wait a bit for shadow DOMs to be ready
+              setTimeout(() => {
+                const messageTextarea = this.findMessageTextareaInRedditChat();
+                if (
+                  messageTextarea &&
+                  !this.editableElements.has(messageTextarea)
+                ) {
+                  console.log(
+                    "Rewordly: ✅ MutationObserver found message textarea in nested shadow DOM"
+                  );
+                  this.attachToEditableElement(messageTextarea);
+                  // Trigger grammar check when message composer opens
+                  setTimeout(() => {
+                    if (this.editableElements.has(messageTextarea)) {
+                      this.currentElement = messageTextarea;
+                      this.changeEmitter.setCurrentElement(messageTextarea);
+                      const { text } = extractText(messageTextarea);
+                      this.changeEmitter.setLastText(messageTextarea, text);
+                      this.changeEmitter.notifyChange(
+                        () => messageTextarea,
+                        extractText,
+                        getElementId,
+                        true // Force notification
+                      );
+                    }
+                  }, 100);
+                }
+              }, 200);
+
+              // Also try again after a longer delay (shadow DOMs might load asynchronously)
+              setTimeout(() => {
+                const messageTextarea = this.findMessageTextareaInRedditChat();
+                if (
+                  messageTextarea &&
+                  !this.editableElements.has(messageTextarea)
+                ) {
+                  console.log(
+                    "Rewordly: ✅ MutationObserver found message textarea (retry)"
+                  );
+                  this.attachToEditableElement(messageTextarea);
+                }
+              }, 500);
+            }
+
+            // Check if this is Reddit chat client
+            const isRedditChatClient =
+              element.getAttribute?.("data-testid") === "reddit-chat-client" ||
+              element.closest?.('[data-testid="reddit-chat-client"]') ||
+              element.tagName?.toLowerCase() === "rs-message-composer" ||
+              element.querySelector?.("rs-message-composer") ||
+              element.closest?.("rs-message-composer");
+
+            if (isRedditChatClient) {
+              // Chat client opened or became visible, find all editable elements inside
+              const chatClient =
+                element.getAttribute?.("data-testid") === "reddit-chat-client"
+                  ? element
+                  : element.closest?.('[data-testid="reddit-chat-client"]') ||
+                    element;
+
+              // Check if chat client is visible (not hidden)
+              const isChatVisible =
+                chatClient &&
+                !chatClient.classList?.contains("hidden") &&
+                (chatClient as HTMLElement).offsetParent !== null;
+
+              if (isChatVisible) {
+                // Find all editable elements in chat client (regular DOM)
+                const editableSelectors = [
+                  "textarea",
+                  '[contenteditable="true"]',
+                  'textarea[name="message"]',
+                  'textarea[aria-label*="message" i]',
+                  'textarea[placeholder*="message" i]',
+                ];
+
+                editableSelectors.forEach((selector) => {
+                  const editableElements = (
+                    chatClient as HTMLElement
+                  ).querySelectorAll(selector);
+                  editableElements.forEach((editableEl) => {
+                    const editableElement = editableEl as HTMLElement;
+                    if (
+                      isEditableElement(editableElement) &&
+                      !this.editableElements.has(editableElement)
+                    ) {
+                      this.attachToEditableElement(editableElement);
+                      console.log(
+                        "Rewordly: Attached to Reddit chat editable element",
+                        editableElement
+                      );
+                    }
+                  });
+                });
+
+                // CRITICAL: Also check shadow DOM in chat client
+                if ((chatClient as HTMLElement).shadowRoot) {
+                  const shadowEditableElements = this.findEditableInShadowDOM(
+                    (chatClient as HTMLElement).shadowRoot!
+                  );
+                  shadowEditableElements.forEach((editableElement) => {
+                    if (!this.editableElements.has(editableElement)) {
+                      this.attachToEditableElement(editableElement);
+                      console.log(
+                        "Rewordly: Attached to Reddit chat editable element in shadow DOM",
+                        editableElement
+                      );
+                    }
+                  });
+                }
+              }
+            }
+
+            // Check if this is a message composer (message box)
+            // Message composer can be detected by form with message-box class or textarea[name="message"]
+            const isMessageComposer =
+              element.classList?.contains("message-box") ||
+              element.querySelector?.(".message-box") ||
+              element.querySelector?.('textarea[name="message"]') ||
+              element.querySelector?.('textarea[aria-label="Write message"]') ||
+              (element.tagName?.toLowerCase() === "form" &&
+                element.querySelector?.('textarea[name="message"]')) ||
+              (element.tagName?.toLowerCase() === "textarea" &&
+                (element.getAttribute("name") === "message" ||
+                  element.getAttribute("aria-label") === "Write message"));
+
+            if (isMessageComposer) {
+              // Find and attach to message textarea
+              const messageTextarea =
+                element.tagName?.toLowerCase() === "textarea"
+                  ? (element as HTMLTextAreaElement)
+                  : (element.querySelector(
+                      'textarea[name="message"], textarea[aria-label="Write message"]'
+                    ) as HTMLTextAreaElement | null);
+
+              if (messageTextarea) {
+                this.attachToEditableElement(messageTextarea);
+                // Trigger grammar check when message composer opens
+                setTimeout(() => {
+                  if (this.editableElements.has(messageTextarea)) {
+                    this.currentElement = messageTextarea;
+                    this.changeEmitter.setCurrentElement(messageTextarea);
+                    const { text } = extractText(messageTextarea);
+                    this.changeEmitter.setLastText(messageTextarea, text);
+                    this.changeEmitter.notifyChange(
+                      () => messageTextarea, // Use messageTextarea directly
+                      extractText,
+                      getElementId,
+                      true // Force notification
+                    );
+                  }
+                }, 100);
+              }
             }
 
             // Check if this is a toolbar or formatting element that might affect positions
@@ -285,6 +588,181 @@ export class RedditPlatformAdapter implements PlatformAdapter {
             mutation.attributeName === "hidden" ||
             mutation.attributeName === "aria-expanded"
           ) {
+            // Check if this is Reddit chat client that just became visible
+            const isRedditChatClient =
+              target.getAttribute?.("data-testid") === "reddit-chat-client" ||
+              target.closest?.('[data-testid="reddit-chat-client"]') ||
+              target.tagName?.toLowerCase() === "rs-message-composer" ||
+              target.closest?.("rs-message-composer");
+
+            if (isRedditChatClient) {
+              const chatClient =
+                target.getAttribute?.("data-testid") === "reddit-chat-client"
+                  ? target
+                  : target.closest?.('[data-testid="reddit-chat-client"]') ||
+                    target;
+
+              // Check if chat client is visible (not hidden)
+              const isChatVisible =
+                chatClient &&
+                !chatClient.classList?.contains("hidden") &&
+                (chatClient as HTMLElement).offsetParent !== null;
+
+              if (isChatVisible) {
+                // Find all editable elements in chat client
+                const editableSelectors = [
+                  "textarea",
+                  '[contenteditable="true"]',
+                  'textarea[name="message"]',
+                  'textarea[aria-label*="message" i]',
+                  'textarea[placeholder*="message" i]',
+                ];
+
+                editableSelectors.forEach((selector) => {
+                  const editableElements = (
+                    chatClient as HTMLElement
+                  ).querySelectorAll(selector);
+                  editableElements.forEach((editableEl) => {
+                    const editableElement = editableEl as HTMLElement;
+                    if (
+                      isEditableElement(editableElement) &&
+                      !this.editableElements.has(editableElement)
+                    ) {
+                      this.attachToEditableElement(editableElement);
+                      console.log(
+                        "Rewordly: Attached to Reddit chat editable element (attribute change)",
+                        editableElement
+                      );
+
+                      // If this element gets focus, trigger grammar check
+                      setTimeout(() => {
+                        if (this.editableElements.has(editableElement)) {
+                          // Check if element is focused
+                          if (document.activeElement === editableElement) {
+                            this.currentElement = editableElement;
+                            this.changeEmitter.setCurrentElement(
+                              editableElement
+                            );
+                            const { text } = extractText(editableElement);
+                            this.changeEmitter.setLastText(
+                              editableElement,
+                              text
+                            );
+                            this.changeEmitter.notifyChange(
+                              () => editableElement,
+                              extractText,
+                              getElementId,
+                              true // Force notification
+                            );
+                          }
+                        }
+                      }, 100);
+                    }
+                  });
+                });
+              }
+            }
+
+            // CRITICAL: Check if this is Reddit chat related (nested shadow DOM)
+            const isRedditChatRelated =
+              target.tagName?.toLowerCase() === "rs-app" ||
+              target.tagName?.toLowerCase() === "rs-room" ||
+              target.tagName?.toLowerCase() === "rs-message-composer" ||
+              target.closest?.("rs-app") ||
+              target.closest?.("rs-room") ||
+              target.closest?.("rs-message-composer") ||
+              target.getAttribute?.("data-testid") === "reddit-chat-client";
+
+            if (isRedditChatRelated) {
+              console.log(
+                "Rewordly: Attribute change detected on Reddit chat element",
+                target.tagName
+              );
+
+              // Use specialized function to find message textarea in nested shadow DOM
+              setTimeout(() => {
+                const messageTextarea = this.findMessageTextareaInRedditChat();
+                if (
+                  messageTextarea &&
+                  !this.editableElements.has(messageTextarea)
+                ) {
+                  console.log(
+                    "Rewordly: ✅ Found message textarea in nested shadow DOM (attribute change)"
+                  );
+                  this.attachToEditableElement(messageTextarea);
+                  // Trigger grammar check when message composer opens
+                  setTimeout(() => {
+                    if (this.editableElements.has(messageTextarea)) {
+                      this.currentElement = messageTextarea;
+                      this.changeEmitter.setCurrentElement(messageTextarea);
+                      const { text } = extractText(messageTextarea);
+                      this.changeEmitter.setLastText(messageTextarea, text);
+                      this.changeEmitter.notifyChange(
+                        () => messageTextarea,
+                        extractText,
+                        getElementId,
+                        true // Force notification
+                      );
+                    }
+                  }, 100);
+                }
+              }, 200);
+            }
+
+            // Check if this is a message composer that just became visible
+            const isMessageComposerRelated =
+              target.classList?.contains("message-box") ||
+              target.closest?.(".message-box") ||
+              target.querySelector?.('textarea[name="message"]') ||
+              target.querySelector?.('textarea[aria-label="Write message"]') ||
+              (target.tagName?.toLowerCase() === "form" &&
+                target.querySelector?.('textarea[name="message"]')) ||
+              target.closest?.('form:has(textarea[name="message"])');
+
+            if (isMessageComposerRelated) {
+              // Check if message composer is visible (not hidden)
+              const messageBox = target.classList?.contains("message-box")
+                ? target
+                : ((target.querySelector?.(".message-box") ||
+                    target.closest?.(".message-box")) as HTMLElement | null);
+              const isVisible =
+                messageBox &&
+                !messageBox.classList?.contains("hidden") &&
+                (messageBox as HTMLElement).offsetParent !== null;
+
+              if (isVisible) {
+                // Find and attach to message textarea (regular DOM)
+                const messageTextarea = (target.querySelector?.(
+                  'textarea[name="message"], textarea[aria-label="Write message"]'
+                ) ||
+                  messageBox?.querySelector?.(
+                    'textarea[name="message"], textarea[aria-label="Write message"]'
+                  )) as HTMLTextAreaElement | null;
+
+                if (
+                  messageTextarea &&
+                  !this.editableElements.has(messageTextarea)
+                ) {
+                  this.attachToEditableElement(messageTextarea);
+                  // Trigger grammar check when message composer opens
+                  setTimeout(() => {
+                    if (this.editableElements.has(messageTextarea)) {
+                      this.currentElement = messageTextarea;
+                      this.changeEmitter.setCurrentElement(messageTextarea);
+                      const { text } = extractText(messageTextarea);
+                      this.changeEmitter.setLastText(messageTextarea, text);
+                      this.changeEmitter.notifyChange(
+                        () => messageTextarea, // Use messageTextarea directly
+                        extractText,
+                        getElementId,
+                        true // Force notification
+                      );
+                    }
+                  }, 100);
+                }
+              }
+            }
+
             // Check if this is related to comment search (check state when hidden/class changes)
             if (
               target.tagName?.toLowerCase() === "pdp-comment-search-input" ||
@@ -460,6 +938,9 @@ export class RedditPlatformAdapter implements PlatformAdapter {
     // Set up URL change detection for SPA navigation
     this.setupUrlChangeDetection();
 
+    // Set up periodic scan for message textareas (in case they're missed by MutationObserver)
+    this.setupPeriodicMessageTextareaScan();
+
     this.isInitialized = true;
   }
 
@@ -477,8 +958,27 @@ export class RedditPlatformAdapter implements PlatformAdapter {
     // Remove event listeners
     this.removeInputListeners();
 
+    // Remove direct event listeners from shadow DOM elements
+    this.editableElements.forEach((element) => {
+      element.removeEventListener("input", this.handleInputDirect, true);
+      element.removeEventListener("focusin", this.handleFocusDirect, true);
+      element.removeEventListener(
+        "compositionupdate",
+        this.handleInputDirect,
+        true
+      );
+      element.removeEventListener(
+        "compositionend",
+        this.handleInputDirect,
+        true
+      );
+    });
+
     // Remove URL change detection
     this.removeUrlChangeDetection();
+
+    // Remove periodic message textarea scan
+    this.removePeriodicMessageTextareaScan();
 
     // Cleanup change emitter
     this.changeEmitter.cleanup();
@@ -492,6 +992,21 @@ export class RedditPlatformAdapter implements PlatformAdapter {
       observer.disconnect();
     });
     this.resizeObservers.clear();
+
+    // Remove all scroll listeners
+    this.scrollListeners.forEach((listener, element) => {
+      const scrollContainer = this.findScrollContainer(element);
+      if (scrollContainer && scrollContainer !== window) {
+        (scrollContainer as HTMLElement).removeEventListener(
+          "scroll",
+          listener,
+          true
+        );
+      } else {
+        window.removeEventListener("scroll", listener, true);
+      }
+    });
+    this.scrollListeners.clear();
 
     // Clear grammar errors
     this.grammarErrors.clear();
@@ -580,6 +1095,12 @@ export class RedditPlatformAdapter implements PlatformAdapter {
         attachHighlightHoverListenerWrapper,
         animate
       );
+
+      // CRITICAL: After creating highlight, check if it's outside message container
+      // and hide it if necessary
+      setTimeout(() => {
+        this.checkAndHideHighlightsOutsideContainer(elem);
+      }, 0);
     };
 
     // Create wrapper for attachHighlightHoverListener with all required dependencies
@@ -636,6 +1157,12 @@ export class RedditPlatformAdapter implements PlatformAdapter {
       highlightsContent: this.highlightHelper.getContent(),
       isPerformingReplace: this.isPerformingReplace,
     });
+
+    // CRITICAL: After rendering, check and hide highlights outside message container
+    // Use setTimeout to ensure highlights are rendered first
+    setTimeout(() => {
+      this.checkAndHideHighlightsOutsideContainer(element);
+    }, 0);
   }
 
   /**
@@ -823,35 +1350,624 @@ export class RedditPlatformAdapter implements PlatformAdapter {
     }
   }
 
+  /**
+   * Find editable elements in shadow DOM
+   * Recursively traverses shadow roots to find all editable elements
+   * CRITICAL: Handles deeply nested shadow roots (rs-app -> rs-room -> rs-message-composer)
+   */
+  private findEditableInShadowDOM(root: Node | ShadowRoot): HTMLElement[] {
+    const elements: HTMLElement[] = [];
+
+    if (!root) return elements;
+
+    // Use TreeWalker to traverse all elements
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+    let node: Node | null;
+
+    while ((node = walker.nextNode())) {
+      const element = node as HTMLElement;
+
+      // Check if element itself is editable
+      if (isEditableElement(element)) {
+        elements.push(element);
+      }
+
+      // CRITICAL: Recursively check shadow roots (handles nested shadow DOMs)
+      if (element.shadowRoot) {
+        const shadowElements = this.findEditableInShadowDOM(element.shadowRoot);
+        elements.push(...shadowElements);
+      }
+    }
+
+    return elements;
+  }
+
+  /**
+   * Find a specific element by tag name in all shadow DOMs recursively
+   * Searches the entire document including all nested shadow roots
+   */
+  private findElementInAllShadowDOMs(tagName: string): HTMLElement | null {
+    // First try direct query
+    const direct = document.querySelector(tagName) as HTMLElement | null;
+    if (direct) {
+      return direct;
+    }
+
+    // Then search in all shadow DOMs
+    const allElements = document.querySelectorAll("*");
+    for (const element of allElements) {
+      const el = element as HTMLElement;
+      if (el.shadowRoot) {
+        const found = this.findElementInShadowDOMRecursive(
+          el.shadowRoot,
+          tagName
+        );
+        if (found) {
+          return found;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Recursively search for an element in a shadow root
+   */
+  private findElementInShadowDOMRecursive(
+    root: ShadowRoot | Node,
+    tagName: string
+  ): HTMLElement | null {
+    if (!root) return null;
+
+    // Try direct query in this shadow root
+    const found = (root as ShadowRoot).querySelector?.(
+      tagName
+    ) as HTMLElement | null;
+    if (found) {
+      return found;
+    }
+
+    // Recursively search in nested shadow roots
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+    let node: Node | null;
+
+    while ((node = walker.nextNode())) {
+      const element = node as HTMLElement;
+      if (element.shadowRoot) {
+        const found = this.findElementInShadowDOMRecursive(
+          element.shadowRoot,
+          tagName
+        );
+        if (found) {
+          return found;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * CRITICAL: Specialized function to find message textarea in Reddit chat client
+   * Handles the nested shadow DOM structure: rs-app -> rs-room -> rs-message-composer
+   * Enhanced with detailed logging and multiple fallback strategies
+   */
+  private findMessageTextareaInRedditChat(): HTMLElement | null {
+    console.log(
+      "Rewordly: 🔍 Starting search for message textarea in Reddit chat..."
+    );
+
+    // Step 1: Try multiple strategies to find rs-app
+    let rsApp: HTMLElement | null = null;
+
+    // Strategy 1: Direct query
+    rsApp = document.querySelector("rs-app") as HTMLElement | null;
+    if (rsApp) {
+      console.log("Rewordly: ✅ Found rs-app via direct query");
+    }
+
+    // Strategy 2: Search in reddit-chat-client
+    if (!rsApp) {
+      const chatClient = document.querySelector(
+        '[data-testid="reddit-chat-client"]'
+      ) as HTMLElement | null;
+      if (chatClient) {
+        console.log(
+          "Rewordly: Found reddit-chat-client, searching for rs-app inside..."
+        );
+        rsApp = chatClient.querySelector("rs-app") as HTMLElement | null;
+        if (rsApp) {
+          console.log("Rewordly: ✅ Found rs-app inside reddit-chat-client");
+        }
+      }
+    }
+
+    // Strategy 3: Search in all shadow DOMs recursively
+    if (!rsApp) {
+      console.log("Rewordly: Searching for rs-app in all shadow DOMs...");
+      rsApp = this.findElementInAllShadowDOMs("rs-app");
+      if (rsApp) {
+        console.log("Rewordly: ✅ Found rs-app in shadow DOM");
+      }
+    }
+
+    // Strategy 4: Search for rs-message-composer directly (skip rs-app/rs-room)
+    if (!rsApp) {
+      console.log(
+        "Rewordly: rs-app not found, trying to find rs-message-composer directly..."
+      );
+      const rsMessageComposer = this.findElementInAllShadowDOMs(
+        "rs-message-composer"
+      );
+      if (rsMessageComposer && rsMessageComposer.shadowRoot) {
+        console.log(
+          "Rewordly: ✅ Found rs-message-composer directly, searching for textarea..."
+        );
+        return this.findTextareaInMessageComposer(rsMessageComposer);
+      }
+    }
+
+    if (!rsApp) {
+      console.log("Rewordly: ❌ rs-app not found anywhere");
+      return null;
+    }
+
+    if (!rsApp.shadowRoot) {
+      console.log("Rewordly: ❌ rs-app found but has no shadow root");
+      return null;
+    }
+
+    console.log("Rewordly: ✅ Found rs-app, traversing shadow DOM...");
+    return this.traverseShadowDOMForTextarea(rsApp);
+  }
+
+  /**
+   * Helper function to traverse shadow DOM starting from rs-app
+   */
+  private traverseShadowDOMForTextarea(rsApp: HTMLElement): HTMLElement | null {
+    if (!rsApp.shadowRoot) {
+      console.log("Rewordly: ❌ rs-app has no shadow root");
+      return null;
+    }
+
+    // Step 2: Find rs-room inside rs-app shadow root
+    const rsRoom = rsApp.shadowRoot.querySelector(
+      "rs-room"
+    ) as HTMLElement | null;
+    if (!rsRoom) {
+      console.log("Rewordly: ❌ rs-room not found in rs-app shadow root");
+      // Fallback: Try to find rs-message-composer directly in rs-app shadow root
+      console.log(
+        "Rewordly: Trying to find rs-message-composer directly in rs-app shadow root..."
+      );
+      const rsMessageComposer = rsApp.shadowRoot.querySelector(
+        "rs-message-composer"
+      ) as HTMLElement | null;
+      if (rsMessageComposer && rsMessageComposer.shadowRoot) {
+        return this.findTextareaInMessageComposer(rsMessageComposer);
+      }
+      return null;
+    }
+
+    if (!rsRoom.shadowRoot) {
+      console.log("Rewordly: ❌ rs-room found but has no shadow root");
+      return null;
+    }
+
+    console.log("Rewordly: ✅ Found rs-room, traversing shadow DOM...");
+
+    // Step 3: Find rs-message-composer inside rs-room shadow root
+    const rsMessageComposer = rsRoom.shadowRoot.querySelector(
+      "rs-message-composer"
+    ) as HTMLElement | null;
+    if (!rsMessageComposer) {
+      console.log(
+        "Rewordly: ❌ rs-message-composer not found in rs-room shadow root"
+      );
+      // Debug: List all elements in rs-room shadow root
+      const allElements = rsRoom.shadowRoot.querySelectorAll("*");
+      console.log(
+        `Rewordly: Found ${allElements.length} elements in rs-room shadow root:`,
+        Array.from(allElements)
+          .map((el) => el.tagName)
+          .slice(0, 10)
+      );
+      return null;
+    }
+
+    if (!rsMessageComposer.shadowRoot) {
+      console.log(
+        "Rewordly: ❌ rs-message-composer found but has no shadow root"
+      );
+      return null;
+    }
+
+    console.log(
+      "Rewordly: ✅ Found rs-message-composer, searching for textarea..."
+    );
+    return this.findTextareaInMessageComposer(rsMessageComposer);
+  }
+
+  /**
+   * Helper function to find textarea inside rs-message-composer shadow root
+   */
+  private findTextareaInMessageComposer(
+    rsMessageComposer: HTMLElement
+  ): HTMLElement | null {
+    if (!rsMessageComposer.shadowRoot) {
+      return null;
+    }
+
+    // Step 4: Find textarea inside rs-message-composer shadow root
+    // Try multiple selectors
+    const selectors = [
+      'textarea[name="message"]',
+      'textarea[aria-label="Write message"]',
+      'textarea[placeholder="Message"]',
+      "textarea",
+    ];
+
+    for (const selector of selectors) {
+      const textarea = rsMessageComposer.shadowRoot.querySelector(
+        selector
+      ) as HTMLTextAreaElement | null;
+
+      if (textarea) {
+        const name = textarea.getAttribute("name");
+        const ariaLabel = textarea.getAttribute("aria-label");
+        const placeholder = textarea.getAttribute("placeholder");
+        console.log(`Rewordly: Found textarea with selector "${selector}":`, {
+          textarea,
+          name,
+          ariaLabel,
+          placeholder,
+          isEditable: isEditableElement(textarea),
+        });
+
+        if (isEditableElement(textarea)) {
+          // Verify it's the message textarea
+          if (
+            name === "message" ||
+            ariaLabel === "Write message" ||
+            placeholder === "Message"
+          ) {
+            console.log(
+              "Rewordly: ✅ Found message textarea in nested shadow DOM!",
+              {
+                textarea,
+                name,
+                ariaLabel,
+                placeholder,
+              }
+            );
+            return textarea;
+          }
+        }
+      }
+    }
+
+    // Fallback: Use recursive search if direct path fails
+    console.log("Rewordly: Direct selectors failed, using recursive search...");
+    const allEditableElements = this.findEditableInShadowDOM(
+      rsMessageComposer.shadowRoot
+    );
+    console.log(
+      `Rewordly: Found ${allEditableElements.length} editable elements via recursive search`
+    );
+
+    const messageTextarea = allEditableElements.find((el) => {
+      const name = el.getAttribute("name");
+      const ariaLabel = el.getAttribute("aria-label");
+      const placeholder = el.getAttribute("placeholder");
+      const isMatch =
+        name === "message" ||
+        ariaLabel === "Write message" ||
+        placeholder === "Message";
+
+      if (isMatch) {
+        console.log("Rewordly: Found potential message textarea:", {
+          element: el,
+          name,
+          ariaLabel,
+          placeholder,
+          tagName: el.tagName,
+        });
+      }
+
+      return isMatch;
+    });
+
+    if (messageTextarea) {
+      console.log("Rewordly: ✅ Found message textarea via recursive search!", {
+        messageTextarea,
+      });
+      return messageTextarea;
+    }
+
+    // Last resort: Return first textarea if any found
+    const firstTextarea = allEditableElements.find(
+      (el) => el.tagName === "TEXTAREA"
+    );
+    if (firstTextarea) {
+      console.log(
+        "Rewordly: ⚠️ Using first textarea found (may not be message textarea):",
+        {
+          firstTextarea,
+          name: firstTextarea.getAttribute("name"),
+          ariaLabel: firstTextarea.getAttribute("aria-label"),
+          placeholder: firstTextarea.getAttribute("placeholder"),
+        }
+      );
+      return firstTextarea;
+    }
+
+    console.log("Rewordly: ❌ Message textarea not found in nested shadow DOM");
+    return null;
+  }
+
+  /**
+   * Find and attach to editable elements, including those in shadow DOM
+   */
   private findAndAttachToEditableElements(): void {
     const selectors = [
       'textarea[placeholder*="What are your thoughts"]',
       'textarea[placeholder*="Add a comment"]',
+      'textarea[name="message"]', // Reddit message composer textarea
+      'textarea[aria-label="Write message"]', // Reddit message composer textarea (alternative)
+      'textarea[placeholder="Message"]', // Reddit message composer textarea (placeholder variant)
       '[contenteditable="true"]',
       "textarea",
     ];
 
+    // First, find elements in regular DOM
     selectors.forEach((selector) => {
       const elements = document.querySelectorAll(selector);
+      console.log(
+        `Rewordly: Found ${elements.length} elements for selector: ${selector}`
+      );
       elements.forEach((el) => {
-        this.attachToEditableElement(el as HTMLElement);
+        const element = el as HTMLElement;
+        console.log("Rewordly: Attempting to attach element:", element, {
+          name: element.getAttribute("name"),
+          ariaLabel: element.getAttribute("aria-label"),
+          placeholder: element.getAttribute("placeholder"),
+          isEditable: isEditableElement(element),
+          alreadyAttached: this.editableElements.has(element),
+        });
+        this.attachToEditableElement(element);
       });
+    });
+
+    // CRITICAL: Search for message textarea in Reddit chat client (nested shadow DOM)
+    // Reddit chat uses: rs-app -> rs-room -> rs-message-composer (all with shadow roots)
+    const messageTextarea = this.findMessageTextareaInRedditChat();
+    if (messageTextarea && !this.editableElements.has(messageTextarea)) {
+      console.log(
+        "Rewordly: ✅ Attaching to message textarea found in nested shadow DOM"
+      );
+      this.attachToEditableElement(messageTextarea);
+    }
+
+    // Also check for rs-message-composer directly (fallback)
+    const messageComposers = document.querySelectorAll("rs-message-composer");
+    console.log(
+      `Rewordly: Found ${messageComposers.length} rs-message-composer elements (direct)`
+    );
+    messageComposers.forEach((composer) => {
+      const composerElement = composer as HTMLElement;
+
+      // Check if composer has shadow root
+      if (composerElement.shadowRoot) {
+        console.log(
+          "Rewordly: Found rs-message-composer with shadow root, searching for editable elements"
+        );
+        const shadowEditableElements = this.findEditableInShadowDOM(
+          composerElement.shadowRoot
+        );
+        console.log(
+          `Rewordly: Found ${shadowEditableElements.length} editable elements in shadow DOM`
+        );
+        shadowEditableElements.forEach((element) => {
+          if (!this.editableElements.has(element)) {
+            const name = element.getAttribute("name");
+            const ariaLabel = element.getAttribute("aria-label");
+            const placeholder = element.getAttribute("placeholder");
+            console.log("Rewordly: Found editable element in shadow DOM:", {
+              element,
+              tagName: element.tagName,
+              name,
+              ariaLabel,
+              placeholder,
+            });
+            this.attachToEditableElement(element);
+          }
+        });
+      }
+    });
+
+    // Also check Reddit chat client for editable elements (including shadow DOM)
+    const chatClient = document.querySelector(
+      '[data-testid="reddit-chat-client"]'
+    ) as HTMLElement | null;
+    if (chatClient && !chatClient.classList.contains("hidden")) {
+      const chatSelectors = [
+        "textarea",
+        '[contenteditable="true"]',
+        'textarea[name="message"]',
+        'textarea[aria-label*="message" i]',
+        'textarea[placeholder*="message" i]',
+      ];
+
+      // Check regular DOM
+      chatSelectors.forEach((selector) => {
+        const elements = chatClient.querySelectorAll(selector);
+        elements.forEach((el) => {
+          const editableElement = el as HTMLElement;
+          if (isEditableElement(editableElement)) {
+            this.attachToEditableElement(editableElement);
+            console.log(
+              "Rewordly: Attached to Reddit chat editable element (initial)",
+              editableElement
+            );
+          }
+        });
+      });
+
+      // Check shadow DOM in chat client
+      if (chatClient.shadowRoot) {
+        const shadowEditableElements = this.findEditableInShadowDOM(
+          chatClient.shadowRoot
+        );
+        shadowEditableElements.forEach((element) => {
+          this.attachToEditableElement(element);
+          console.log(
+            "Rewordly: Attached to Reddit chat editable element in shadow DOM (initial)",
+            element
+          );
+        });
+      }
+    }
+
+    // Also search all shadow DOMs in the document for editable elements
+    // This catches any other custom elements with shadow DOM
+    const allElements = document.querySelectorAll("*");
+    allElements.forEach((el) => {
+      const element = el as HTMLElement;
+      if (element.shadowRoot) {
+        const shadowEditableElements = this.findEditableInShadowDOM(
+          element.shadowRoot
+        );
+        shadowEditableElements.forEach((editableElement) => {
+          // Only attach if it's a message textarea or other important element
+          const name = editableElement.getAttribute("name");
+          const ariaLabel = editableElement.getAttribute("aria-label");
+          const placeholder = editableElement.getAttribute("placeholder");
+          const isMessageTextarea =
+            name === "message" ||
+            ariaLabel === "Write message" ||
+            placeholder === "Message";
+
+          if (isMessageTextarea || editableElement.tagName === "TEXTAREA") {
+            console.log(
+              "Rewordly: Found editable element in shadow DOM (general search):",
+              {
+                element: editableElement,
+                parent: element,
+                name,
+                ariaLabel,
+                placeholder,
+              }
+            );
+            this.attachToEditableElement(editableElement);
+          }
+        });
+      }
     });
   }
 
   private findEditableInElement(element: HTMLElement): void {
     const selectors = ["textarea", '[contenteditable="true"]'];
 
+    // Check regular DOM
     selectors.forEach((selector) => {
       const children = element.querySelectorAll(selector);
       children.forEach((child) => {
         this.attachToEditableElement(child as HTMLElement);
       });
     });
+
+    // CRITICAL: Also check shadow DOM
+    if (element.shadowRoot) {
+      const shadowEditableElements = this.findEditableInShadowDOM(
+        element.shadowRoot
+      );
+      shadowEditableElements.forEach((editableElement) => {
+        console.log(
+          "Rewordly: Found editable element in shadow DOM (findEditableInElement):",
+          {
+            element: editableElement,
+            parent: element,
+            name: editableElement.getAttribute("name"),
+            ariaLabel: editableElement.getAttribute("aria-label"),
+            placeholder: editableElement.getAttribute("placeholder"),
+          }
+        );
+        this.attachToEditableElement(editableElement);
+      });
+    }
   }
 
   private attachToEditableElement(element: HTMLElement): void {
-    if (!isEditableElement(element) || this.editableElements.has(element)) {
+    if (!element) {
+      console.warn(
+        "Rewordly: attachToEditableElement called with null element"
+      );
+      return;
+    }
+
+    const isEditable = isEditableElement(element);
+    const alreadyAttached = this.editableElements.has(element);
+    const name = element.getAttribute("name");
+    const ariaLabel = element.getAttribute("aria-label");
+    const placeholder = element.getAttribute("placeholder");
+    const isMessageTextarea =
+      name === "message" ||
+      ariaLabel === "Write message" ||
+      placeholder === "Message";
+
+    // Only log non-message elements if they're actually editable to reduce noise
+    if (!isMessageTextarea) {
+      console.log("Rewordly: attachToEditableElement called", {
+        element,
+        tagName: element.tagName,
+        name,
+        ariaLabel,
+        placeholder,
+        isEditable,
+        alreadyAttached,
+      });
+    } else {
+      console.log(
+        "Rewordly: attachToEditableElement called for MESSAGE TEXTAREA",
+        {
+          element,
+          tagName: element.tagName,
+          name,
+          ariaLabel,
+          placeholder,
+          isEditable,
+          alreadyAttached,
+        }
+      );
+    }
+
+    if (!isEditable) {
+      if (isMessageTextarea) {
+        console.warn("Rewordly: MESSAGE TEXTAREA is not editable, skipping", {
+          element,
+          name,
+          ariaLabel,
+          placeholder,
+          tagName: element.tagName,
+        });
+      } else {
+        // console.warn("Rewordly: Element is not editable, skipping", element);
+      }
+      return;
+    }
+
+    if (alreadyAttached) {
+      if (isMessageTextarea) {
+        console.log("Rewordly: MESSAGE TEXTAREA already attached, skipping", {
+          element,
+          name,
+          ariaLabel,
+          placeholder,
+        });
+      } else {
+        console.log("Rewordly: Element already attached, skipping", element);
+      }
       return;
     }
 
@@ -861,11 +1977,75 @@ export class RedditPlatformAdapter implements PlatformAdapter {
     // Disable browser's native spellcheck
     disableSpellCheck(element);
 
+    // CRITICAL: For shadow DOM elements, add direct event listeners
+    // Document-level listeners may not work reliably for shadow DOM elements
+    const isInShadowDOM = element.getRootNode() instanceof ShadowRoot;
+    if (isInShadowDOM) {
+      console.log(
+        "Rewordly: Element is in shadow DOM, adding direct event listeners",
+        element
+      );
+      // Add input listener directly to element
+      element.addEventListener("input", this.handleInputDirect, true);
+      element.addEventListener("focusin", this.handleFocusDirect, true);
+      // Also listen to composition events (for IME input)
+      element.addEventListener(
+        "compositionupdate",
+        this.handleInputDirect,
+        true
+      );
+      element.addEventListener("compositionend", this.handleInputDirect, true);
+    }
+
     // Set up ResizeObserver for this element to catch layout changes
     this.setupResizeObserverForElement(element);
 
-    console.log("Rewordly: Reddit adapter attached to element", element);
+    // CRITICAL: Set up scroll listener for message textarea (like comment areas)
+    if (isMessageTextarea) {
+      this.setupScrollListenerForElement(element);
+      // Also set up clipping for message textarea container
+      this.setupHighlightClippingForElement(element);
+    }
+
+    if (isMessageTextarea) {
+      console.log(
+        "✅ Rewordly: Reddit adapter SUCCESSFULLY attached to MESSAGE TEXTAREA",
+        {
+          element,
+          name,
+          ariaLabel,
+          placeholder,
+          tagName: element.tagName,
+          isInShadowDOM,
+        }
+      );
+    } else {
+      console.log("Rewordly: Reddit adapter attached to element", element, {
+        name,
+        ariaLabel,
+        placeholder,
+        isInShadowDOM,
+      });
+    }
   }
+
+  /**
+   * Direct input handler for shadow DOM elements
+   * This ensures events from shadow DOM elements are properly captured
+   */
+  private handleInputDirect = (event: Event): void => {
+    // Delegate to main handler
+    this.handleInput(event);
+  };
+
+  /**
+   * Direct focus handler for shadow DOM elements
+   * This ensures events from shadow DOM elements are properly captured
+   */
+  private handleFocusDirect = (event: Event): void => {
+    // Delegate to main handler
+    this.handleFocus(event);
+  };
 
   /**
    * Set up ResizeObserver for all editable elements
@@ -899,6 +2079,8 @@ export class RedditPlatformAdapter implements PlatformAdapter {
                 (error: GrammarError) =>
                   getErrorTextRects(element, error.start, error.end)
               );
+              // CRITICAL: After updating positions, check and hide highlights outside container
+              this.checkAndHideHighlightsOutsideContainer(element);
             });
           });
         }
@@ -916,6 +2098,242 @@ export class RedditPlatformAdapter implements PlatformAdapter {
     }
 
     this.resizeObservers.set(element, resizeObserver);
+  }
+
+  /**
+   * Set up scroll listener for an element to update highlight positions
+   * Similar to comment areas - highlights should update immediately on scroll
+   */
+  private setupScrollListenerForElement(element: HTMLElement): void {
+    // Remove existing listener if any
+    const existingListener = this.scrollListeners.get(element);
+    if (existingListener) {
+      // Find scroll container
+      const scrollContainer = this.findScrollContainer(element);
+      if (scrollContainer && scrollContainer !== window) {
+        (scrollContainer as HTMLElement).removeEventListener(
+          "scroll",
+          existingListener,
+          true
+        );
+      } else {
+        window.removeEventListener("scroll", existingListener, true);
+      }
+    }
+
+    // Create debounced scroll handler
+    let scrollTimeout: number | null = null;
+    const scrollHandler = () => {
+      if (scrollTimeout !== null) {
+        cancelAnimationFrame(scrollTimeout);
+      }
+      scrollTimeout = requestAnimationFrame(() => {
+        // Update highlight positions for this element
+        if (this.grammarErrors.has(element)) {
+          const errors = this.grammarErrors.get(element) || [];
+          if (errors.length > 0) {
+            this.highlightHelper.updatePositions(
+              element,
+              errors,
+              (error: GrammarError) =>
+                getErrorTextRects(element, error.start, error.end)
+            );
+            // CRITICAL: After updating positions, check and hide highlights outside container
+            this.checkAndHideHighlightsOutsideContainer(element);
+          }
+        }
+      });
+    };
+
+    // Find scroll container (could be element itself, parent, or window)
+    const scrollContainer = this.findScrollContainer(element);
+    if (scrollContainer && scrollContainer !== window) {
+      (scrollContainer as HTMLElement).addEventListener(
+        "scroll",
+        scrollHandler,
+        true
+      );
+      console.log(
+        "Rewordly: Added scroll listener to container for message textarea",
+        scrollContainer
+      );
+    } else {
+      // Fallback to window scroll
+      window.addEventListener("scroll", scrollHandler, true);
+      console.log(
+        "Rewordly: Added scroll listener to window for message textarea"
+      );
+    }
+
+    this.scrollListeners.set(element, scrollHandler);
+  }
+
+  /**
+   * Find the scroll container for an element
+   * Checks element itself, parents, and shadow DOM parents
+   */
+  private findScrollContainer(element: HTMLElement): HTMLElement | Window {
+    // Check if element itself is scrollable
+    const style = window.getComputedStyle(element);
+    if (
+      style.overflow === "auto" ||
+      style.overflow === "scroll" ||
+      style.overflowY === "auto" ||
+      style.overflowY === "scroll"
+    ) {
+      return element;
+    }
+
+    // Check parent chain
+    let parent = element.parentElement;
+    let depth = 0;
+    while (parent && depth < 10) {
+      const parentStyle = window.getComputedStyle(parent);
+      if (
+        parentStyle.overflow === "auto" ||
+        parentStyle.overflow === "scroll" ||
+        parentStyle.overflowY === "auto" ||
+        parentStyle.overflowY === "scroll"
+      ) {
+        return parent;
+      }
+
+      // Check if parent is message-box or form (common containers for message textarea)
+      if (
+        parent.classList?.contains("message-box") ||
+        parent.tagName?.toLowerCase() === "form"
+      ) {
+        // Check if this container is scrollable
+        if (
+          parentStyle.overflow === "auto" ||
+          parentStyle.overflow === "scroll" ||
+          parentStyle.overflowY === "auto" ||
+          parentStyle.overflowY === "scroll"
+        ) {
+          return parent;
+        }
+        // Even if not scrollable, return it as the container for clipping
+        return parent;
+      }
+
+      parent = parent.parentElement;
+      depth++;
+    }
+
+    // Check shadow DOM parent
+    const root = element.getRootNode();
+    if (root instanceof ShadowRoot) {
+      const host = root.host as HTMLElement;
+      if (host) {
+        const hostStyle = window.getComputedStyle(host);
+        if (
+          hostStyle.overflow === "auto" ||
+          hostStyle.overflow === "scroll" ||
+          hostStyle.overflowY === "auto" ||
+          hostStyle.overflowY === "scroll"
+        ) {
+          return host;
+        }
+      }
+    }
+
+    // Default to window
+    return window;
+  }
+
+  /**
+   * Set up clipping for highlights to stay within message textarea container
+   * Highlights outside the message area should not be visible
+   */
+  private setupHighlightClippingForElement(element: HTMLElement): void {
+    // Function to check and hide highlights outside container
+    const checkAndHide = () => {
+      this.checkAndHideHighlightsOutsideContainer(element);
+    };
+
+    // Initial check
+    checkAndHide();
+
+    // Update on scroll/resize
+    const scrollContainer = this.findScrollContainer(element);
+    if (scrollContainer && scrollContainer !== window) {
+      (scrollContainer as HTMLElement).addEventListener(
+        "scroll",
+        checkAndHide,
+        true
+      );
+    }
+    window.addEventListener("resize", checkAndHide);
+    window.addEventListener("scroll", checkAndHide, true);
+
+    console.log(
+      "Rewordly: Set up highlight visibility check for message textarea"
+    );
+  }
+
+  /**
+   * Check if highlights are outside the message container and hide them
+   * This is more reliable than clip-path for fixed positioned elements
+   */
+  private checkAndHideHighlightsOutsideContainer(element: HTMLElement): void {
+    // Find the message container (message-box or form)
+    const messageContainer =
+      element.closest(".message-box") ||
+      element.closest("form") ||
+      element.parentElement;
+
+    if (!messageContainer) {
+      return;
+    }
+
+    // Get highlight container
+    const highlightsContent = this.highlightHelper.getContent();
+    if (!highlightsContent) {
+      return;
+    }
+
+    const elementId = getElementId(element);
+    const highlights = highlightsContent.querySelectorAll(
+      `[data-element-id="${elementId}"]`
+    );
+
+    if (highlights.length === 0) {
+      return;
+    }
+
+    // Get container bounds
+    const containerRect = (
+      messageContainer as HTMLElement
+    ).getBoundingClientRect();
+    const containerTop = containerRect.top;
+    const containerBottom = containerRect.bottom;
+    const containerLeft = containerRect.left;
+    const containerRight = containerRect.right;
+
+    // Add small tolerance (5px) to account for rounding errors
+    const tolerance = 5;
+
+    highlights.forEach((highlight) => {
+      const highlightEl = highlight as HTMLElement;
+      const highlightRect = highlightEl.getBoundingClientRect();
+
+      // Check if highlight is completely outside container bounds
+      const isOutside =
+        highlightRect.bottom < containerTop - tolerance ||
+        highlightRect.top > containerBottom + tolerance ||
+        highlightRect.right < containerLeft - tolerance ||
+        highlightRect.left > containerRight + tolerance;
+
+      if (isOutside) {
+        // Hide highlight if outside container
+        highlightEl.style.display = "none";
+        highlightEl.setAttribute("data-hidden-outside-container", "true");
+      } else {
+        // Show highlight if inside container
+        highlightEl.style.display = "";
+        highlightEl.removeAttribute("data-hidden-outside-container");
+      }
+    });
   }
 
   private setupInputListeners(): void {
@@ -942,6 +2360,15 @@ export class RedditPlatformAdapter implements PlatformAdapter {
     // Don't validate highlights during replace operations
     if (this.isPerformingReplace) {
       return;
+    }
+
+    // Ensure element is attached (important for dynamically added elements like message textarea)
+    if (!this.editableElements.has(element)) {
+      console.log(
+        "Rewordly: Element not attached in handleInput, attaching now",
+        element
+      );
+      this.attachToEditableElement(element);
     }
 
     this.currentElement = element;
@@ -1037,7 +2464,7 @@ export class RedditPlatformAdapter implements PlatformAdapter {
 
         // Notify change BEFORE updating last text so change can be detected
         this.changeEmitter.notifyChange(
-          () => this.getFirstEditableElement(),
+          () => element, // Use element directly instead of getFirstEditableElement
           extractText,
           getElementId
         );
@@ -1063,7 +2490,7 @@ export class RedditPlatformAdapter implements PlatformAdapter {
 
     // Notify change BEFORE updating last text so change can be detected
     this.changeEmitter.notifyChange(
-      () => this.getFirstEditableElement(),
+      () => element, // Use element directly instead of getFirstEditableElement
       extractText,
       getElementId
     );
@@ -1100,6 +2527,43 @@ export class RedditPlatformAdapter implements PlatformAdapter {
       return;
     }
 
+    // Check if this element is inside Reddit chat client
+    const isInChatClient =
+      element.closest?.('[data-testid="reddit-chat-client"]') ||
+      element.closest?.("rs-message-composer");
+
+    // Check if this is a message textarea that needs to be attached
+    const name = element.getAttribute("name");
+    const ariaLabel = element.getAttribute("aria-label");
+    const placeholder = element.getAttribute("placeholder");
+    const isMessageTextarea =
+      (element instanceof HTMLTextAreaElement &&
+        (element.name === "message" ||
+          element.getAttribute("aria-label") === "Write message" ||
+          element.getAttribute("placeholder") === "Message")) ||
+      (element.tagName?.toLowerCase() === "textarea" &&
+        (name === "message" ||
+          ariaLabel === "Write message" ||
+          placeholder === "Message"));
+
+    // If this is a message textarea or in chat client and not yet attached, attach it
+    if (
+      (isMessageTextarea || isInChatClient) &&
+      !this.editableElements.has(element)
+    ) {
+      console.log("Rewordly: Message/chat element focused, attaching...", {
+        isMessageTextarea,
+        isInChatClient,
+        element,
+      });
+      this.attachToEditableElement(element);
+    }
+
+    // Ensure element is in editableElements set (safety check)
+    if (!this.editableElements.has(element)) {
+      this.attachToEditableElement(element);
+    }
+
     this.currentElement = element;
     this.changeEmitter.setCurrentElement(element);
 
@@ -1112,14 +2576,182 @@ export class RedditPlatformAdapter implements PlatformAdapter {
     }
     // Force check on focus - even if text hasn't changed
     this.changeEmitter.notifyChange(
-      () => this.getFirstEditableElement(),
+      () => element, // Use the focused element directly instead of getFirstEditableElement
       extractText,
       getElementId,
       true // Pass true to force notification
     );
   };
 
+  /**
+   * STEP 1: Editable Candidate Policy for Reddit
+   *
+   * Determines if an element is a valid editable candidate for grammar checking.
+   * This function implements the policy for which elements should be considered
+   * for grammar checking on Reddit.
+   *
+   * Rules:
+   * 1. Element must be editable (textarea, contenteditable, or valid input)
+   * 2. Element must be visible (not hidden, has offsetParent)
+   * 3. Element must be in a valid context (not in search overlay, etc.)
+   * 4. Element must be attached to the adapter (in editableElements set)
+   *
+   * Priority order (for future use):
+   * - Currently focused element (highest priority)
+   * - Message/DM textarea (high priority)
+   * - Comment box (medium priority)
+   * - Post editor (medium priority)
+   * - Search input (low priority, may be excluded)
+   *
+   * NOTE: This function will be used in subsequent steps to replace
+   * getFirstEditableElement() fallback logic.
+   *
+   * @param element - The element to check
+   * @returns Object with isCandidate boolean and metadata
+   */
+  // private isEditableCandidate(element: HTMLElement | null): {
+  //   isCandidate: boolean;
+  //   priority: number;
+  //   reason: string;
+  // } {
+  //   // Null check
+  //   if (!element) {
+  //     return {
+  //       isCandidate: false,
+  //       priority: 0,
+  //       reason: "Element is null",
+  //     };
+  //   }
+
+  //   // Must be editable
+  //   if (!isEditableElement(element)) {
+  //     return {
+  //       isCandidate: false,
+  //       priority: 0,
+  //       reason: "Element is not editable",
+  //     };
+  //   }
+
+  //   // Must be attached to adapter
+  //   if (!this.editableElements.has(element)) {
+  //     return {
+  //       isCandidate: false,
+  //       priority: 0,
+  //       reason: "Element is not attached to adapter",
+  //     };
+  //   }
+
+  //   // Must be visible (not hidden, has offsetParent)
+  //   const isVisible =
+  //     element.offsetParent !== null &&
+  //     !element.classList.contains("hidden") &&
+  //     !element.hasAttribute("hidden") &&
+  //     window.getComputedStyle(element).display !== "none" &&
+  //     window.getComputedStyle(element).visibility !== "hidden";
+
+  //   if (!isVisible) {
+  //     return {
+  //       isCandidate: false,
+  //       priority: 0,
+  //       reason: "Element is not visible",
+  //     };
+  //   }
+
+  //   // Check if element is in an invalid context (e.g., search overlay)
+  //   // When comment search is open, we should not check elements in that context
+  //   if (this.isCommentSearchOpen) {
+  //     const isInSearchContext =
+  //       element.closest("pdp-comment-search-input") !== null ||
+  //       element.closest(
+  //         'shreddit-async-loader[bundlename="comment_composer"]'
+  //       ) !== null;
+
+  //     if (isInSearchContext) {
+  //       return {
+  //         isCandidate: false,
+  //         priority: 0,
+  //         reason: "Element is in comment search context (search is open)",
+  //       };
+  //     }
+  //   }
+
+  //   // Determine element type and priority
+  //   const name = element.getAttribute("name");
+  //   const ariaLabel = element.getAttribute("aria-label");
+  //   const placeholder = element.getAttribute("placeholder");
+  //   const isFocused = document.activeElement === element;
+
+  //   // Check if this is a message/DM textarea
+  //   const isMessageTextarea =
+  //     name === "message" ||
+  //     ariaLabel === "Write message" ||
+  //     placeholder === "Message";
+
+  //   // Check if this is a comment box
+  //   const isCommentBox =
+  //     placeholder?.includes("What are your thoughts") ||
+  //     placeholder?.includes("Add a comment") ||
+  //     element.closest("shreddit-composer") !== null ||
+  //     element.closest("reddit-rte") !== null;
+
+  //   // Check if this is a post editor
+  //   const isPostEditor =
+  //     element.closest("shreddit-composer") !== null ||
+  //     element.closest("reddit-rte") !== null ||
+  //     (element.hasAttribute("contenteditable") &&
+  //       element.getAttribute("contenteditable") === "true");
+
+  //   // Check if this is a search input (lower priority, may exclude)
+  //   const isSearchInput =
+  //     element instanceof HTMLInputElement &&
+  //     (element.type === "search" ||
+  //       element.getAttribute("type") === "search" ||
+  //       element.getAttribute("role") === "searchbox" ||
+  //       element.closest('[role="search"]') !== null);
+
+  //   // Calculate priority
+  //   let priority = 0;
+  //   let reason = "";
+
+  //   if (isFocused) {
+  //     // Currently focused element gets highest priority
+  //     priority = 100;
+  //     reason = "Currently focused element";
+  //   } else if (isMessageTextarea) {
+  //     // Message/DM textarea gets high priority
+  //     priority = 80;
+  //     reason = "Message/DM textarea";
+  //   } else if (isCommentBox && !isSearchInput) {
+  //     // Comment box gets medium-high priority
+  //     priority = 60;
+  //     reason = "Comment box";
+  //   } else if (isPostEditor && !isSearchInput) {
+  //     // Post editor gets medium priority
+  //     priority = 50;
+  //     reason = "Post editor";
+  //   } else if (isSearchInput) {
+  //     // Search inputs get low priority (may be excluded in future)
+  //     priority = 10;
+  //     reason = "Search input (low priority)";
+  //   } else {
+  //     // Other editable elements get low priority
+  //     priority = 20;
+  //     reason = "Other editable element";
+  //   }
+
+  //   return {
+  //     isCandidate: true,
+  //     priority,
+  //     reason,
+  //   };
+  // }
+
   private getFirstEditableElement(): HTMLElement | null {
+    // If there's a current element, prefer it
+    if (this.currentElement && this.editableElements.has(this.currentElement)) {
+      return this.currentElement;
+    }
+
     if (this.editableElements.size === 0) {
       return null;
     }
@@ -1247,4 +2879,128 @@ export class RedditPlatformAdapter implements PlatformAdapter {
       this.currentUrl = newUrl;
     }
   };
+
+  /**
+   * Set up periodic scan for message textareas
+   * This catches any message textareas that might be missed by MutationObserver
+   */
+  private setupPeriodicMessageTextareaScan(): void {
+    // Scan immediately
+    this.scanForMessageTextareas();
+
+    // Then scan every 2 seconds
+    this.messageTextareaScanInterval = window.setInterval(() => {
+      this.scanForMessageTextareas();
+    }, 2000);
+  }
+
+  /**
+   * Remove periodic message textarea scan
+   */
+  private removePeriodicMessageTextareaScan(): void {
+    if (this.messageTextareaScanInterval !== null) {
+      clearInterval(this.messageTextareaScanInterval);
+      this.messageTextareaScanInterval = null;
+    }
+  }
+
+  /**
+   * Scan for message textareas in the document (including shadow DOM)
+   */
+  private scanForMessageTextareas(): void {
+    const selectors = [
+      'textarea[name="message"]',
+      'textarea[aria-label="Write message"]',
+      'textarea[placeholder="Message"]',
+    ];
+
+    // Scan regular DOM
+    selectors.forEach((selector) => {
+      const elements = document.querySelectorAll(selector);
+      elements.forEach((el) => {
+        const element = el as HTMLTextAreaElement;
+        if (isEditableElement(element) && !this.editableElements.has(element)) {
+          // Check if it's inside a message-box or form
+          const messageBox = element.closest?.(".message-box");
+          const formWithMessageBox = element.closest?.(
+            "form:has(.message-box)"
+          );
+          const isInForm = element.closest?.("form");
+
+          if (messageBox || formWithMessageBox || isInForm) {
+            console.log(
+              "Rewordly: Periodic scan found unattached message textarea",
+              {
+                element,
+                name: element.getAttribute("name"),
+                ariaLabel: element.getAttribute("aria-label"),
+                placeholder: element.getAttribute("placeholder"),
+                messageBox: !!messageBox,
+                formWithMessageBox: !!formWithMessageBox,
+                isInForm: !!isInForm,
+              }
+            );
+            this.attachToEditableElement(element);
+          }
+        }
+      });
+    });
+
+    // CRITICAL: Use specialized function to find message textarea in nested shadow DOM
+    const messageTextarea = this.findMessageTextareaInRedditChat();
+    if (
+      messageTextarea &&
+      isEditableElement(messageTextarea) &&
+      !this.editableElements.has(messageTextarea)
+    ) {
+      console.log(
+        "Rewordly: Periodic scan found unattached message textarea in nested shadow DOM",
+        {
+          element: messageTextarea,
+          name: messageTextarea.getAttribute("name"),
+          ariaLabel: messageTextarea.getAttribute("aria-label"),
+          placeholder: messageTextarea.getAttribute("placeholder"),
+        }
+      );
+      this.attachToEditableElement(messageTextarea);
+    }
+
+    // Also check for rs-message-composer directly (fallback)
+    const messageComposers = document.querySelectorAll("rs-message-composer");
+    messageComposers.forEach((composer) => {
+      const composerElement = composer as HTMLElement;
+      if (composerElement.shadowRoot) {
+        const shadowEditableElements = this.findEditableInShadowDOM(
+          composerElement.shadowRoot
+        );
+        shadowEditableElements.forEach((element) => {
+          const name = element.getAttribute("name");
+          const ariaLabel = element.getAttribute("aria-label");
+          const placeholder = element.getAttribute("placeholder");
+          const isMessageTextarea =
+            name === "message" ||
+            ariaLabel === "Write message" ||
+            placeholder === "Message";
+
+          if (
+            isMessageTextarea &&
+            isEditableElement(element) &&
+            !this.editableElements.has(element)
+          ) {
+            console.log(
+              "Rewordly: Periodic scan found unattached message textarea in shadow DOM (fallback)",
+              {
+                element,
+                name,
+                ariaLabel,
+                placeholder,
+                parent: composerElement,
+              }
+            );
+            this.attachToEditableElement(element);
+          }
+        });
+      }
+    });
+  }
 }

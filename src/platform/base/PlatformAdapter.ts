@@ -109,3 +109,6 @@ export interface PlatformAdapter {
    */
   clearIssues?(): void;
 }
+
+
+
