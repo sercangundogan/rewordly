@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Rewordly",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Rewrite selected text instantly with advanced AI to enhance clarity, tone, and readability.",
   "permissions": [
     "activeTab",
@@ -10,7 +10,7 @@
     "contextMenus"
   ],
   "host_permissions": [
-    "https://rewordly-web.vercel.app/*"
+    "https://rewordly.store/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -37,7 +37,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["popup.html", "changelog.html", "welcome.html", "Reddit with AI Review and Grammar check.gif"],
+      "resources": ["popup.html", "changelog.html", "welcome.html"],
       "matches": ["http://*/*", "https://*/*"]
     }
   ]

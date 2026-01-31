@@ -16,7 +16,7 @@ export interface RewriteOptions {
 }
 
 export class RewordlyAPIUtil {
-  private baseUrl: string = 'https://rewordly-web.vercel.app/api';
+  private baseUrl: string = 'https://rewordly.store/api';
 
   constructor() {
     // No API key needed for the new endpoint

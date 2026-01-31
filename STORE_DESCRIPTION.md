@@ -2,31 +2,35 @@ Simple, distraction-free AI writing assistant to rewrite text, fix grammar, and 
 
 Rewordly seamlessly integrates into any website in your browser. Whether you're writing emails, crafting documents, or creating content, Rewordly helps you improve clarity, tone, and readability with powerful AI—all without leaving the page you're on.
 
-🥰 The best part? No annoying popups or intrusive red squiggly lines that distract your writing workflow. Just select text and get instant improvements.
+🥰 The best part? No annoying popups. Just select text, get instant rewrite or grammar check when you need it.
 
 💡 Completely free to use—no API keys required, no monthly limits, no subscriptions.
 
 ✨ Key Features
 
-🔸 Works Everywhere – Instantly enhance writing in any text box, editor, or webpage.
-
 🔸 Smart Rewriting – Transform your text with AI-powered rewriting that improves clarity, tone, and readability while preserving your original meaning.
 
-🔸 Grammar Check – Fix grammar mistakes instantly with a single click. Right-click the button or click the green area for grammar-only corrections.
+🔸 Grammar Check – Right-click on selected text and choose "Check grammar" for on-demand corrections and suggestions.
 
-🔸 Distraction-Free Design – A clean, intuitive floating button that appears only when you need it. No intrusive overlays or constant notifications.
+🔸 Works Everywhere – Instantly enhance writing in any text box, editor, or webpage.
+
+🔸 Context Menu Integration – Right-click on any selected text to rewrite or check grammar.
+
+🔸 Site Optimized – Perfect integration with Gmail, Twitter/X, Reddit, Medium, Notion, and more.
+
+🔸 Per-Page Control – Disable Rewordly on specific pages or toggle rewrite on/off from the popup.
+
+🔸 Distraction-Free Design – A clean, intuitive interface that appears only when you select text.
 
 🔸 One-Click Copy – Easily copy your improved text with a single click.
-
-🔸 Works on Any Website – Compatible with Gmail, Google Docs, social media, forums, and any website where you write.
 
 🖋 How It Works
 
 1️⃣ Select the text you want to improve on any webpage.
 
-2️⃣ The Rewordly button appears below your selection.
+2️⃣ The rewrite button appears below your selection—click it for AI rewrite.
 
-3️⃣ Click to rewrite or right-click (or click the green area) for grammar check.
+3️⃣ Or right-click on selected text and choose "Rewrite" or "Check grammar" from the context menu.
 
 4️⃣ Review the improved text in a clean modal interface.
 
@@ -35,9 +39,9 @@ Rewordly seamlessly integrates into any website in your browser. Whether you're 
 ⚡ Quick Access
 
 • Select any text on any webpage
-• Floating button appears automatically
-• Click for rewrite, right-click for grammar check
-• Copy improved text instantly
+• Rewrite button appears when you select
+• Right-click context menu for rewrite and grammar check
+• Toggle features on/off from the extension popup
 
 🎯 Perfect For
 
@@ -64,7 +68,14 @@ Need help or have a feature request? Contact us anytime.
 
 -----------------
 
-V1.0.2 - Enhanced grammar checking, improved UI responsiveness, and better text selection handling
+V1.2.0 – Focus on core features
+• Real-time grammar checking removed (we may revisit it later)
+• Full focus on rewrite and on-demand grammar check
+• Simplified UI and updated design
+• Website renewed—visit rewordly.store for the latest info
 
-V1.0.1 - Initial release with rewrite and grammar check features
+V1.1.0 – Context menu, per-page disable, rewrite toggle, site-specific improvements (Twitter, Gmail, Reddit, Medium, Notion)
 
+V1.0.2 – Enhanced grammar checking, improved UI responsiveness, and better text selection handling
+
+V1.0.1 – Initial release with rewrite and grammar check features

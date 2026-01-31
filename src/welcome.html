@@ -12,7 +12,7 @@
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: #e8e8e8;
       min-height: 100vh;
       padding: 40px 20px;
       color: #1f2937;
@@ -23,16 +23,17 @@
       margin: 0 auto;
       background: white;
       border-radius: 16px;
-      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
       overflow: hidden;
     }
 
     .header {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: #1a1a1a;
       color: white;
       padding: 50px 32px;
       text-align: center;
       position: relative;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
     }
 
     .header h1 {
@@ -46,18 +47,6 @@
       font-size: 18px;
       opacity: 0.95;
       line-height: 1.5;
-    }
-
-    .icon-container {
-      width: 80px;
-      height: 80px;
-      background: rgba(255, 255, 255, 0.2);
-      border-radius: 20px;
-      margin: 0 auto 24px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 40px;
     }
 
     .content {
@@ -86,7 +75,7 @@
       content: '';
       width: 4px;
       height: 24px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: #1a1a1a;
       border-radius: 2px;
     }
 
@@ -117,25 +106,21 @@
     }
 
     .how-to-use {
-      background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
-      border: 1px solid #10b981;
+      background: #f5f5f5;
+      border: 1px solid #e0e0e0;
+      border-left: 4px solid #1a1a1a;
       border-radius: 12px;
       padding: 24px;
       margin-top: 24px;
     }
 
     .how-to-use h3 {
-      color: #059669;
+      color: #1f2937;
       font-size: 18px;
       margin-bottom: 16px;
       display: flex;
       align-items: center;
       gap: 8px;
-    }
-
-    .how-to-use h3::before {
-      content: '💡';
-      font-size: 20px;
     }
 
     .steps {
@@ -148,7 +133,7 @@
       padding: 12px 0;
       padding-left: 40px;
       position: relative;
-      color: #059669;
+      color: #4b5563;
       line-height: 1.6;
       display: flex;
       align-items: center;
@@ -160,7 +145,7 @@
       left: 0;
       width: 28px;
       height: 28px;
-      background: #10b981;
+      background: #1a1a1a;
       color: white;
       border-radius: 50%;
       display: flex;
@@ -171,9 +156,9 @@
     }
 
     .footer {
-      background: #f8fafc;
+      background: #f5f5f5;
       padding: 32px;
-      border-top: 1px solid #e5e7eb;
+      border-top: 1px solid #e0e0e0;
       text-align: center;
     }
 
@@ -185,36 +170,36 @@
     }
 
     .footer a:not(.button) {
-      color: #667eea;
+      color: #1a1a1a;
       text-decoration: none;
       font-weight: 600;
       transition: color 0.2s;
     }
 
     .footer a:not(.button):hover {
-      color: #764ba2;
+      color: #2d2d2d;
       text-decoration: underline;
     }
 
     .button {
       display: inline-block;
       padding: 14px 28px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: #1a1a1a;
       color: white;
       border: none;
-      border-radius: 8px;
+      border-radius: 12px;
       font-size: 15px;
       font-weight: 600;
       cursor: pointer;
       transition: all 0.2s;
       text-decoration: none;
       margin-top: 8px;
-      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
     }
 
     .button:hover {
       transform: translateY(-2px);
-      box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
     }
 
     .button:active {
@@ -225,7 +210,7 @@
       position: absolute;
       top: 16px;
       right: 16px;
-      background: rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.15);
       border: none;
       color: white;
       width: 32px;
@@ -240,7 +225,7 @@
     }
 
     .close-button:hover {
-      background: rgba(255, 255, 255, 0.3);
+      background: rgba(255, 255, 255, 0.25);
     }
 
     .header {
@@ -252,7 +237,6 @@
   <div class="container">
     <div class="header">
       <button class="close-button" id="closeBtn" title="Close">×</button>
-      <div class="icon-container">✍️</div>
       <h1>Welcome to Rewordly!</h1>
       <p>Your AI-powered writing assistant is ready to help you improve your text.</p>
     </div>
@@ -270,19 +254,13 @@
         <h2 class="section-title">Key Features</h2>
         <ul class="feature-list">
           <li class="feature-item">
-            <strong>Real-time Grammar Check:</strong> See grammar errors highlighted as you type, Grammarly-style
+            <strong>Smart Rewriting:</strong>&nbsp;Improve clarity, tone, and style of your text with AI
           </li>
           <li class="feature-item">
-            <strong>Smart Rewriting:</strong> Improve clarity, tone, and style of your text with AI
+            <strong>Context Menu Access:</strong>&nbsp;Right-click on selected text to rewrite or check grammar
           </li>
           <li class="feature-item">
-            <strong>Context Menu Access:</strong> Right-click on selected text to rewrite or check grammar
-          </li>
-          <li class="feature-item">
-            <strong>Site Optimized:</strong> Works perfectly on Gmail, Twitter/X, Reddit, Medium, Notion, and more
-          </li>
-          <li class="feature-item">
-            <strong>Smart Language Detection:</strong> Automatically detects and checks only English text
+            <strong>Site Optimized:</strong>&nbsp;Works perfectly on Gmail, Twitter/X, Reddit, Medium, Notion, and more
           </li>
         </ul>
       </div>
@@ -290,10 +268,9 @@
       <div class="how-to-use">
         <h3>How to Use</h3>
         <ol class="steps">
-          <li class="step">Start typing in any text field - grammar errors will be highlighted automatically</li>
-          <li class="step">Click on highlighted errors to see suggestions and apply fixes</li>
-          <li class="step">For rewriting, select text and click the AI button or right-click and choose "Rewrite"</li>
-          <li class="step">Use the popup to toggle features on/off or disable on specific pages</li>
+          <li class="step">Select any text on a page, the rewrite button appears; click it to get an AI-improved version.</li>
+          <li class="step">Or right-click on selected text and choose "Rewrite" or "Check grammar" from the context menu.</li>
+          <li class="step">Use the extension popup to turn rewrite on/off or disable Rewordly on specific pages.</li>
         </ol>
       </div>
     </div>

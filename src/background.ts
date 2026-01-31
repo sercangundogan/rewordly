@@ -140,10 +140,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       }
     }
   } else if (info.menuItemId === 'rewordly-grammar') {
-    console.log('✅ Rewordly: Grammar check option clicked!', {
-      selectedText: info.selectionText,
-      tabId: tab?.id
-    });
+    console.log('✅ Rewordly: Grammar check option clicked', { tabId: tab?.id });
     
     // Also log in page console via content script
     if (tab?.id) {
@@ -279,7 +276,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
 // Test API validity
 async function testApi(): Promise<boolean> {
   try {
-    const response = await fetch('https://rewordly-web.vercel.app/api/rewrite', {
+    const response = await fetch('https://rewordly.store/api/rewrite', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'

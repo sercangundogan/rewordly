@@ -12,7 +12,7 @@
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: #e8e8e8;
       min-height: 100vh;
       padding: 40px 20px;
       color: #1f2937;
@@ -23,15 +23,16 @@
       margin: 0 auto;
       background: white;
       border-radius: 16px;
-      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
       overflow: hidden;
     }
 
     .header {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: #1a1a1a;
       color: white;
       padding: 40px 32px;
       text-align: center;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
     }
 
     .header h1 {
@@ -48,7 +49,7 @@
 
     .version-badge {
       display: inline-block;
-      background: rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.15);
       padding: 4px 12px;
       border-radius: 12px;
       font-size: 14px;
@@ -58,6 +59,16 @@
 
     .content {
       padding: 32px;
+    }
+
+    .content a {
+      color: #1a1a1a;
+      font-weight: 600;
+      text-decoration: underline;
+    }
+
+    .content a:hover {
+      text-decoration: none;
     }
 
     .section {
@@ -82,7 +93,7 @@
       content: '';
       width: 4px;
       height: 20px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: #1a1a1a;
       border-radius: 2px;
     }
 
@@ -105,7 +116,7 @@
       content: '✓';
       position: absolute;
       left: 0;
-      color: #10b981;
+      color: #2d4a3e;
       font-weight: bold;
       font-size: 16px;
     }
@@ -127,50 +138,10 @@
       content: '🔧';
     }
 
-    .demo-wrapper {
-      max-width: 1100px;
-      margin: 0 auto 24px;
-      background: #1f2937;
-      border-radius: 16px;
-      overflow: hidden;
-      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1);
-    }
-
-    .demo-wrapper h3 {
-      font-size: 15px;
-      font-weight: 600;
-      color: white;
-      padding: 14px 24px;
-      margin: 0;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      background: linear-gradient(135deg, #374151 0%, #1f2937 100%);
-    }
-
-    .demo-wrapper h3::before {
-      content: '🎬';
-      font-size: 18px;
-    }
-
-    .demo-gif {
-      width: 100%;
-      display: block;
-    }
-
-    .demo-caption {
-      font-size: 13px;
-      color: #9ca3af;
-      text-align: center;
-      padding: 12px 24px;
-      background: #1f2937;
-      margin: 0;
-    }
-
     .footer {
-      background: #f8fafc;
+      background: #f5f5f5;
       padding: 24px 32px;
-      border-top: 1px solid #e5e7eb;
+      border-top: 1px solid #e0e0e0;
       text-align: center;
     }
 
@@ -183,21 +154,22 @@
     .button {
       display: inline-block;
       padding: 12px 24px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: #1a1a1a;
       color: white;
       border: none;
-      border-radius: 8px;
+      border-radius: 12px;
       font-size: 14px;
       font-weight: 600;
       cursor: pointer;
       transition: all 0.2s;
       text-decoration: none;
       margin-top: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
     }
 
     .button:hover {
       transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
     }
 
     .button:active {
@@ -208,7 +180,7 @@
       position: absolute;
       top: 16px;
       right: 16px;
-      background: rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.15);
       border: none;
       color: white;
       width: 32px;
@@ -223,7 +195,7 @@
     }
 
     .close-button:hover {
-      background: rgba(255, 255, 255, 0.3);
+      background: rgba(255, 255, 255, 0.25);
     }
 
     .header {
@@ -232,55 +204,23 @@
   </style>
 </head>
 <body>
-  <!-- Demo GIF - Büyük görünüm için ayrı wrapper -->
-  <div class="demo-wrapper">
-    <h3>See It In Action</h3>
-    <img src="Reddit%20with%20AI%20Review%20and%20Grammar%20check.gif" alt="Real-time grammar checking demo on Reddit" class="demo-gif">
-    <p class="demo-caption">Real-time grammar checking and AI rewrite on Reddit</p>
-  </div>
-
   <div class="container">
     <div class="header">
       <button class="close-button" id="closeBtn" title="Close">×</button>
       <h1>What's New in Rewordly</h1>
-      <p>We've made some exciting updates!</p>
-      <span class="version-badge" id="versionBadge">Version 1.1.0</span>
+      <p>We've made some updates!</p>
+      <span class="version-badge" id="versionBadge">Version 1.2.0</span>
     </div>
     
     <div class="content">
       <div class="section">
-        <h2 class="section-title">New Features</h2>
+        <h2 class="section-title">Changes in 1.2.0</h2>
         <ul class="changelog-list">
-          <li class="changelog-item new">Real-time grammar checking with Grammarly-style highlights</li>
-          <li class="changelog-item new">Smart language detection - only checks English text</li>
-          <li class="changelog-item new">Context menu integration - right-click to rewrite or check grammar</li>
-          <li class="changelog-item new">Per-page disable option - disable Rewordly on specific pages</li>
-          <li class="changelog-item new">Rewrite feature toggle - enable/disable from popup</li>
-          <li class="changelog-item new">Advanced tooltip system with "see more" for multiple suggestions</li>
-          <li class="changelog-item new">Ignore list for grammar checking - exclude specific elements</li>
-        </ul>
-      </div>
-
-      <div class="section">
-        <h2 class="section-title">Site-Specific Improvements</h2>
-        <ul class="changelog-list">
-          <li class="changelog-item fix">Optimized support for Twitter/X with custom highlight handling</li>
-          <li class="changelog-item fix">Enhanced Gmail integration with smart element detection</li>
-          <li class="changelog-item fix">Reddit textarea highlight positioning improvements</li>
-          <li class="changelog-item fix">Medium editor support with improved positioning</li>
-          <li class="changelog-item fix">Notion editor compatibility with complex DOM handling</li>
-          <li class="changelog-item fix">Lexical and Draft.js editor support</li>
-        </ul>
-      </div>
-
-      <div class="section">
-        <h2 class="section-title">Performance & UX</h2>
-        <ul class="changelog-list">
-          <li class="changelog-item fix">Grammar check queue for improved performance</li>
-          <li class="changelog-item fix">Multi-line error highlighting support</li>
-          <li class="changelog-item fix">Better cursor stability during text replacements</li>
-          <li class="changelog-item fix">Smooth highlight animations</li>
-          <li class="changelog-item fix">Improved error dismissal with persistent memory</li>
+          <li class="changelog-item fix">Real-time grammar checking has been removed. We couldn't maintain it properly at this time. We may revisit it in the future.</li>
+          <li class="changelog-item fix">Our full focus is now on our core features: Rewrite and on-demand grammar check. You can expect better improvements here.</li>
+          <li class="changelog-item fix">We're focusing on core features: select text to rewrite, or right-click → "Check grammar" for on-demand grammar checking.</li>
+          <li class="changelog-item fix">Simplified UI: dark theme and updated icons.</li>
+          <li class="changelog-item new">Our website has been renewed:  visit&nbsp;<a href="https://rewordly.store/" target="_blank" rel="noopener">rewordly.store</a>&nbsp;for the latest info and tips.</li>
         </ul>
       </div>
 

@@ -4,17 +4,14 @@
  */
 
 interface RewordlySettings {
-  highlightsEnabled: boolean;
   rewriteEnabled: boolean;
 }
 
 class RewordlyPopup {
   private settings: RewordlySettings = {
-    highlightsEnabled: true,
     rewriteEnabled: true
   };
 
-  private highlightsToggle: HTMLButtonElement | null = null;
   private rewriteToggle: HTMLButtonElement | null = null;
 
   constructor() {
@@ -22,8 +19,6 @@ class RewordlyPopup {
   }
 
   private async init(): Promise<void> {
-    // Initialize UI elements
-    this.highlightsToggle = document.getElementById('highlightsToggle') as HTMLButtonElement;
     this.rewriteToggle = document.getElementById('rewriteToggle') as HTMLButtonElement;
     
     // Load settings
@@ -35,10 +30,8 @@ class RewordlyPopup {
 
   private async loadSettings(): Promise<void> {
     try {
-      const result = await chrome.storage.sync.get(['rewordlyHighlightsEnabled', 'rewordlyRewriteEnabled']);
-      this.settings.highlightsEnabled = result['rewordlyHighlightsEnabled'] !== false;
+      const result = await chrome.storage.sync.get(['rewordlyRewriteEnabled']);
       this.settings.rewriteEnabled = result['rewordlyRewriteEnabled'] !== false;
-      
       this.updateUI();
     } catch (error) {
       console.error('Failed to load settings:', error);
@@ -46,25 +39,12 @@ class RewordlyPopup {
   }
 
   private setupEventListeners(): void {
-    // Toggle switches
-    if (this.highlightsToggle) {
-      this.highlightsToggle.addEventListener('click', this.toggleHighlights.bind(this));
-    }
-    
     if (this.rewriteToggle) {
       this.rewriteToggle.addEventListener('click', this.toggleRewrite.bind(this));
     }
   }
 
   private updateUI(): void {
-    if (this.highlightsToggle) {
-      if (this.settings.highlightsEnabled) {
-        this.highlightsToggle.classList.add('active');
-      } else {
-        this.highlightsToggle.classList.remove('active');
-      }
-    }
-    
     if (this.rewriteToggle) {
       if (this.settings.rewriteEnabled) {
         this.rewriteToggle.classList.add('active');
@@ -72,21 +52,6 @@ class RewordlyPopup {
         this.rewriteToggle.classList.remove('active');
       }
     }
-  }
-
-  private async toggleHighlights(): Promise<void> {
-    this.settings.highlightsEnabled = !this.settings.highlightsEnabled;
-    
-    if (this.highlightsToggle) {
-      if (this.settings.highlightsEnabled) {
-        this.highlightsToggle.classList.add('active');
-      } else {
-        this.highlightsToggle.classList.remove('active');
-      }
-    }
-
-    // Auto-save settings
-    await this.saveSettings();
   }
 
   private async toggleRewrite(): Promise<void> {
@@ -107,7 +72,6 @@ class RewordlyPopup {
   private async saveSettings(): Promise<void> {
     try {
       await chrome.storage.sync.set({
-        rewordlyHighlightsEnabled: this.settings.highlightsEnabled,
         rewordlyRewriteEnabled: this.settings.rewriteEnabled
       });
 

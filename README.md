@@ -1,40 +1,47 @@
 # Rewordly Chrome Extension
 
-A Chrome extension that rewrites selected text instantly with advanced AI to enhance clarity, tone, and readability.
+A Chrome extension that rewrites or grammar-checks selected text using AI to improve clarity, tone, and readability.
 
 ## Features
 
-- **Text Selection**: Select any text on any webpage to rewrite it
-- **Floating Button**: A convenient floating button appears when text is selected
-- **Modal Interface**: Clean modal interface to display original and rewritten text
-- **Copy to Clipboard**: Easy one-click copying of rewritten text
-- **Settings Management**: Enable/disable the extension through the popup interface
+- **Text selection** — Select any text (3+ characters) on a webpage, in inputs, textareas, or contenteditable areas.
+- **Floating button** — A floating button appears next to the selection with two actions:
+  - **Rewrite** — Rewrite the selected text with AI.
+  - **Check Grammar** — Fix grammar and spelling in the selected text.
+- **Modal** — Modal shows original and result (rewritten or corrected) text.
+- **Copy to clipboard** — One-click copy of the result.
+- **Popup settings** — Enable or disable the rewrite/grammar button from the extension popup.
+- **Context menu** — Right-click on selected text for:
+  - Rewordly → Rewrite Text
+  - Rewordly → Check Grammar
+  - Disable / Enable Rewordly on this page (per-site toggle).
+- **Welcome & changelog** — Welcome page on first install, changelog on update.
 
 ## Security & Privacy
 
-### 🔒 **Properly Bundled & Obfuscated**
+### Bundling & obfuscation
 
-This extension is now properly bundled using Webpack with the following security features:
+The extension is built with Webpack:
 
-- **Code Minification**: All JavaScript code is minified to reduce size and obfuscate logic
-- **Variable Name Obfuscation**: Function and variable names are mangled to prevent reverse engineering
-- **No Source Maps**: Source maps are disabled in production to prevent source code exposure
-- **Console Log Removal**: Debug console logs are removed in production builds
-- **Single Bundle**: All code is bundled into optimized single files
+- **Minification** — JavaScript is minified.
+- **Name mangling** — Variable and function names are mangled in production.
+- **No source maps** — Disabled in production builds.
+- **Console removal** — `console` calls are stripped in production.
+- **Single bundles** — Code is bundled into one file per entry.
 
-### 🔐 **API Security**
+### API
 
-- **No API Keys Required**: The extension uses our secure backend API
-- **External API**: Uses the Rewordly web API endpoint for text processing
-- **No Local Storage**: Sensitive data is not stored locally
+- **No API keys in the extension** — Uses the Rewordly backend at `rewordly.store`.
+- **External API** — All rewrite/grammar requests go to `https://rewordly.store/api/*`.
+- **Local data** — Only extension settings and “welcome/changelog seen” state are stored in Chrome storage; no sensitive data.
 
 ## Installation
 
-### Development Installation
+### Development
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-repo/rewordly.git
+   git clone https://github.com/sercangundogan/rewordly.git
    cd rewordly
    ```
 
@@ -48,79 +55,77 @@ This extension is now properly bundled using Webpack with the following security
    npm run build
    ```
 
-4. Load the extension in Chrome:
-   - Open Chrome and go to `chrome://extensions/`
-   - Enable "Developer mode"
-   - Click "Load unpacked"
+4. Load in Chrome:
+   - Open `chrome://extensions/`
+   - Turn on **Developer mode**
+   - Click **Load unpacked**
    - Select the `dist` folder
 
-### Production Installation
+### Production
 
-1. Download the latest release from the releases page
-2. Extract the ZIP file
-3. Load the extension in Chrome as described above
+1. Download the latest release (ZIP) from the releases page.
+2. Unzip and load the unpacked extension in Chrome as above (select the unzipped folder that contains the extension files).
 
 ## Development
 
-### Build Commands
+### Scripts
 
-- `npm run build` - Build for production (minified and obfuscated)
-- `npm run build:dev` - Build for development (with source maps)
-- `npm run dev` - Development mode with watch
-- `npm run package` - Create a ZIP file for distribution
+| Command | Description |
+|--------|-------------|
+| `npm run build` | Production build (minified, no source maps) |
+| `npm run build:dev` | Development build (with source maps) |
+| `npm run dev` | Development build with watch |
+| `npm run package` | Clean, build, and create a ZIP for distribution |
+| `npm run lint` | Run ESLint on `src/**/*.ts` |
+| `npm run type-check` | Run TypeScript type check (`tsc --noEmit`) |
 
-### Project Structure
+### Project structure
 
 ```
 rewordly/
 ├── src/
-│   ├── background.ts      # Background service worker
-│   ├── content.ts         # Content script for webpage interaction
-│   ├── popup.ts          # Popup interface logic
-│   ├── popup.html        # Popup interface HTML
+│   ├── background.ts    # Service worker: context menu, install/update, messages
+│   ├── content.ts       # Content script: selection, floating button, modal, API calls
+│   ├── popup.ts         # Popup logic and settings
+│   ├── popup.html       # Popup UI
+│   ├── changelog.ts     # Changelog page logic
+│   ├── changelog.html   # Changelog page
+│   ├── welcome.ts       # Welcome page logic
+│   ├── welcome.html     # Welcome page (first install)
 │   └── utils/
-│       └── api.ts        # API utility functions
-├── dist/                 # Built extension files
-├── icons/               # Extension icons
-├── styles.css           # Global styles
-├── manifest.json        # Extension manifest
-├── webpack.config.js    # Webpack configuration
-└── package.json         # Dependencies and scripts
+│       └── api.ts       # API helpers (rewrite, grammar)
+├── icons/               # Extension icons (16, 48, 128)
+├── styles.css           # Shared styles (injected by content script)
+├── manifest.json        # Extension manifest (source; copied to dist by build)
+├── webpack.config.js    # Webpack config
+├── tsconfig.json        # TypeScript config
+├── package.json
+└── dist/                # Build output (load this in Chrome)
 ```
 
-## API Integration
+## API
 
-The extension integrates with the Rewordly API for text rewriting:
+The extension calls the Rewordly API at `https://rewordly.store/api/`.
 
-- **Endpoint**: `https://rewordly-web.vercel.app/api/rewrite`
-- **Method**: POST
-- **Content-Type**: application/json
-- **Request Body**: `{ "text": "text to rewrite" }`
-- **Response**: `{ "rewritten": "rewritten text" }`
+### Rewrite
+
+- **URL:** `POST https://rewordly.store/api/rewrite`
+- **Body:** `{ "text": "text to rewrite" }`
+- **Response:** `{ "rewritten": "rewritten text" }`
+
+### Grammar
+
+- **URL:** `POST https://rewordly.store/api/grammar`
+- **Body:** `{ "text": "text to check", "mode": "ai" }`
+- **Response:** `{ "corrected": "corrected text" }`
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature-name`
-3. Make your changes
-4. Build the extension: `npm run build`
-5. Test your changes
-6. Commit your changes: `git commit -am 'Add feature'`
-7. Push to the branch: `git push origin feature-name`
-8. Submit a pull request
+1. Fork the repository.
+2. Create a branch: `git checkout -b feature/your-feature`.
+3. Make changes, then run `npm run build` and test.
+4. Commit and push, then open a pull request.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Security Notice
-
-This extension is now properly bundled and obfuscated to protect your source code. The build process:
-
-- ✅ Minifies all JavaScript code
-- ✅ Obfuscates variable and function names
-- ✅ Removes source maps in production
-- ✅ Removes console logs in production
-- ✅ Bundles all code into optimized files
-
-This prevents users from easily reverse-engineering your extension's logic and protects your intellectual property. 
+MIT — see the [LICENSE](LICENSE) file.

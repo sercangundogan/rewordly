@@ -1,16 +1,17 @@
+
 /**
  * Rewordly Extension Styles
- * Styles for floating button and modal components
+ * Styles for rewrite button and modal components
  * Using high specificity and !important to override website CSS
  */
 
-/* Floating Button Styles */
-.rewordly-floating-button-container {
+/* Rewrite Button Styles */
+.rewordly-rewrite-button-container {
   position: fixed !important;
   display: none !important;
   align-items: center !important;
   gap: 8px !important;
-  z-index: 2147483647 !important; /* Maximum z-index value */
+  z-index: 2147483645 !important; /* Below modal when it's open */
   transition: all 0.2s ease !important;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
   pointer-events: auto !important;
@@ -57,12 +58,12 @@
   -moz-osx-font-smoothing: grayscale !important;
 }
 
-.rewordly-floating-button-container.show {
+.rewordly-rewrite-button-container.show {
   display: flex !important;
 }
 
-/* AI Button styles - circular button with AI icon */
-.rewordly-ai-btn {
+/* AI Button styles - circular button with AI icon (dark theme) */
+.rewordly-rewrite-btn {
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -70,12 +71,12 @@
   padding: 0 !important;
   width: 32px !important;
   height: 32px !important;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+  background: #1a1a1a !important;
   color: white !important;
   border: none !important;
   border-radius: 50% !important;
   cursor: pointer !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25) !important;
   transition: all 0.2s ease !important;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
   pointer-events: auto !important;
@@ -95,24 +96,110 @@
   -moz-osx-font-smoothing: grayscale !important;
 }
 
-.rewordly-ai-btn:hover {
+.rewordly-rewrite-btn:hover {
   transform: translateY(-2px) scale(1.05) !important;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2) !important;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35) !important;
 }
 
-.rewordly-ai-btn:active {
+.rewordly-rewrite-btn:active {
   transform: translateY(0) scale(1) !important;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
 }
 
-.rewordly-ai-btn svg {
+.rewordly-rewrite-btn svg {
   width: 16px !important;
   height: 16px !important;
   fill: currentColor !important;
   color: white !important;
 }
 
-/* Combined button styles - capsule shape with green quarter moon (legacy) */
+/* Combined Rewrite + Grammar button - one capsule, two parts */
+.rewordly-combined-rewrite-btn {
+  display: flex !important;
+  align-items: stretch !important;
+  flex-direction: row !important;
+  width: 56px !important;
+  height: 32px !important;
+  background: #1a1a1a !important;
+  color: white !important;
+  border: none !important;
+  border-radius: 50px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25) !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  pointer-events: auto !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  box-sizing: border-box !important;
+  transition: all 0.2s ease !important;
+}
+
+.rewordly-combined-rewrite-btn:hover {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35) !important;
+}
+
+.rewordly-rewrite-part {
+  flex: 1 !important;
+  min-width: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  background: transparent !important;
+  color: white !important;
+  border: none !important;
+  cursor: pointer !important;
+  transition: background 0.15s ease !important;
+}
+
+.rewordly-rewrite-part:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+.rewordly-rewrite-part:active {
+  background: rgba(255, 255, 255, 0.15) !important;
+}
+
+.rewordly-rewrite-part svg {
+  width: 16px !important;
+  height: 16px !important;
+  fill: currentColor !important;
+  color: white !important;
+}
+
+.rewordly-grammar-part {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 24px !important;
+  min-width: 24px !important;
+  padding: 0 !important;
+  background: transparent !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+  border: none !important;
+  border-left: 1px solid rgba(255, 255, 255, 0.2) !important;
+  cursor: pointer !important;
+  transition: background 0.15s ease, color 0.15s ease !important;
+}
+
+.rewordly-grammar-part:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: white !important;
+}
+
+.rewordly-grammar-part:active {
+  background: rgba(255, 255, 255, 0.15) !important;
+}
+
+.rewordly-grammar-part svg {
+  width: 14px !important;
+  height: 14px !important;
+  fill: currentColor !important;
+}
+
+/* Combined button styles - capsule shape with green quarter moon (legacy, dark theme) */
 .rewordly-combined-btn {
   display: flex !important;
   align-items: center !important;
@@ -120,14 +207,14 @@
   position: relative !important;
   padding: 8px 16px !important;
   padding-right: 12px !important;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+  background: #1a1a1a !important;
   color: white !important;
   border: none !important;
   border-radius: 50px !important; /* Capsule shape */
   font-size: 14px !important;
   font-weight: 500 !important;
   cursor: pointer !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25) !important;
   transition: all 0.2s ease !important;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
   pointer-events: auto !important;
@@ -174,7 +261,7 @@
   -moz-osx-font-smoothing: grayscale !important;
 }
 
-/* Green quarter moon indicator on the right 25% */
+/* Green quarter moon indicator on the right 25% (darker green on dark theme) */
 .rewordly-btn-grammar-indicator {
   position: absolute !important;
   right: 0 !important;
@@ -182,7 +269,7 @@
   bottom: 0 !important;
   width: 25% !important;
   min-width: 20px !important;
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+  background: #2d4a3e !important;
   border-radius: 0 50px 50px 0 !important; /* Rounded right side to match capsule */
   pointer-events: none !important;
   z-index: 1 !important;
@@ -342,21 +429,21 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
 }
 
-/* Legacy button styles for backward compatibility */
+/* Legacy button styles for backward compatibility (dark theme) */
 .rewordly-rewrite-btn,
 .rewordly-grammar-btn {
   display: flex !important;
   align-items: center !important;
   gap: 6px !important;
   padding: 8px 12px !important;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+  background: #1a1a1a !important;
   color: white !important;
   border: none !important;
   border-radius: 20px !important;
   font-size: 14px !important;
   font-weight: 500 !important;
   cursor: pointer !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25) !important;
   transition: all 0.2s ease !important;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
   pointer-events: auto !important;
@@ -404,13 +491,13 @@
 }
 
 .rewordly-grammar-btn {
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+  background: #2d4a3e !important;
 }
 
 .rewordly-rewrite-btn:hover,
 .rewordly-grammar-btn:hover {
   transform: translateY(-1px) !important;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2) !important;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35) !important;
 }
 
 .rewordly-rewrite-btn:active,
@@ -430,22 +517,22 @@
   vertical-align: middle !important;
 }
 
-/* Legacy floating button styles for backward compatibility */
-.rewordly-floating-button {
+/* Legacy rewrite button styles for backward compatibility (dark theme) */
+.rewordly-rewrite-button {
   position: fixed !important;
   display: none !important;
   align-items: center !important;
   gap: 6px !important;
   padding: 8px 12px !important;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+  background: #1a1a1a !important;
   color: white !important;
   border: none !important;
   border-radius: 20px !important;
   font-size: 14px !important;
   font-weight: 500 !important;
   cursor: pointer !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
-  z-index: 2147483647 !important; /* Maximum z-index value */
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25) !important;
+  z-index: 2147483645 !important; /* Below modal when it's open */
   transition: all 0.2s ease !important;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
   pointer-events: auto !important;
@@ -492,21 +579,21 @@
   -moz-osx-font-smoothing: grayscale !important;
 }
 
-.rewordly-floating-button.show {
+.rewordly-rewrite-button.show {
   display: flex !important;
 }
 
-.rewordly-floating-button:hover {
+.rewordly-rewrite-button:hover {
   transform: translateY(-1px) !important;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2) !important;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35) !important;
 }
 
-.rewordly-floating-button:active {
+.rewordly-rewrite-button:active {
   transform: translateY(0) !important;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
 }
 
-.rewordly-floating-button svg {
+.rewordly-rewrite-button svg {
   width: 18px !important;
   height: 18px !important;
   stroke: currentColor !important;
@@ -516,18 +603,20 @@
   vertical-align: middle !important;
 }
 
-/* Modal Styles */
+/* Modal Styles - Light monochrome, minimal & innovative */
 .rewordly-modal {
   position: fixed !important;
   top: 0 !important;
   left: 0 !important;
   width: 100% !important;
   height: 100% !important;
-  background: rgba(0, 0, 0, 0.5) !important;
+  background: rgba(0, 0, 0, 0.28) !important;
+  backdrop-filter: blur(6px) !important;
+  -webkit-backdrop-filter: blur(6px) !important;
   display: none !important;
   justify-content: center !important;
   align-items: center !important;
-  z-index: 2147483646 !important; /* Just below floating button */
+  z-index: 2147483647 !important; /* Above buttons when modal is open */
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
   opacity: 0 !important;
   transition: opacity 0.3s ease !important;
@@ -546,16 +635,16 @@
 }
 
 .rewordly-modal-content {
-  background: white !important;
-  border-radius: 12px !important;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15) !important;
+  background: #ffffff !important;
+  border-radius: 16px !important;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.04) !important;
   max-width: 600px !important;
   width: 90% !important;
   max-height: 80vh !important;
   overflow: hidden !important;
-  transform: translateY(-20px) scale(0.95) !important;
+  transform: translateY(-20px) scale(0.98) !important;
   opacity: 0 !important;
-  transition: all 0.3s ease !important;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease !important;
   margin: 0 !important;
   padding: 0 !important;
   border: none !important;
@@ -576,9 +665,9 @@
   justify-content: space-between !important;
   align-items: center !important;
   padding: 20px 24px !important;
-  border-bottom: 1px solid #e1e5e9 !important;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-  color: white !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06) !important;
+  background: #ffffff !important;
+  color: #000000 !important;
   margin: 0 !important;
   border: none !important;
   outline: none !important;
@@ -591,7 +680,8 @@
   margin: 0 !important;
   font-size: 18px !important;
   font-weight: 600 !important;
-  color: white !important;
+  color: #000000 !important;
+  letter-spacing: -0.02em !important;
   padding: 0 !important;
   border: none !important;
   outline: none !important;
@@ -599,7 +689,6 @@
   line-height: 1.2 !important;
   text-decoration: none !important;
   text-transform: none !important;
-  letter-spacing: normal !important;
   word-spacing: normal !important;
   font-style: normal !important;
   font-variant: normal !important;
@@ -621,9 +710,9 @@
 }
 
 .rewordly-close-btn {
-  background: none !important;
+  background: rgba(0, 0, 0, 0.04) !important;
   border: none !important;
-  color: white !important;
+  color: #000000 !important;
   font-size: 24px !important;
   cursor: pointer !important;
   padding: 0 !important;
@@ -632,8 +721,8 @@
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  border-radius: 50% !important;
-  transition: background-color 0.2s ease !important;
+  border-radius: 8px !important;
+  transition: background-color 0.2s ease, color 0.2s ease !important;
   margin: 0 !important;
   line-height: 1 !important;
   text-decoration: none !important;
@@ -671,7 +760,7 @@
 }
 
 .rewordly-close-btn:hover {
-  background: rgba(255, 255, 255, 0.1) !important;
+  background: rgba(0, 0, 0, 0.08) !important;
 }
 
 .rewordly-close-btn svg {
@@ -694,7 +783,8 @@
   display: flex !important;
   flex-direction: column !important;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
-  color: #374151 !important;
+  background: #fafafa !important;
+  color: #1a1a1a !important;
   font-size: 14px !important;
   line-height: 1.6 !important;
 }
@@ -703,7 +793,7 @@
 .rewordly-modal-body span,
 .rewordly-modal-body div {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
-  color: #374151 !important;
+  color: #1a1a1a !important;
   font-size: 14px !important;
   line-height: 1.6 !important;
 }
@@ -725,11 +815,11 @@
 .rewordly-original h4,
 .rewordly-rewritten h4 {
   margin: 0 0 12px 0 !important;
-  font-size: 14px !important;
+  font-size: 12px !important;
   font-weight: 600 !important;
-  color: #374151 !important;
+  color: #6b6b6b !important;
   text-transform: uppercase !important;
-  letter-spacing: 0.5px !important;
+  letter-spacing: 0.08em !important;
   padding: 0 !important;
   border: none !important;
   outline: none !important;
@@ -762,19 +852,19 @@
 }
 
 .rewordly-original-text {
-  background: #f9fafb !important;
-  border: 1px solid #e5e7eb !important;
-  border-radius: 8px !important;
+  background: #ffffff !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+  border-radius: 10px !important;
   padding: 16px !important;
   margin: 12px 0 !important;
   font-size: 14px !important;
   line-height: 1.6 !important;
-  color: #374151 !important;
+  color: #1a1a1a !important;
   transition: all 0.3s ease !important;
   opacity: 0 !important;
   transform: translateY(10px) !important;
-  border-left: 4px solid #667eea !important;
-  background: #f8f9fa !important;
+  border-left: 3px solid #000000 !important;
+  box-shadow: none !important;
   margin-top: 0 !important;
   margin-left: 0 !important;
   margin-right: 0 !important;
@@ -813,19 +903,19 @@
 }
 
 .rewordly-rewritten-text {
-  background: #f9fafb !important;
-  border: 1px solid #e5e7eb !important;
-  border-radius: 8px !important;
+  background: #ffffff !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+  border-radius: 10px !important;
   padding: 16px !important;
   margin: 12px 0 !important;
   font-size: 14px !important;
   line-height: 1.6 !important;
-  color: #374151 !important;
+  color: #1a1a1a !important;
   transition: all 0.3s ease !important;
   opacity: 0 !important;
   transform: translateY(10px) !important;
-  border-left: 4px solid #10b981 !important;
-  background: #f0fdf4 !important;
+  border-left: 3px solid #333333 !important;
+  box-shadow: none !important;
   margin-top: 0 !important;
   margin-left: 0 !important;
   margin-right: 0 !important;
@@ -891,8 +981,8 @@
 .rewordly-spinner {
   width: 32px !important;
   height: 32px !important;
-  border: 3px solid #f3f4f6 !important;
-  border-top: 3px solid #667eea !important;
+  border: 3px solid rgba(0, 0, 0, 0.08) !important;
+  border-top: 3px solid #000000 !important;
   border-radius: 50% !important;
   animation: rewordly-spin 1s linear infinite !important;
   margin: 0 !important;
@@ -910,7 +1000,7 @@
 
 .rewordly-loading p {
   margin: 0 !important;
-  color: #6b7280 !important;
+  color: #6b6b6b !important;
   font-size: 14px !important;
   font-weight: 500 !important;
   padding: 0 !important;
@@ -950,9 +1040,9 @@
 .rewordly-modal-footer {
   display: flex !important;
   gap: 12px !important;
-  padding: 20px !important;
-  border-top: 1px solid #e5e7eb !important;
-  background: #f9fafb !important;
+  padding: 20px 24px !important;
+  border-top: 1px solid rgba(0, 0, 0, 0.06) !important;
+  background: #ffffff !important;
   margin: 0 !important;
   border-bottom: none !important;
   border-left: none !important;
@@ -961,6 +1051,7 @@
   box-sizing: border-box !important;
   position: relative !important;
   flex-shrink: 0 !important;
+  border-radius: 0 0 16px 16px !important;
 }
 
 .rewordly-copy-btn,
@@ -1011,24 +1102,29 @@
 }
 
 .rewordly-copy-btn {
-  background: #f3f4f6 !important;
-  color: #374151 !important;
-  border: 1px solid #d1d5db !important;
+  background: #ffffff !important;
+  color: #1a1a1a !important;
+  border: 1px solid rgba(0, 0, 0, 0.12) !important;
 }
 
 .rewordly-copy-btn:hover {
-  background: #e5e7eb !important;
+  background: #f5f5f5 !important;
+  border-color: rgba(0, 0, 0, 0.2) !important;
   transform: translateY(-1px) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
 }
 
 .rewordly-replace-btn {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-  color: white !important;
+  background: #000000 !important;
+  color: #ffffff !important;
+  border: 1px solid #000000 !important;
+  box-shadow: none !important;
 }
 
 .rewordly-replace-btn:hover {
+  background: #1a1a1a !important;
   transform: translateY(-1px) !important;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
 }
 
 .rewordly-copy-btn:active,
@@ -1062,32 +1158,32 @@
   }
 }
 
-/* Error State */
+/* Error State (monochrome) */
 .rewordly-rewritten-text.error {
-  border-left-color: #ef4444 !important;
-  background: #fef2f2 !important;
-  color: #dc2626 !important;
+  border-left-color: #525252 !important;
+  background: #f5f5f5 !important;
+  color: #1a1a1a !important;
 }
 
-/* Success State */
+/* Success State (monochrome) */
 .rewordly-rewritten-text.success {
-  border-left-color: #10b981 !important;
-  background: #f0fdf4 !important;
-  color: #059669 !important;
+  border-left-color: #000000 !important;
+  background: #fafafa !important;
+  color: #1a1a1a !important;
 }
 
 /* Accessibility */
-.rewordly-floating-button:focus,
+.rewordly-rewrite-button:focus,
 .rewordly-close-btn:focus,
 .rewordly-copy-btn:focus,
 .rewordly-replace-btn:focus {
-  outline: 2px solid #667eea !important;
+  outline: 2px solid #000000 !important;
   outline-offset: 2px !important;
 }
 
 /* High contrast mode support */
 @media (prefers-contrast: high) {
-  .rewordly-floating-button {
+  .rewordly-rewrite-button {
     border: 2px solid white !important;
   }
   
@@ -1098,7 +1194,7 @@
 
 /* Reduced motion support */
 @media (prefers-reduced-motion: reduce) {
-  .rewordly-floating-button,
+  .rewordly-rewrite-button,
   .rewordly-copy-btn,
   .rewordly-replace-btn {
     transition: none !important;
@@ -1113,175 +1209,16 @@
   }
 }
 
-/* Real-time Grammar Check Styles */
-.rewordly-grammar-error {
-  border-bottom: 2px solid #ef4444 !important;
-  cursor: pointer !important;
-  position: relative !important;
-  /* Removed background for simpler underline-only approach */
-}
-
-.rewordly-grammar-error:hover {
-  border-bottom: 3px solid #ef4444 !important;
-}
-
-/* Grammar Error Tooltip */
-.rewordly-grammar-tooltip {
-  position: fixed !important;
-  z-index: 2147483647 !important;
-  background: white !important;
-  border: 1px solid #e5e7eb !important;
-  border-radius: 8px !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
-  padding: 12px !important;
-  min-width: 150px !important;
-  max-width: 300px !important;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
-  pointer-events: auto !important;
-}
-
-.rewordly-grammar-tooltip-content {
-  display: flex !important;
-  flex-direction: column !important;
-  gap: 8px !important;
-}
-
-.rewordly-grammar-tooltip-word {
-  font-weight: 600 !important;
-  color: #ef4444 !important;
-  font-size: 14px !important;
-  padding-bottom: 8px !important;
-  border-bottom: 1px solid #e5e7eb !important;
-}
-
-.rewordly-grammar-tooltip-suggestions {
-  display: flex !important;
-  flex-direction: column !important;
-  gap: 4px !important;
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-  scrollbar-width: thin !important;
-  scrollbar-color: #cbd5e1 #f1f5f9 !important;
-}
-
-.rewordly-grammar-tooltip-suggestions::-webkit-scrollbar {
-  width: 6px !important;
-}
-
-.rewordly-grammar-tooltip-suggestions::-webkit-scrollbar-track {
-  background: #f1f5f9 !important;
-  border-radius: 3px !important;
-}
-
-.rewordly-grammar-tooltip-suggestions::-webkit-scrollbar-thumb {
-  background: #cbd5e1 !important;
-  border-radius: 3px !important;
-}
-
-.rewordly-grammar-tooltip-suggestions::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8 !important;
-}
-
-.rewordly-grammar-suggestion {
-  background: #f9fafb !important;
-  border: 1px solid #e5e7eb !important;
-  border-radius: 4px !important;
-  padding: 6px 12px !important;
-  text-align: left !important;
-  cursor: pointer !important;
-  font-size: 13px !important;
-  color: #374151 !important;
-  transition: all 0.2s ease !important;
-  font-family: inherit !important;
-  line-height: 20px !important;
-  flex-shrink: 0 !important;
-}
-
-.rewordly-grammar-suggestion.rewordly-grammar-suggestion-hidden {
-  display: none !important;
-}
-
-.rewordly-grammar-suggestion:hover {
-  background: #667eea !important;
-  color: white !important;
-  border-color: #667eea !important;
-}
-
-.rewordly-grammar-no-suggestions {
-  color: #6b7280 !important;
-  font-size: 12px !important;
-  font-style: italic !important;
-}
-
-.rewordly-grammar-see-more {
-  background: transparent !important;
-  border: 1px solid #667eea !important;
-  border-radius: 4px !important;
-  padding: 6px 12px !important;
-  text-align: center !important;
-  cursor: pointer !important;
-  font-size: 12px !important;
-  color: #667eea !important;
-  transition: all 0.2s ease !important;
-  font-family: inherit !important;
-  margin-top: 8px !important;
-  width: 100% !important;
-  line-height: 20px !important;
-  font-weight: 500 !important;
-}
-
-.rewordly-grammar-see-more:hover {
-  background: #667eea !important;
-  color: white !important;
-}
-
-.rewordly-grammar-dismiss {
-  background: transparent !important;
-  border: 1px solid #d1d5db !important;
-  border-radius: 4px !important;
-  padding: 6px 12px !important;
-  text-align: center !important;
-  cursor: pointer !important;
-  font-size: 12px !important;
-  color: #6b7280 !important;
-  transition: all 0.2s ease !important;
-  font-family: inherit !important;
-  margin-top: 8px !important;
-  width: 100% !important;
-  line-height: 20px !important;
-}
-
-.rewordly-grammar-dismiss:hover {
-  background: #f3f4f6 !important;
-  border-color: #9ca3af !important;
-  color: #374151 !important;
-}
-
-.rewordly-grammar-overlay {
-  position: absolute !important;
-  pointer-events: none !important;
-  z-index: 2147483645 !important;
-  font-family: inherit !important;
-  color: transparent !important;
-  white-space: pre-wrap !important;
-  word-wrap: break-word !important;
-  overflow: visible !important;
-  mix-blend-mode: normal !important;
-  isolation: isolate !important;
-  top: 0 !important;
-  left: 0 !important;
-}
-
 /* Replace badge styles */
 .rewordly-replace-badge {
   position: fixed !important;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+  background: #1a1a1a !important;
   color: white !important;
   font-size: 10px !important;
   font-weight: 600 !important;
   padding: 2px 6px !important;
   border-radius: 10px !important;
-  box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
   opacity: 0 !important;
   transform: scale(0.8) !important;
   transition: all 0.3s ease !important;
