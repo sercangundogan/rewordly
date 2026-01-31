@@ -1,8 +1,12 @@
-Simple, distraction-free AI writing assistant to rewrite text, fix grammar, and enhance your writing instantly.
+Rewordly has a single, focused purpose: to help users improve their writing on any webpage through AI-powered rewriting and on-demand grammar checking.
 
-Rewordly seamlessly integrates into any website in your browser. Whether you're writing emails, crafting documents, or creating content, Rewordly helps you improve clarity, tone, and readability with powerful AI—all without leaving the page you're on.
+The extension works in two ways:
 
-🥰 The best part? No annoying popups. Just select text, get instant rewrite or grammar check when you need it.
+1. **AI Rewriting:** When you select text, a floating button appears. Click it to send the text to the API; the improved version is shown in a clean modal—all without leaving the page.
+
+2. **On-Demand Grammar Check:** Select text and click the grammar option on the same floating button, or right-click and choose "Check grammar." Corrections and suggestions are displayed in the same modal.
+
+Both features share the same goal: improving clarity, fluency, and correctness with AI—directly in your browser. Rewordly does not include unrelated features. Its sole purpose is to help you write better, faster, and with fewer errors.
 
 💡 Completely free to use—no API keys required, no monthly limits, no subscriptions.
 
