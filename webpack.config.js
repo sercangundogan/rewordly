@@ -1,9 +1,12 @@
 const path = require('path');
+const webpack = require('webpack');
 const CopyPlugin = require('copy-webpack-plugin');
 const TerserPlugin = require('terser-webpack-plugin');
 
 module.exports = (env, argv) => {
   const isProduction = argv.mode === 'production';
+  const dotenv = require('dotenv');
+  dotenv.config();
   
   return {
     entry: {
@@ -61,6 +64,11 @@ module.exports = (env, argv) => {
       }
     },
     plugins: [
+      new webpack.DefinePlugin({
+        'process.env.API_BASE_URL': JSON.stringify(process.env.API_BASE_URL || ''),
+        'process.env.SUPABASE_URL': JSON.stringify(process.env.SUPABASE_URL || ''),
+        'process.env.SUPABASE_ANON_KEY': JSON.stringify(process.env.SUPABASE_ANON_KEY || ''),
+      }),
       new CopyPlugin({
         patterns: [
           { from: 'manifest.json', to: 'manifest.json' },

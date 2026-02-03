@@ -3,6 +3,8 @@
  * Handles extension lifecycle and background tasks
  */
 
+import { getApiHeaders } from './auth';
+
 // Handle extension installation and updates
 chrome.runtime.onInstalled.addListener(async (details) => {
   // Create context menu items
@@ -266,6 +268,16 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
         sendResponse({ isValid: false, error: error.message });
       });
       return true;
+
+    case 'OPEN_TAB':
+      if (request.url) {
+        chrome.tabs.create({ url: request.url }, () => {
+          sendResponse({ success: true });
+        });
+      } else {
+        sendResponse({ error: 'Missing url' });
+      }
+      return true;
       
     default:
       sendResponse({ error: 'Unknown message type' });
@@ -273,17 +285,14 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
   }
 });
 
-// Test API validity
+// Test API validity (uses same identity as real requests so test doesn't pollute anon:unknown)
 async function testApi(): Promise<boolean> {
   try {
+    const headers = await getApiHeaders();
     const response = await fetch('https://rewordly.store/api/rewrite', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        text: 'Test'
-      })
+      headers,
+      body: JSON.stringify({ text: 'Test' }),
     });
     return response.ok;
   } catch (error) {

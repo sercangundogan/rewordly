@@ -1,7 +1,10 @@
 /**
  * Rewordly Popup Script
- * Handles settings management and UI interactions
+ * Handles settings management, auth (website login + code), and UI interactions
  */
+
+import { API_BASE, AUTH_ENABLED } from './config';
+import { getSession, setSession, SESSION_KEY } from './auth';
 
 interface RewordlySettings {
   rewriteEnabled: boolean;
@@ -20,12 +23,18 @@ class RewordlyPopup {
 
   private async init(): Promise<void> {
     this.rewriteToggle = document.getElementById('rewriteToggle') as HTMLButtonElement;
-    
-    // Load settings
+
     await this.loadSettings();
-    
-    // Set up event listeners
     this.setupEventListeners();
+    await this.renderAccount();
+
+    // Re-render shortly so we pick up session set by dashboard (e.g. user just logged in)
+    setTimeout(() => void this.renderAccount(), 400);
+
+    // Re-render when session changes (e.g. after dashboard sets it)
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName === 'local' && changes[SESSION_KEY]) void this.renderAccount();
+    });
   }
 
   private async loadSettings(): Promise<void> {
@@ -41,6 +50,131 @@ class RewordlyPopup {
   private setupEventListeners(): void {
     if (this.rewriteToggle) {
       this.rewriteToggle.addEventListener('click', this.toggleRewrite.bind(this));
+    }
+    document.getElementById('loginWebsiteBtn')?.addEventListener('click', () => this.openWebsiteLogin());
+    document.getElementById('logoutBtn')?.addEventListener('click', () => this.handleLogout());
+    document.getElementById('upgradeBtn')?.addEventListener('click', () => this.handleUpgrade());
+  }
+
+  private showAccountState(
+    notConfigured: HTMLElement | null,
+    loggedOut: HTMLElement | null,
+    loggedIn: HTMLElement | null,
+    state: 'notConfigured' | 'loggedOut' | 'loggedIn'
+  ): void {
+    notConfigured && (notConfigured.style.display = state === 'notConfigured' ? 'block' : 'none');
+    loggedOut && (loggedOut.style.display = state === 'loggedOut' ? 'block' : 'none');
+    loggedIn && (loggedIn.style.display = state === 'loggedIn' ? 'block' : 'none');
+  }
+
+  private async renderAccount(): Promise<void> {
+    const section = document.getElementById('accountSection');
+    const notConfigured = document.getElementById('accountNotConfigured');
+    const loggedOut = document.getElementById('accountLoggedOut');
+    const loggedIn = document.getElementById('accountLoggedIn');
+
+    if (!section) return;
+    section.style.display = 'block';
+
+    // Always check session first: user may have connected via dashboard even when AUTH_ENABLED is false
+    const session = await getSession();
+    if (session?.access_token) {
+      await this.showLoggedInState(session, notConfigured, loggedOut, loggedIn);
+      return;
+    }
+
+    if (!AUTH_ENABLED) {
+      this.showAccountState(notConfigured, loggedOut, loggedIn, 'notConfigured');
+      return;
+    }
+
+    this.showAccountState(notConfigured, loggedOut, loggedIn, 'loggedOut');
+  }
+
+  private async showLoggedInState(
+    session: { access_token: string },
+    notConfigured: HTMLElement | null,
+    loggedOut: HTMLElement | null,
+    loggedIn: HTMLElement | null
+  ): Promise<void> {
+    this.showAccountState(notConfigured, loggedOut, loggedIn, 'loggedIn');
+
+    const emailEl = document.getElementById('accountEmail') as HTMLElement | null;
+    const skeletonEl = document.getElementById('accountEmailSkeleton') as HTMLElement | null;
+    if (skeletonEl) skeletonEl.style.display = 'block';
+    if (emailEl) {
+      emailEl.style.display = 'none';
+      emailEl.textContent = '';
+    }
+
+    let email: string = 'Logged in';
+    let isPro = false;
+    try {
+      const usageRes = await fetch(`${API_BASE}/api/usage`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const data = await usageRes.json().catch(() => ({}));
+
+      if (usageRes.status === 401 || (usageRes.ok && data.requireLogin)) {
+        await setSession(null);
+        void this.renderAccount();
+        return;
+      }
+
+      if (usageRes.ok && !data.requireLogin) {
+        email = data?.user?.email ?? 'Logged in';
+        isPro = Boolean(data?.isSubscribed);
+      }
+    } catch {
+      // Network error: keep session, show logged in with fallback text
+    }
+
+    if (skeletonEl) skeletonEl.style.display = 'none';
+    if (emailEl) {
+      emailEl.textContent = email;
+      emailEl.style.display = 'block';
+    }
+    const proBadge = document.getElementById('proBadge');
+    const upgradeBtn = document.getElementById('upgradeBtn');
+    if (proBadge) proBadge.style.display = isPro ? 'inline-block' : 'none';
+    if (upgradeBtn) upgradeBtn.style.display = isPro ? 'none' : '';
+  }
+
+  private openWebsiteLogin(): void {
+    chrome.tabs.create({ url: `${API_BASE}/login` });
+  }
+
+  private async handleLogout(): Promise<void> {
+    await setSession(null);
+    await this.renderAccount();
+    // Open logout page so website session is also cleared, then redirects to home
+    chrome.tabs.create({ url: `${API_BASE}/logout` });
+  }
+
+  private async handleUpgrade(): Promise<void> {
+    const session = await getSession();
+    if (!session?.access_token) {
+      this.showErrorMessage('Please log in first.');
+      return;
+    }
+    try {
+      const r = await fetch(`${API_BASE}/api/checkout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        this.showErrorMessage((err as { message?: string }).message ?? 'Could not start checkout.');
+        return;
+      }
+      const data = await r.json();
+      const url = (data as { url?: string }).url;
+      if (url) chrome.tabs.create({ url });
+    } catch (e) {
+      this.showErrorMessage(e instanceof Error ? e.message : 'Something went wrong.');
     }
   }
 
@@ -88,19 +222,15 @@ class RewordlyPopup {
     }
   }
 
-  private showSuccessMessage(): void {
-    // Remove any existing success message
+  private showSuccessMessage(message?: string): void {
     const existingMessage = document.querySelector('.rewordly-success-message');
-    if (existingMessage) {
-      existingMessage.remove();
-    }
+    if (existingMessage) existingMessage.remove();
 
-    // Create success message element
     const successMessage = document.createElement('div');
     successMessage.className = 'rewordly-success-message';
     successMessage.innerHTML = `
       <div class="success-icon">✓</div>
-      <div class="success-text">Settings saved!</div>
+      <div class="success-text">${message ?? 'Settings saved!'}</div>
     `;
 
     // Add to the content area
@@ -163,7 +293,12 @@ class RewordlyPopup {
   }
 }
 
-// Initialize popup when DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
+// Initialize popup when DOM is ready (popup may already be loaded when script runs)
+function initPopup(): void {
   new RewordlyPopup();
-}); 
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initPopup);
+} else {
+  initPopup();
+} 

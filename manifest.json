@@ -10,7 +10,8 @@
     "contextMenus"
   ],
   "host_permissions": [
-    "https://rewordly.store/*"
+    "https://rewordly.store/*",
+    "https://*.supabase.co/*"
   ],
   "background": {
     "service_worker": "background.js"

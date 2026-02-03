@@ -3,6 +3,43 @@
  * Handles text selection, rewrite button UI, and displaying rewritten text
  */
 
+import { API_BASE } from './config';
+import { getApiHeaders, setSession } from './auth';
+
+// Auto-connect / logout: website sends token or logout via postMessage (dashboard page)
+(function setupConnectAndLogoutListener() {
+  try {
+    if (typeof window === 'undefined') return;
+    window.addEventListener('message', (event) => {
+      if (event.source !== window || !event.data?.type) return;
+      const type = event.data.type as string;
+
+      if (type === 'REWORDLY_CONNECT') {
+        const code = String(event.data?.token ?? '').trim().toUpperCase().slice(0, 6);
+        if (code.length !== 6) return;
+        fetch(`${API_BASE}/api/auth/exchange-connection-code`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code }),
+        })
+          .then((r) => r.json())
+          .then(async (data) => {
+            const accessToken = data?.access_token;
+            if (accessToken) await setSession({ access_token: accessToken });
+          })
+          .catch(() => {});
+        return;
+      }
+
+      if (type === 'REWORDLY_LOGOUT') {
+        setSession(null).catch(() => {});
+      }
+    });
+  } catch {
+    // ignore
+  }
+})();
+
 interface RewordlyConfig {
   rewriteEnabled: boolean;
 }
@@ -341,6 +378,13 @@ class RewordlyContentScript {
               <p class="rewordly-loading-text">Processing...</p>
             </div>
             <p class="rewordly-rewritten-text"></p>
+            <div class="rewordly-limit-notice" style="display: none;">
+              <p class="rewordly-limit-message"></p>
+              <div class="rewordly-limit-actions">
+                <button type="button" class="rewordly-limit-btn rewordly-login-btn">Log in</button>
+                <button type="button" class="rewordly-limit-btn rewordly-upgrade-btn">Upgrade to Pro</button>
+              </div>
+            </div>
           </div>
         </div>
         <div class="rewordly-modal-footer">
@@ -356,7 +400,22 @@ class RewordlyContentScript {
     
     closeBtn.addEventListener('click', this.hideModal.bind(this));
     copyBtn.addEventListener('click', this.copyRewrittenText.bind(this));
-    
+
+    const loginBtn = this.modal.querySelector('.rewordly-login-btn') as HTMLButtonElement;
+    const upgradeBtn = this.modal.querySelector('.rewordly-upgrade-btn') as HTMLButtonElement;
+    const loginUrl = `${API_BASE}/login`;
+    const connectUrl = `${API_BASE}/dashboard`;
+    if (loginBtn) {
+      loginBtn.addEventListener('click', () => {
+        chrome.runtime.sendMessage({ type: 'OPEN_TAB', url: loginUrl });
+      });
+    }
+    if (upgradeBtn) {
+      upgradeBtn.addEventListener('click', () => {
+        chrome.runtime.sendMessage({ type: 'OPEN_TAB', url: connectUrl });
+      });
+    }
+
     // Add click handler to modal backdrop to close when clicking outside content
     this.modal.addEventListener('click', (event) => {
       // Only close if clicking on the backdrop itself, not on the content
@@ -612,8 +671,13 @@ class RewordlyContentScript {
       const rewrittenText = await this.rewriteText(textToRewrite);
       this.displayRewrittenText(rewrittenText);
     } catch (error) {
-      console.error('Rewordly: Error rewriting text:', error);
-      this.showError('Failed to rewrite text. Please try again.');
+      const err = error as Error & { code?: string; requireLogin?: boolean; requirePayment?: boolean };
+      if (err.code === 'LIMIT_REACHED') {
+        this.showLimitNotice(err.requireLogin ?? true, err.requirePayment ?? false, err.message);
+      } else {
+        console.error('Rewordly: Error rewriting text:', error);
+        this.showError('Failed to rewrite text. Please try again.');
+      }
     } finally {
       this.isProcessing = false;
     }
@@ -638,8 +702,13 @@ class RewordlyContentScript {
       const correctedText = await this.grammarText(textToCheck);
       this.displayRewrittenText(correctedText);
     } catch (error) {
-      console.error('Rewordly: Error checking grammar:', error);
-      this.showError('Failed to check grammar. Please try again.');
+      const err = error as Error & { code?: string; requireLogin?: boolean; requirePayment?: boolean };
+      if (err.code === 'LIMIT_REACHED') {
+        this.showLimitNotice(err.requireLogin ?? true, err.requirePayment ?? false, err.message);
+      } else {
+        console.error('Rewordly: Error checking grammar:', error);
+        this.showError('Failed to check grammar. Please try again.');
+      }
     } finally {
       this.isProcessing = false;
     }
@@ -662,8 +731,13 @@ class RewordlyContentScript {
       const rewrittenText = await this.rewriteText(selectedText);
       this.displayRewrittenText(rewrittenText);
     } catch (error) {
-      console.error('Rewordly: Error rewriting text:', error);
-      this.showError('Failed to rewrite text. Please try again.');
+      const err = error as Error & { code?: string; requireLogin?: boolean; requirePayment?: boolean };
+      if (err.code === 'LIMIT_REACHED') {
+        this.showLimitNotice(err.requireLogin ?? true, err.requirePayment ?? false, err.message);
+      } else {
+        console.error('Rewordly: Error rewriting text:', error);
+        this.showError('Failed to rewrite text. Please try again.');
+      }
     } finally {
       this.isProcessing = false;
     }
@@ -686,52 +760,68 @@ class RewordlyContentScript {
       const correctedText = await this.grammarText(selectedText);
       this.displayRewrittenText(correctedText);
     } catch (error) {
-      console.error('Rewordly: Error checking grammar:', error);
-      this.showError('Failed to check grammar. Please try again.');
+      const err = error as Error & { code?: string; requireLogin?: boolean; requirePayment?: boolean };
+      if (err.code === 'LIMIT_REACHED') {
+        this.showLimitNotice(err.requireLogin ?? true, err.requirePayment ?? false, err.message);
+      } else {
+        console.error('Rewordly: Error checking grammar:', error);
+        this.showError('Failed to check grammar. Please try again.');
+      }
     } finally {
       this.isProcessing = false;
     }
   }
 
   private async rewriteText(text: string): Promise<string> {
-    const response = await fetch('https://rewordly.store/api/rewrite', {
+    const headers = await getApiHeaders();
+    const response = await fetch(`${API_BASE}/api/rewrite`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        text: text
-      })
+      headers,
+      body: JSON.stringify({ text }),
     });
 
-    if (!response.ok) {
-      throw new Error(`API request failed: ${response.status}`);
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 402 && (data.code === 'LIMIT_REACHED' || data.requireLogin !== undefined)) {
+      const err = new Error(data.message || 'Daily limit reached.') as Error & {
+        code?: string;
+        requireLogin?: boolean;
+        requirePayment?: boolean;
+      };
+      err.code = 'LIMIT_REACHED';
+      err.requireLogin = data.requireLogin;
+      err.requirePayment = data.requirePayment;
+      throw err;
     }
-
-    const data = await response.json();
-    return data.rewritten || 'Failed to rewrite text.';
+    if (!response.ok) {
+      throw new Error((data.message as string) || `API request failed: ${response.status}`);
+    }
+    return (data.rewritten as string) || 'Failed to rewrite text.';
   }
 
-  // @ts-ignore - Kept for compatibility, no longer used
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  private async grammarText(_text: string): Promise<string> {
-    const response = await fetch('https://rewordly.store/api/grammar', {
+  private async grammarText(text: string): Promise<string> {
+    const headers = await getApiHeaders();
+    const response = await fetch(`${API_BASE}/api/grammar`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        text: _text,
-        mode: "ai"
-      })
+      headers,
+      body: JSON.stringify({ text, mode: 'ai' }),
     });
 
-    if (!response.ok) {
-      throw new Error(`API request failed: ${response.status}`);
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 402 && (data.code === 'LIMIT_REACHED' || data.requireLogin !== undefined)) {
+      const err = new Error(data.message || 'Daily limit reached.') as Error & {
+        code?: string;
+        requireLogin?: boolean;
+        requirePayment?: boolean;
+      };
+      err.code = 'LIMIT_REACHED';
+      err.requireLogin = data.requireLogin;
+      err.requirePayment = data.requirePayment;
+      throw err;
     }
-
-    const data = await response.json();
-    return data.corrected || 'Failed to fix grammar.';
+    if (!response.ok) {
+      throw new Error((data.message as string) || `API request failed: ${response.status}`);
+    }
+    return (data.corrected as string) || 'Failed to fix grammar.';
   }
 
   private showModal(): void {
@@ -743,12 +833,18 @@ class RewordlyContentScript {
     const modalTitle = this.modal.querySelector('.rewordly-modal-title') as HTMLHeadingElement;
     const resultTitle = this.modal.querySelector('.rewordly-result-title') as HTMLHeadingElement;
     const loadingText = this.modal.querySelector('.rewordly-loading-text') as HTMLParagraphElement;
+    const limitNotice = this.modal.querySelector('.rewordly-limit-notice') as HTMLDivElement;
+    const limitMessage = this.modal.querySelector('.rewordly-limit-message') as HTMLParagraphElement;
 
     originalText.textContent = this.selectedText;
     originalText.classList.add('show');
     rewrittenText.textContent = '';
+    rewrittenText.style.removeProperty('display');
+    rewrittenText.classList.remove('show', 'error');
     loading.classList.add('show');
-    rewrittenText.classList.remove('show');
+    if (resultTitle) resultTitle.style.removeProperty('display');
+    if (limitNotice) limitNotice.style.display = 'none';
+    if (limitMessage) limitMessage.textContent = '';
     
     // Set titles based on operation
     if (this.currentOperation === 'grammar') {
@@ -779,12 +875,16 @@ class RewordlyContentScript {
     if (!this.modal) return;
 
     const rewrittenText = this.modal.querySelector('.rewordly-rewritten-text') as HTMLParagraphElement;
-    const loading = this.modal.querySelector('.rewordly-loading') as HTMLDivElement;
-    const modalTitle = this.modal.querySelector('.rewordly-modal-title') as HTMLHeadingElement;
     const resultTitle = this.modal.querySelector('.rewordly-result-title') as HTMLHeadingElement;
+    const loading = this.modal.querySelector('.rewordly-loading') as HTMLDivElement;
+    const limitNotice = this.modal.querySelector('.rewordly-limit-notice') as HTMLDivElement;
+    const modalTitle = this.modal.querySelector('.rewordly-modal-title') as HTMLHeadingElement;
     const loadingText = this.modal.querySelector('.rewordly-loading-text') as HTMLParagraphElement;
 
     loading.classList.remove('show');
+    if (limitNotice) limitNotice.style.display = 'none';
+    if (resultTitle) resultTitle.style.removeProperty('display');
+    rewrittenText.style.removeProperty('display');
     rewrittenText.textContent = text;
     rewrittenText.classList.add('show');
     
@@ -804,17 +904,20 @@ class RewordlyContentScript {
     if (!this.modal) return;
 
     const rewrittenText = this.modal.querySelector('.rewordly-rewritten-text') as HTMLParagraphElement;
-    const loading = this.modal.querySelector('.rewordly-loading') as HTMLDivElement;
-    const modalTitle = this.modal.querySelector('.rewordly-modal-title') as HTMLHeadingElement;
     const resultTitle = this.modal.querySelector('.rewordly-result-title') as HTMLHeadingElement;
+    const loading = this.modal.querySelector('.rewordly-loading') as HTMLDivElement;
+    const limitNotice = this.modal.querySelector('.rewordly-limit-notice') as HTMLDivElement;
+    const modalTitle = this.modal.querySelector('.rewordly-modal-title') as HTMLHeadingElement;
     const loadingText = this.modal.querySelector('.rewordly-loading-text') as HTMLParagraphElement;
 
     loading.classList.remove('show');
+    if (limitNotice) limitNotice.style.display = 'none';
+    if (resultTitle) resultTitle.style.removeProperty('display');
+    rewrittenText.style.removeProperty('display');
     rewrittenText.textContent = `Error: ${message}`;
     rewrittenText.classList.add('show');
     rewrittenText.classList.add('error');
     
-    // Set titles based on operation
     if (this.currentOperation === 'grammar') {
       modalTitle.textContent = 'Grammar Check';
       resultTitle.textContent = 'Corrected Text:';
@@ -824,6 +927,28 @@ class RewordlyContentScript {
       resultTitle.textContent = 'Rewritten Text:';
       loadingText.textContent = 'Rewriting...';
     }
+  }
+
+  private showLimitNotice(requireLogin: boolean, requirePayment: boolean, message: string): void {
+    if (!this.modal) return;
+
+    const rewrittenText = this.modal.querySelector('.rewordly-rewritten-text') as HTMLParagraphElement;
+    const resultTitle = this.modal.querySelector('.rewordly-result-title') as HTMLHeadingElement;
+    const loading = this.modal.querySelector('.rewordly-loading') as HTMLDivElement;
+    const limitNotice = this.modal.querySelector('.rewordly-limit-notice') as HTMLDivElement;
+    const limitMessage = this.modal.querySelector('.rewordly-limit-message') as HTMLParagraphElement;
+    const loginBtn = this.modal.querySelector('.rewordly-login-btn') as HTMLButtonElement;
+    const upgradeBtn = this.modal.querySelector('.rewordly-upgrade-btn') as HTMLButtonElement;
+
+    loading.classList.remove('show');
+    rewrittenText.textContent = '';
+    rewrittenText.classList.remove('show', 'error');
+    rewrittenText.style.setProperty('display', 'none', 'important');
+    if (resultTitle) resultTitle.style.setProperty('display', 'none', 'important');
+    if (limitMessage) limitMessage.textContent = message;
+    if (loginBtn) loginBtn.style.display = requireLogin ? '' : 'none';
+    if (upgradeBtn) upgradeBtn.style.display = requirePayment ? '' : 'none';
+    if (limitNotice) limitNotice.style.display = 'block';
   }
 
   private copyRewrittenText(): void {

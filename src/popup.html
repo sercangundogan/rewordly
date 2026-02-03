@@ -6,17 +6,26 @@
   <style>
     body {
       width: 380px;
+      max-height: 560px;
+      min-height: 320px;
       padding: 0;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       margin: 0;
       background: #e8e8e8;
       color: #1f2937;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
     }
     
     .container {
       background: white;
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
       overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      flex: 1;
     }
     
     .header {
@@ -26,6 +35,7 @@
       text-align: center;
       position: relative;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      flex-shrink: 0;
     }
     
     .header h1 {
@@ -44,6 +54,10 @@
     
     .content {
       padding: 24px 20px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      min-height: 0;
+      flex: 1;
     }
     
     .status-card {
@@ -160,6 +174,8 @@
     
     .button {
       width: 100%;
+      max-width: 100%;
+      box-sizing: border-box;
       padding: 14px 20px;
       background: #1a1a1a;
       color: white;
@@ -212,6 +228,8 @@
       transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
       margin-top: 16px;
+      max-width: 100%;
+      box-sizing: border-box;
     }
     
     .coffee-link:hover {
@@ -251,6 +269,8 @@
       font-size: 14px;
       transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      max-width: 100%;
+      box-sizing: border-box;
     }
     
     .contact-link:hover {
@@ -300,6 +320,7 @@
       padding: 16px 20px;
       text-align: center;
       border-top: 1px solid #e0e0e0;
+      flex-shrink: 0;
     }
     
     .footer p {
@@ -381,6 +402,59 @@
     .error-text {
       color: #dc2626;
     }
+    .account-section {
+      margin-bottom: 20px;
+      padding: 16px;
+      background: #f5f5f5;
+      border-radius: 12px;
+      border: 1px solid #e0e0e0;
+      min-width: 0;
+    }
+    .account-label, .account-email {
+      margin: 0 0 10px 0;
+      font-size: 14px;
+      font-weight: 600;
+      color: #374151;
+    }
+    .account-input {
+      width: 100%;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+    .account-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .account-actions .button { flex: 1; }
+    .pro-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      background: #2d4a3e;
+      color: white;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .account-email-skeleton {
+      height: 18px;
+      width: 72%;
+      max-width: 200px;
+      margin: 0 0 10px 0;
+      border-radius: 6px;
+      background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%);
+      background-size: 200% 100%;
+      animation: skeleton-shimmer 1.2s ease-in-out infinite;
+    }
+    @keyframes skeleton-shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
   </style>
 </head>
 <body>
@@ -391,6 +465,28 @@
     </div>
     
     <div class="content">
+      <div id="accountSection" class="account-section">
+        <p class="account-label" id="accountSectionTitle">Hesap</p>
+        <div id="accountNotConfigured" style="display: none;">
+          <p style="margin: 0 0 12px 0; font-size: 13px; color: #6b7280;">Log in for more daily usage. Sign in is done via the website.</p>
+          <a href="https://rewordly.store/login" target="_blank" class="button" style="display: block; text-align: center; text-decoration: none;">Log in</a>
+        </div>
+        <div id="accountLoggedOut" style="display: none;">
+          <p style="margin: 0 0 12px 0; font-size: 13px; color: #6b7280;">Log in via the website for more daily usage. The extension will connect automatically after you sign in.</p>
+          <button type="button" id="loginWebsiteBtn" class="button">Log in on website</button>
+        </div>
+        <div id="accountLoggedIn" style="display: none;">
+          <div id="accountEmailSkeleton" class="account-email-skeleton" style="display: none;"></div>
+          <p class="account-email" id="accountEmail" style="display: none;"></p>
+          <div class="account-badges">
+            <span id="proBadge" class="pro-badge" style="display: none;">Pro</span>
+          </div>
+          <div class="account-actions">
+            <button type="button" id="upgradeBtn" class="button" style="display: none;">Pro&apos;ya yükselt</button>
+            <button type="button" id="logoutBtn" class="button secondary">Çıkış yap</button>
+          </div>
+        </div>
+      </div>
       <div class="toggle-section">
         <div class="toggle-container">
           <span class="toggle-label">Enable Rewrite</span>
