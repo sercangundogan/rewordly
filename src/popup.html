@@ -441,6 +441,27 @@
       font-weight: 600;
       margin-bottom: 8px;
     }
+    .plans-coming-soon {
+      margin-bottom: 12px;
+      padding: 10px 12px;
+      background: #f0f9f4;
+      border: 1px solid #2d4a3e;
+      border-radius: 8px;
+    }
+    .plans-coming-soon-text {
+      margin: 0;
+      font-size: 12px;
+      color: #1e3d32;
+      line-height: 1.45;
+    }
+    .plans-coming-soon-text a {
+      color: #2d4a3e;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .plans-coming-soon-text a:hover {
+      text-decoration: underline;
+    }
     .account-email-skeleton {
       height: 18px;
       width: 72%;
@@ -466,7 +487,7 @@
     
     <div class="content">
       <div id="accountSection" class="account-section">
-        <p class="account-label" id="accountSectionTitle">Hesap</p>
+        <p class="account-label" id="accountSectionTitle">Account</p>
         <div id="accountNotConfigured" style="display: none;">
           <p style="margin: 0 0 12px 0; font-size: 13px; color: #6b7280;">Log in for more daily usage. Sign in is done via the website.</p>
           <a href="https://rewordly.store/login" target="_blank" class="button" style="display: block; text-align: center; text-decoration: none;">Log in</a>
@@ -481,9 +502,11 @@
           <div class="account-badges">
             <span id="proBadge" class="pro-badge" style="display: none;">Pro</span>
           </div>
+          <div id="plansComingSoon" class="plans-coming-soon" style="display: none;">
+            <p class="plans-coming-soon-text">Payment plans coming soon. Unlimited daily use will be available. Until then, email <a href="mailto:sercangundogan35@gmail.com" target="_blank">sercangundogan35@gmail.com</a> to request free limits.</p>
+          </div>
           <div class="account-actions">
-            <button type="button" id="upgradeBtn" class="button" style="display: none;">Pro&apos;ya yükselt</button>
-            <button type="button" id="logoutBtn" class="button secondary">Çıkış yap</button>
+            <button type="button" id="logoutBtn" class="button secondary">Sign out</button>
           </div>
         </div>
       </div>

@@ -382,7 +382,7 @@ class RewordlyContentScript {
               <p class="rewordly-limit-message"></p>
               <div class="rewordly-limit-actions">
                 <button type="button" class="rewordly-limit-btn rewordly-login-btn">Log in</button>
-                <button type="button" class="rewordly-limit-btn rewordly-upgrade-btn">Upgrade to Pro</button>
+                <button type="button" class="rewordly-limit-btn rewordly-upgrade-btn">Email for free limits</button>
               </div>
             </div>
           </div>
@@ -404,7 +404,7 @@ class RewordlyContentScript {
     const loginBtn = this.modal.querySelector('.rewordly-login-btn') as HTMLButtonElement;
     const upgradeBtn = this.modal.querySelector('.rewordly-upgrade-btn') as HTMLButtonElement;
     const loginUrl = `${API_BASE}/login`;
-    const connectUrl = `${API_BASE}/dashboard`;
+    const freeLimitsEmail = 'mailto:sercangundogan35@gmail.com';
     if (loginBtn) {
       loginBtn.addEventListener('click', () => {
         chrome.runtime.sendMessage({ type: 'OPEN_TAB', url: loginUrl });
@@ -412,7 +412,7 @@ class RewordlyContentScript {
     }
     if (upgradeBtn) {
       upgradeBtn.addEventListener('click', () => {
-        chrome.runtime.sendMessage({ type: 'OPEN_TAB', url: connectUrl });
+        window.open(freeLimitsEmail, '_blank');
       });
     }
 

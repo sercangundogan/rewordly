@@ -53,7 +53,6 @@ class RewordlyPopup {
     }
     document.getElementById('loginWebsiteBtn')?.addEventListener('click', () => this.openWebsiteLogin());
     document.getElementById('logoutBtn')?.addEventListener('click', () => this.handleLogout());
-    document.getElementById('upgradeBtn')?.addEventListener('click', () => this.handleUpgrade());
   }
 
   private showAccountState(
@@ -135,9 +134,9 @@ class RewordlyPopup {
       emailEl.style.display = 'block';
     }
     const proBadge = document.getElementById('proBadge');
-    const upgradeBtn = document.getElementById('upgradeBtn');
+    const plansComingSoon = document.getElementById('plansComingSoon');
     if (proBadge) proBadge.style.display = isPro ? 'inline-block' : 'none';
-    if (upgradeBtn) upgradeBtn.style.display = isPro ? 'none' : '';
+    if (plansComingSoon) plansComingSoon.style.display = isPro ? 'none' : 'block';
   }
 
   private openWebsiteLogin(): void {
@@ -149,33 +148,6 @@ class RewordlyPopup {
     await this.renderAccount();
     // Open logout page so website session is also cleared, then redirects to home
     chrome.tabs.create({ url: `${API_BASE}/logout` });
-  }
-
-  private async handleUpgrade(): Promise<void> {
-    const session = await getSession();
-    if (!session?.access_token) {
-      this.showErrorMessage('Please log in first.');
-      return;
-    }
-    try {
-      const r = await fetch(`${API_BASE}/api/checkout`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
-      });
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        this.showErrorMessage((err as { message?: string }).message ?? 'Could not start checkout.');
-        return;
-      }
-      const data = await r.json();
-      const url = (data as { url?: string }).url;
-      if (url) chrome.tabs.create({ url });
-    } catch (e) {
-      this.showErrorMessage(e instanceof Error ? e.message : 'Something went wrong.');
-    }
   }
 
   private updateUI(): void {
