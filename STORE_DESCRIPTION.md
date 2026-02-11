@@ -72,6 +72,12 @@ Need help or have a feature request? Contact us anytime.
 
 -----------------
 
+V1.3.0 – Account, login & free limits
+• Account and login: Sign in via the website for more daily usage. Session is managed in the extension popup.
+• Supabase authentication: Secure login integrated; API requests use your session for usage tracking.
+• Free limits by email: When you hit limits, use "Email for free limits" to request more—or email us directly. Payment plans coming soon.
+• Popup UI: Account section in English; "Sign out" and clearer messaging. Upgrade button replaced with "Payment plans coming soon" and email link for free limits.
+
 V1.2.0 – Focus on core features
 • Real-time grammar checking removed (we may revisit it later)
 • Full focus on rewrite and on-demand grammar check

@@ -16,6 +16,7 @@ A Chrome extension that rewrites or grammar-checks selected text using AI to imp
   - Rewordly → Check Grammar
   - Disable / Enable Rewordly on this page (per-site toggle).
 - **Welcome & changelog** — Welcome page on first install, changelog on update.
+- **Account & login** (v1.3.0) — Sign in via the website for more daily usage; session is shown in the popup. Free limits can be requested by email; payment plans coming soon.
 
 ## Security & Privacy
 
