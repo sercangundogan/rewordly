@@ -5,8 +5,17 @@
 
 import { getApiHeaders } from './auth';
 
+const UNINSTALL_FEEDBACK_URL = 'https://forms.gle/xSaZsCYBjdLibUh37';
+
 // Handle extension installation and updates
 chrome.runtime.onInstalled.addListener(async (details) => {
+  // Open feedback form when user uninstalls the extension
+  try {
+    await chrome.runtime.setUninstallURL(UNINSTALL_FEEDBACK_URL);
+  } catch (e) {
+    console.warn('Rewordly: Could not set uninstall URL', e);
+  }
+
   // Create context menu items
   chrome.contextMenus.create({
     id: 'rewordly-menu',
@@ -229,7 +238,13 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 // Handle extension startup
 chrome.runtime.onStartup.addListener(async () => {
   console.log('Rewordly extension started');
-  
+
+  try {
+    await chrome.runtime.setUninstallURL(UNINSTALL_FEEDBACK_URL);
+  } catch (e) {
+    console.warn('Rewordly: Could not set uninstall URL', e);
+  }
+
   // Update context menu title for all open tabs on startup
   try {
     const tabs = await chrome.tabs.query({});
