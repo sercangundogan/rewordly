@@ -26,6 +26,7 @@ class RewordlyPopup {
 
     await this.loadSettings();
     this.setupEventListeners();
+    this.updateShortcutLabels();
     await this.renderAccount();
 
     // Re-render shortly so we pick up session set by dashboard (e.g. user just logged in)
@@ -40,7 +41,12 @@ class RewordlyPopup {
   private async loadSettings(): Promise<void> {
     try {
       const result = await chrome.storage.sync.get(['rewordlyRewriteEnabled']);
-      this.settings.rewriteEnabled = result['rewordlyRewriteEnabled'] !== false;
+      const stored = result['rewordlyRewriteEnabled'];
+      // Default to true when never set (first install)
+      this.settings.rewriteEnabled = stored !== false;
+      if (stored === undefined) {
+        await chrome.storage.sync.set({ rewordlyRewriteEnabled: true });
+      }
       this.updateUI();
     } catch (error) {
       console.error('Failed to load settings:', error);
@@ -53,6 +59,19 @@ class RewordlyPopup {
     }
     document.getElementById('loginWebsiteBtn')?.addEventListener('click', () => this.openWebsiteLogin());
     document.getElementById('logoutBtn')?.addEventListener('click', () => this.handleLogout());
+    document.getElementById('openShortcutsBtn')?.addEventListener('click', () => this.openShortcutsPage());
+  }
+
+  private updateShortcutLabels(): void {
+    const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+    const rewriteKbd = document.getElementById('shortcutRewrite');
+    const grammarKbd = document.getElementById('shortcutGrammar');
+    if (rewriteKbd) rewriteKbd.textContent = isMac ? '⌘+Shift+E' : 'Ctrl+Shift+E';
+    if (grammarKbd) grammarKbd.textContent = isMac ? '⌘+Shift+L' : 'Ctrl+Shift+L';
+  }
+
+  private openShortcutsPage(): void {
+    chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
   }
 
   private showAccountState(

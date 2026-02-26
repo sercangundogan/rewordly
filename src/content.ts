@@ -136,8 +136,29 @@ class RewordlyContentScript {
         } else if (message.action === 'grammar') {
           this.handleContextMenuGrammar(message.selectedText);
         }
+      } else if (message.type === 'SHORTCUT_TRIGGERED' && (message.action === 'rewrite' || message.action === 'grammar')) {
+        const selectedText = window.getSelection()?.toString()?.trim() ?? '';
+        if (!selectedText || selectedText.length < 3) {
+          this.showShortcutHint();
+          return;
+        }
+        if (message.action === 'rewrite') {
+          this.handleContextMenuRewrite(selectedText);
+        } else {
+          this.handleContextMenuGrammar(selectedText);
+        }
       }
     });
+  }
+
+  /** Show a brief hint when shortcut is used but no valid selection exists */
+  private showShortcutHint(): void {
+    const hint = document.createElement('div');
+    hint.className = 'rewordly-shortcut-hint';
+    hint.textContent = 'Select at least 3 characters of text first';
+    hint.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1f2937;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;z-index:2147483647;box-shadow:0 4px 12px rgba(0,0,0,0.3);font-family:system-ui,sans-serif;';
+    document.body.appendChild(hint);
+    setTimeout(() => hint.remove(), 2500);
   }
 
   private async loadConfig(): Promise<void> {

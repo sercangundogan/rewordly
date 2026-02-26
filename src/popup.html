@@ -151,8 +151,8 @@
     }
     
     .toggle.active {
-      background: #1a1a1a;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+      background: #2d4a3e;
+      box-shadow: 0 2px 8px rgba(45, 74, 62, 0.3);
     }
     
     .toggle::after {
@@ -172,12 +172,13 @@
       transform: translateX(28px);
     }
     
+    /* Primary: main actions (Log in, etc.) - matches status green */
     .button {
       width: 100%;
       max-width: 100%;
       box-sizing: border-box;
       padding: 14px 20px;
-      background: #1a1a1a;
+      background: #2d4a3e;
       color: white;
       border: none;
       border-radius: 12px;
@@ -185,13 +186,14 @@
       font-weight: 600;
       cursor: pointer;
       transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      box-shadow: 0 2px 8px rgba(45, 74, 62, 0.25);
       margin-bottom: 12px;
     }
     
     .button:hover {
+      background: #1e3d32;
       transform: translateY(-2px);
-      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+      box-shadow: 0 4px 12px rgba(45, 74, 62, 0.35);
     }
     
     .button:active {
@@ -205,36 +207,44 @@
       box-shadow: none;
     }
     
+    /* Secondary: Sign out, Change shortcuts - outline style */
     .button.secondary {
-      background: #2d2d2d;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      background: transparent;
+      color: #374151;
+      border: 2px solid #d1d5db;
+      box-shadow: none;
     }
     
     .button.secondary:hover {
-      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+      background: #f5f5f5;
+      border-color: #2d4a3e;
+      color: #1e3d32;
+      box-shadow: none;
     }
     
+    /* Coffee: warm accent, distinct from primary */
     .coffee-link {
       display: flex;
       align-items: center;
       justify-content: center;
       padding: 12px 16px;
-      background: #2d2d2d;
-      color: white;
+      background: #fef3c7;
+      color: #92400e;
       text-decoration: none;
       border-radius: 12px;
       font-weight: 600;
       font-size: 14px;
+      border: 1px solid #fcd34d;
       transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
       margin-top: 16px;
       max-width: 100%;
       box-sizing: border-box;
     }
     
     .coffee-link:hover {
+      background: #fde68a;
       transform: translateY(-2px);
-      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+      box-shadow: 0 4px 12px rgba(245, 158, 11, 0.2);
     }
     
     .coffee-icon {
@@ -256,26 +266,29 @@
       font-weight: 500;
     }
     
+    /* Contact: outline, tertiary */
     .contact-link {
       display: flex;
       align-items: center;
       justify-content: center;
       padding: 12px 16px;
-      background: #1a1a1a;
-      color: white;
+      background: transparent;
+      color: #374151;
       text-decoration: none;
       border-radius: 12px;
       font-weight: 600;
       font-size: 14px;
+      border: 2px solid #e5e7eb;
       transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
       max-width: 100%;
       box-sizing: border-box;
     }
     
     .contact-link:hover {
+      background: #f5f5f5;
+      border-color: #2d4a3e;
+      color: #1e3d32;
       transform: translateY(-2px);
-      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
     }
     
     .contact-icon {
@@ -512,10 +525,20 @@
       </div>
       <div class="toggle-section">
         <div class="toggle-container">
-          <span class="toggle-label">Enable Rewrite</span>
-          <button class="toggle" id="rewriteToggle" type="button" aria-label="Toggle rewrite feature"></button>
+          <span class="toggle-label">Show hover buttons</span>
+          <button class="toggle active" id="rewriteToggle" type="button" aria-label="Toggle rewrite feature"></button>
         </div>
-        <p style="margin: 8px 0 0 0; font-size: 13px; color: #6b7280;">Show rewrite button in text areas</p>
+        <p style="margin: 8px 0 0 0; font-size: 13px; color: #6b7280;">Show rewrite and grammar buttons when hovering over selected text</p>
+      </div>
+
+      <div class="shortcuts-section" style="margin-top: 12px;">
+        <p style="font-size: 13px; font-weight: 600; color: #374151; margin: 0 0 8px 0;">Keyboard shortcuts</p>
+        <ul style="margin: 0; padding-left: 18px; font-size: 13px; color: #6b7280; line-height: 1.6;">
+          <li><strong>Rewrite:</strong> <kbd id="shortcutRewrite">Ctrl+Shift+E</kbd></li>
+          <li><strong>Grammar:</strong> <kbd id="shortcutGrammar">Ctrl+Shift+L</kbd></li>
+        </ul>
+        <p style="margin: 8px 0 0 0; font-size: 12px; color: #9ca3af;">Select text, then use the shortcut. If shortcuts show as "None" in Chrome, remove and re-add the extension once so defaults apply, or set them below.</p>
+        <button type="button" id="openShortcutsBtn" class="button secondary" style="margin-top: 8px; font-size: 12px;">Open Chrome shortcuts</button>
       </div>
       
       <a href="https://coff.ee/sercangundogan" target="_blank" class="coffee-link">

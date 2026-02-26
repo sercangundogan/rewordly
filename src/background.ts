@@ -63,16 +63,26 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     console.log('Rewordly extension installed successfully!');
   } else if (details.reason === 'update') {
     // Check if user has seen this version's changelog
-    const result = await chrome.storage.local.get(['lastViewedVersion']);
+    const result = await chrome.storage.local.get(['lastViewedVersion', 'shortcutsPageOpenedForVersion']);
     const lastViewedVersion = result['lastViewedVersion'] as string | undefined;
+    const shortcutsPageOpenedForVersion = result['shortcutsPageOpenedForVersion'] as string | undefined;
 
     // If this is a new version, show changelog
     if (lastViewedVersion !== currentVersion) {
       chrome.tabs.create({
         url: chrome.runtime.getURL('changelog.html')
       });
-      
       console.log(`Rewordly updated from ${details.previousVersion} to ${currentVersion}`);
+    }
+
+    // Open shortcuts page once per version so user can assign default keyboard shortcuts if they're empty
+    if (shortcutsPageOpenedForVersion !== currentVersion) {
+      try {
+        chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
+        await chrome.storage.local.set({ shortcutsPageOpenedForVersion: currentVersion });
+      } catch {
+        // chrome:// URLs may be restricted in some contexts
+      }
     }
   }
 
@@ -121,6 +131,19 @@ async function updateDisablePageMenuTitle(tabId?: number): Promise<void> {
     console.error('Failed to update context menu title:', error);
   }
 }
+
+// Handle keyboard shortcut commands (Rewrite / Grammar)
+chrome.commands.onCommand.addListener((command: string) => {
+  if (command !== 'rewrite' && command !== 'grammar') return;
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const tab = tabs[0];
+    if (tab?.id && tab.url && (tab.url.startsWith('http://') || tab.url.startsWith('https://'))) {
+      chrome.tabs.sendMessage(tab.id, { type: 'SHORTCUT_TRIGGERED', action: command }).catch(() => {
+        // Content script may not be loaded (e.g. chrome:// page or extension page)
+      });
+    }
+  });
+});
 
 // Handle context menu clicks
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
