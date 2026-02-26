@@ -98,28 +98,32 @@ class RewordlyContentScript {
   }
 
   private async init(): Promise<void> {
-    // Check if this page is disabled - if so, don't initialize at all
+    // Always set up message listener first so context menu (Rewrite/Grammar) works even on disabled pages
+    this.setupMessageListener();
+
     const pageDisabled = await this.isPageDisabled();
     if (pageDisabled) {
+      // On disabled pages: only support context menu actions (right-click → Rewrite/Grammar)
+      await this.loadConfig();
+      this.setupEventListeners();
+      this.createModal();
       return;
     }
+
     // Load configuration from storage
     await this.loadConfig();
-    
+
     // Set up event listeners
     this.setupEventListeners();
-    
+
     // Show rewrite button only when user selects text (selectionchange)
     this.setupRewriteButtonListeners();
-    
+
     // Create rewrite button (initially hidden)
     this.createRewriteButton();
-    
+
     // Create modal (initially hidden)
     this.createModal();
-    
-    // Listen for settings updates from popup and context menu actions
-    this.setupMessageListener();
   }
 
   private setupMessageListener(): void {
