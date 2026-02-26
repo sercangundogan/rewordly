@@ -72,6 +72,12 @@ Need help or have a feature request? Contact us anytime.
 
 -----------------
 
+V1.4.0 – Keyboard shortcuts & feedback
+• Keyboard shortcuts: Rewrite with Ctrl+Shift+E, check grammar with Ctrl+Shift+L. Popup shows shortcut info and a link to Chrome shortcut settings.
+• On update, the extension opens Chrome’s shortcuts page once so you can assign or confirm default shortcuts.
+• Uninstall feedback: When you remove the extension, Chrome can open an optional feedback form.
+• Context menu (Rewrite / Check grammar) now works correctly when “Show hover buttons” is off for the current page.
+
 V1.3.0 – Account, login & free limits
 • Account and login: Sign in via the website for more daily usage. Session is managed in the extension popup.
 • Supabase authentication: Secure login integrated; API requests use your session for usage tracking.
