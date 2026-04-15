@@ -660,6 +660,36 @@
   opacity: 1 !important;
 }
 
+/* Background scroll lock while modal open */
+html.rewordly-modal-open,
+body.rewordly-modal-open {
+  overflow: hidden !important;
+}
+
+/* Defensive reset: prevent site-wide CSS from breaking our UI */
+.rewordly-modal, 
+.rewordly-modal * {
+  box-sizing: border-box !important;
+}
+
+/* Keep this reset minimal so it doesn't override our own button styles. */
+.rewordly-modal button,
+.rewordly-rewrite-button-container button {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  font: inherit !important;
+  letter-spacing: normal !important;
+  text-transform: none !important;
+  text-decoration: none !important;
+  line-height: 1.2 !important;
+  cursor: pointer !important;
+}
+
+.rewordly-modal button:disabled,
+.rewordly-rewrite-button-container button:disabled {
+  cursor: not-allowed !important;
+}
+
 .rewordly-modal-header {
   display: flex !important;
   justify-content: space-between !important;
@@ -1102,13 +1132,13 @@
   -moz-osx-font-smoothing: grayscale !important;
 }
 
-.rewordly-copy-btn {
+.rewordly-modal .rewordly-copy-btn {
   background: #ffffff !important;
   color: #1a1a1a !important;
   border: 1px solid rgba(0, 0, 0, 0.12) !important;
 }
 
-.rewordly-copy-btn:hover {
+.rewordly-modal .rewordly-copy-btn:hover {
   background: #f5f5f5 !important;
   border-color: rgba(0, 0, 0, 0.2) !important;
   transform: translateY(-1px) !important;
@@ -1116,14 +1146,14 @@
 }
 
 /* Apply button — primary green, matches system design */
-.rewordly-apply-btn {
+.rewordly-modal .rewordly-apply-btn {
   background: #2d4a3e !important;
   color: #ffffff !important;
   border: 1px solid #2d4a3e !important;
   box-shadow: 0 2px 8px rgba(45, 74, 62, 0.2) !important;
 }
 
-.rewordly-apply-btn:hover {
+.rewordly-modal .rewordly-apply-btn:hover {
   background: #1e3d32 !important;
   border-color: #1e3d32 !important;
   transform: translateY(-1px) !important;
@@ -1147,6 +1177,58 @@
 .rewordly-apply-btn:active,
 .rewordly-replace-btn:active {
   transform: translateY(0) !important;
+}
+
+/* Tone selector pill row */
+.rewordly-tone-selector {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 6px !important;
+  margin: 0 0 14px 0 !important;
+  padding: 0 !important;
+}
+
+.rewordly-modal .rewordly-tone-pill {
+  padding: 5px 12px !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  line-height: 1.4 !important;
+  border-radius: 20px !important;
+  border: 1.5px solid #e0e0e0 !important;
+  background: #ffffff !important;
+  color: #374151 !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  white-space: nowrap !important;
+  outline: none !important;
+  box-sizing: border-box !important;
+  margin: 0 !important;
+  text-align: center !important;
+  text-decoration: none !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  -webkit-font-smoothing: antialiased !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+.rewordly-modal .rewordly-tone-pill:hover {
+  border-color: #2d4a3e !important;
+  color: #1e3d32 !important;
+  background: #f0f9f4 !important;
+}
+
+.rewordly-modal .rewordly-tone-pill.rewordly-tone-active {
+  background: #2d4a3e !important;
+  border-color: #2d4a3e !important;
+  color: #ffffff !important;
+  font-weight: 600 !important;
+}
+
+.rewordly-tone-pill:disabled {
+  opacity: 0.45 !important;
+  cursor: not-allowed !important;
 }
 
 /* Limit notice (login / upgrade CTA) */

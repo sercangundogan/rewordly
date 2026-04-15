@@ -42,11 +42,13 @@ import { getApiHeaders, setSession } from './auth';
 
 interface RewordlyConfig {
   rewriteEnabled: boolean;
+  rewriteTone: 'standard' | 'formal' | 'casual' | 'concise' | 'elaborate';
 }
 
 class RewordlyContentScript {
   private config: RewordlyConfig = {
     rewriteEnabled: true
+    ,rewriteTone: 'standard'
   };
   
   private rewriteButton: HTMLDivElement | null = null;
@@ -55,6 +57,9 @@ class RewordlyContentScript {
   private isProcessing: boolean = false;
   private isModalOpen: boolean = false;
   private currentOperation: 'rewrite' | 'grammar' = 'rewrite';
+
+  // Tone selector for rewrite operations (persisted in sync storage)
+  private currentTone: RewordlyConfig['rewriteTone'] = 'standard';
 
   // Source element tracking for "Apply" (direct replacement in editable fields)
   private sourceElement: HTMLInputElement | HTMLTextAreaElement | Element | null = null;
@@ -70,6 +75,10 @@ class RewordlyContentScript {
   // Store bound event handlers to allow proper removal
   private boundHandleOutsideClick = this.handleOutsideClick.bind(this);
   private boundHandleKeyDown = this.handleKeyDown.bind(this);
+
+  // Scroll lock while modal open
+  private prevBodyOverflow: string = '';
+  private prevHtmlOverflow: string = '';
 
   constructor() {
     this.init();
@@ -170,8 +179,12 @@ class RewordlyContentScript {
 
   private async loadConfig(): Promise<void> {
     try {
-      const result = await chrome.storage.sync.get(['rewordlyRewriteEnabled']);
+      const result = await chrome.storage.sync.get(['rewordlyRewriteEnabled', 'rewordlyRewriteTone']);
       this.config.rewriteEnabled = result['rewordlyRewriteEnabled'] !== false;
+      const storedTone = result['rewordlyRewriteTone'];
+      const validTones: RewordlyConfig['rewriteTone'][] = ['standard', 'formal', 'casual', 'concise', 'elaborate'];
+      this.config.rewriteTone = validTones.includes(storedTone) ? storedTone : 'standard';
+      this.currentTone = this.config.rewriteTone;
     } catch (error) {
       console.error('Failed to load Rewordly config:', error);
     }
@@ -461,6 +474,13 @@ class RewordlyContentScript {
           </div>
           <div class="rewordly-rewritten">
             <h4 class="rewordly-result-title">Rewritten Text:</h4>
+            <div class="rewordly-tone-selector" style="display: none;">
+              <button type="button" class="rewordly-tone-pill rewordly-tone-active" data-tone="standard">Standard</button>
+              <button type="button" class="rewordly-tone-pill" data-tone="formal">Formal</button>
+              <button type="button" class="rewordly-tone-pill" data-tone="casual">Casual</button>
+              <button type="button" class="rewordly-tone-pill" data-tone="concise">Concise</button>
+              <button type="button" class="rewordly-tone-pill" data-tone="elaborate">Elaborate</button>
+            </div>
             <div class="rewordly-loading" style="display: none;">
               <div class="rewordly-spinner"></div>
               <p class="rewordly-loading-text">Processing...</p>
@@ -491,10 +511,29 @@ class RewordlyContentScript {
     copyBtn.addEventListener('click', this.copyRewrittenText.bind(this));
     applyBtn.addEventListener('click', this.applyRewrittenText.bind(this));
 
+    // Tone pill clicks — persist + re-run rewrite with selected tone
+    const tonePills = this.modal.querySelectorAll('.rewordly-tone-pill');
+    tonePills.forEach((pill) => {
+      pill.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (this.isProcessing) return;
+        const tone = (pill as HTMLElement).dataset['tone'] ?? 'standard';
+        if (tone === this.currentTone) return;
+        this.currentTone = tone as any;
+        chrome.storage.sync.set({ rewordlyRewriteTone: this.currentTone }).catch(() => {});
+        // Update active pill
+        tonePills.forEach((p) => p.classList.remove('rewordly-tone-active'));
+        pill.classList.add('rewordly-tone-active');
+        // Re-run rewrite with new tone
+        this.rerunRewriteWithTone();
+      });
+    });
+
     const loginBtn = this.modal.querySelector('.rewordly-login-btn') as HTMLButtonElement;
     const upgradeBtn = this.modal.querySelector('.rewordly-upgrade-btn') as HTMLButtonElement;
     const loginUrl = `${API_BASE}/login`;
-    const freeLimitsEmail = 'mailto:sercangundogan35@gmail.com';
+    const freeLimitsEmail = 'mailto:sercangundogan35@gmail.com?subject=Rewordly%20Free%20Limits';
     if (loginBtn) {
       loginBtn.addEventListener('click', () => {
         chrome.runtime.sendMessage({ type: 'OPEN_TAB', url: loginUrl });
@@ -866,12 +905,48 @@ class RewordlyContentScript {
     }
   }
 
+  /** Re-run the rewrite on already-fetched selectedText with the newly selected tone */
+  private async rerunRewriteWithTone(): Promise<void> {
+    const text = this.selectedText?.trim() ?? '';
+    if (!text || text.length < 3 || !this.modal) return;
+
+    // Show loading state without re-opening modal (it's already open)
+    const rewrittenText = this.modal.querySelector('.rewordly-rewritten-text') as HTMLParagraphElement;
+    const loading = this.modal.querySelector('.rewordly-loading') as HTMLDivElement;
+    const loadingText = this.modal.querySelector('.rewordly-loading-text') as HTMLParagraphElement;
+    const applyBtn = this.modal.querySelector('.rewordly-apply-btn') as HTMLButtonElement;
+    const copyBtn = this.modal.querySelector('.rewordly-copy-btn') as HTMLButtonElement;
+
+    rewrittenText.classList.remove('show', 'error');
+    rewrittenText.textContent = '';
+    loading.classList.add('show');
+    if (loadingText) loadingText.textContent = 'Rewriting...';
+    if (applyBtn) applyBtn.style.display = 'none';
+    if (copyBtn) copyBtn.disabled = true;
+
+    this.isProcessing = true;
+    try {
+      const result = await this.rewriteText(text);
+      this.displayRewrittenText(result);
+    } catch (error) {
+      const err = error as Error & { code?: string; requireLogin?: boolean; requirePayment?: boolean };
+      if (err.code === 'LIMIT_REACHED') {
+        this.showLimitNotice(err.requireLogin ?? true, err.requirePayment ?? false, err.message);
+      } else {
+        this.showError('Failed to rewrite text. Please try again.');
+      }
+    } finally {
+      this.isProcessing = false;
+      if (copyBtn) copyBtn.disabled = false;
+    }
+  }
+
   private async rewriteText(text: string): Promise<string> {
     const headers = await getApiHeaders();
     const response = await fetch(`${API_BASE}/api/rewrite`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, tone: this.currentTone }),
     });
 
     const data = await response.json().catch(() => ({}));
@@ -959,8 +1034,38 @@ class RewordlyContentScript {
       applyBtn.style.background = '';
     }
 
+    // Show tone selector only for rewrite; keep user's persisted tone
+    const toneSelector = this.modal.querySelector('.rewordly-tone-selector') as HTMLDivElement;
+    if (toneSelector) {
+      if (this.currentOperation === 'rewrite') {
+        toneSelector.style.display = '';
+        toneSelector.querySelectorAll('.rewordly-tone-pill').forEach((p) => {
+          p.classList.remove('rewordly-tone-active');
+          if ((p as HTMLElement).dataset['tone'] === this.currentTone) {
+            p.classList.add('rewordly-tone-active');
+          }
+        });
+      } else {
+        toneSelector.style.display = 'none';
+      }
+    }
+
     this.modal.classList.add('show');
     this.isModalOpen = true; // Set flag when modal opens
+
+    // Lock background scroll while modal is open
+    try {
+      const body = document.body;
+      const html = document.documentElement;
+      body.classList.add('rewordly-modal-open');
+      html.classList.add('rewordly-modal-open');
+      this.prevBodyOverflow = body.style.overflow;
+      this.prevHtmlOverflow = html.style.overflow;
+      body.style.overflow = 'hidden';
+      html.style.overflow = 'hidden';
+    } catch {
+      // ignore
+    }
     
     // Hide the rewrite button when modal is open
     this.hideRewriteButton();
@@ -976,6 +1081,21 @@ class RewordlyContentScript {
         applyBtn.textContent = 'Apply';
         applyBtn.style.background = '';
         applyBtn.style.display = 'none';
+      }
+      // Hide tone selector (tone is persisted; do not reset)
+      const toneSelector = this.modal.querySelector('.rewordly-tone-selector') as HTMLDivElement | null;
+      if (toneSelector) toneSelector.style.display = 'none';
+
+      // Unlock background scroll
+      try {
+        const body = document.body;
+        const html = document.documentElement;
+        body.classList.remove('rewordly-modal-open');
+        html.classList.remove('rewordly-modal-open');
+        body.style.overflow = this.prevBodyOverflow;
+        html.style.overflow = this.prevHtmlOverflow;
+      } catch {
+        // ignore
       }
     }
   }

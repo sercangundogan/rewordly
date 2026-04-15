@@ -8,14 +8,17 @@ import { getSession, setSession, SESSION_KEY } from './auth';
 
 interface RewordlySettings {
   rewriteEnabled: boolean;
+  rewriteTone: 'standard' | 'formal' | 'casual' | 'concise' | 'elaborate';
 }
 
 class RewordlyPopup {
   private settings: RewordlySettings = {
-    rewriteEnabled: true
+    rewriteEnabled: true,
+    rewriteTone: 'standard',
   };
 
   private rewriteToggle: HTMLButtonElement | null = null;
+  private toneSelect: HTMLSelectElement | null = null;
 
   constructor() {
     this.init();
@@ -23,6 +26,7 @@ class RewordlyPopup {
 
   private async init(): Promise<void> {
     this.rewriteToggle = document.getElementById('rewriteToggle') as HTMLButtonElement;
+    this.toneSelect = document.getElementById('rewriteTone') as HTMLSelectElement;
 
     await this.loadSettings();
     this.setupEventListeners();
@@ -40,13 +44,27 @@ class RewordlyPopup {
 
   private async loadSettings(): Promise<void> {
     try {
-      const result = await chrome.storage.sync.get(['rewordlyRewriteEnabled']);
+      const result = await chrome.storage.sync.get(['rewordlyRewriteEnabled', 'rewordlyRewriteTone']);
       const stored = result['rewordlyRewriteEnabled'];
       // Default to true when never set (first install)
       this.settings.rewriteEnabled = stored !== false;
       if (stored === undefined) {
         await chrome.storage.sync.set({ rewordlyRewriteEnabled: true });
       }
+
+      const storedTone = result['rewordlyRewriteTone'];
+      const validTones: RewordlySettings['rewriteTone'][] = [
+        'standard',
+        'formal',
+        'casual',
+        'concise',
+        'elaborate',
+      ];
+      this.settings.rewriteTone = validTones.includes(storedTone) ? storedTone : 'standard';
+      if (storedTone === undefined) {
+        await chrome.storage.sync.set({ rewordlyRewriteTone: this.settings.rewriteTone });
+      }
+
       this.updateUI();
     } catch (error) {
       console.error('Failed to load settings:', error);
@@ -56,6 +74,9 @@ class RewordlyPopup {
   private setupEventListeners(): void {
     if (this.rewriteToggle) {
       this.rewriteToggle.addEventListener('click', this.toggleRewrite.bind(this));
+    }
+    if (this.toneSelect) {
+      this.toneSelect.addEventListener('change', this.handleToneChange.bind(this));
     }
     document.getElementById('loginWebsiteBtn')?.addEventListener('click', () => this.openWebsiteLogin());
     document.getElementById('logoutBtn')?.addEventListener('click', () => this.handleLogout());
@@ -177,6 +198,9 @@ class RewordlyPopup {
         this.rewriteToggle.classList.remove('active');
       }
     }
+    if (this.toneSelect) {
+      this.toneSelect.value = this.settings.rewriteTone;
+    }
   }
 
   private async toggleRewrite(): Promise<void> {
@@ -194,10 +218,18 @@ class RewordlyPopup {
     await this.saveSettings();
   }
 
+  private async handleToneChange(): Promise<void> {
+    if (!this.toneSelect) return;
+    const value = this.toneSelect.value as RewordlySettings['rewriteTone'];
+    this.settings.rewriteTone = value;
+    await this.saveSettings();
+  }
+
   private async saveSettings(): Promise<void> {
     try {
       await chrome.storage.sync.set({
-        rewordlyRewriteEnabled: this.settings.rewriteEnabled
+        rewordlyRewriteEnabled: this.settings.rewriteEnabled,
+        rewordlyRewriteTone: this.settings.rewriteTone,
       });
 
       this.showSuccessMessage();

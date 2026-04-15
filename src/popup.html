@@ -485,6 +485,26 @@
       background-size: 200% 100%;
       animation: skeleton-shimmer 1.2s ease-in-out infinite;
     }
+    .tone-select {
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid #d1d5db;
+      background: #ffffff;
+      color: #111827;
+      font-size: 13px;
+      font-weight: 600;
+      outline: none;
+      cursor: pointer;
+      box-sizing: border-box;
+      min-width: 150px;
+    }
+    .tone-select:hover {
+      border-color: #2d4a3e;
+    }
+    .tone-select:focus {
+      border-color: #2d4a3e;
+      box-shadow: 0 0 0 3px rgba(45, 74, 62, 0.18);
+    }
     @keyframes skeleton-shimmer {
       0% { background-position: 200% 0; }
       100% { background-position: -200% 0; }
@@ -529,6 +549,16 @@
           <button class="toggle active" id="rewriteToggle" type="button" aria-label="Toggle rewrite feature"></button>
         </div>
         <p style="margin: 8px 0 0 0; font-size: 13px; color: #6b7280;">Show rewrite and grammar buttons when hovering over selected text</p>
+        <div style="margin-top: 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+          <span style="font-weight: 600; color: #374151; font-size: 13px;">Default tone</span>
+          <select id="rewriteTone" class="tone-select" aria-label="Default rewrite tone">
+            <option value="standard">Standard</option>
+            <option value="formal">Formal</option>
+            <option value="casual">Casual</option>
+            <option value="concise">Concise</option>
+            <option value="elaborate">Elaborate</option>
+          </select>
+        </div>
       </div>
 
       <div class="shortcuts-section" style="margin-top: 12px;">
