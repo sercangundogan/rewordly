@@ -562,8 +562,14 @@ class RewordlyContentScript {
           </div>
         </div>
         <div class="rewordly-modal-footer">
-          <button class="rewordly-copy-btn">Copy</button>
-          <button class="rewordly-apply-btn" style="display: none;">Apply</button>
+          <div class="rewordly-length-btns" style="display: none;">
+            <button type="button" class="rewordly-length-btn rewordly-shorter-btn" title="Make it shorter">Shorter ↓</button>
+            <button type="button" class="rewordly-length-btn rewordly-longer-btn"  title="Make it longer">Longer ↑</button>
+          </div>
+          <div class="rewordly-action-btns">
+            <button class="rewordly-copy-btn">Copy</button>
+            <button class="rewordly-apply-btn" style="display: none;">Apply</button>
+          </div>
         </div>
       </div>
     `;
@@ -576,6 +582,11 @@ class RewordlyContentScript {
     closeBtn.addEventListener('click', this.hideModal.bind(this));
     copyBtn.addEventListener('click', this.copyRewrittenText.bind(this));
     applyBtn.addEventListener('click', this.applyRewrittenText.bind(this));
+
+    const shorterBtn = this.modal.querySelector('.rewordly-shorter-btn') as HTMLButtonElement;
+    const longerBtn  = this.modal.querySelector('.rewordly-longer-btn')  as HTMLButtonElement;
+    shorterBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); this.adjustLength('shorter'); });
+    longerBtn.addEventListener('click',  (e) => { e.preventDefault(); e.stopPropagation(); this.adjustLength('longer');  });
 
     // Tone pill clicks — persist + re-run rewrite with selected tone
     const tonePills = this.modal.querySelectorAll('.rewordly-tone-pill');
@@ -1007,6 +1018,51 @@ class RewordlyContentScript {
     }
   }
 
+  /** Rewrite the current result text as shorter or longer using the concise/elaborate tone. */
+  private async adjustLength(direction: 'shorter' | 'longer'): Promise<void> {
+    if (this.isProcessing || !this.modal) return;
+
+    // Operate on the currently displayed result, not the original selection
+    const rewrittenEl = this.modal.querySelector('.rewordly-rewritten-text') as HTMLParagraphElement;
+    const currentText = rewrittenEl.textContent?.trim();
+    if (!currentText) return;
+
+    const savedTone = this.currentTone;
+    this.currentTone = direction === 'shorter' ? 'concise' : 'elaborate';
+
+    const loading      = this.modal.querySelector('.rewordly-loading')      as HTMLDivElement;
+    const loadingText  = this.modal.querySelector('.rewordly-loading-text') as HTMLParagraphElement;
+    const lengthBtns   = this.modal.querySelector('.rewordly-length-btns') as HTMLDivElement;
+    const copyBtn      = this.modal.querySelector('.rewordly-copy-btn')     as HTMLButtonElement;
+    const applyBtn     = this.modal.querySelector('.rewordly-apply-btn')    as HTMLButtonElement | null;
+
+    rewrittenEl.classList.remove('show', 'error');
+    rewrittenEl.textContent = '';
+    loading.classList.add('show');
+    if (loadingText) loadingText.textContent = direction === 'shorter' ? 'Making it shorter…' : 'Making it longer…';
+    if (lengthBtns)  lengthBtns.style.display = 'none';
+    if (applyBtn)    applyBtn.style.display = 'none';
+    if (copyBtn)     copyBtn.disabled = true;
+
+    this.isProcessing = true;
+    try {
+      const result = await this.rewriteText(currentText);
+      this.displayRewrittenText(result);
+    } catch (error) {
+      const err = error as Error & { code?: string; requireLogin?: boolean; requirePayment?: boolean };
+      if (err.code === 'LIMIT_REACHED') {
+        this.showLimitNotice(err.requireLogin ?? true, err.requirePayment ?? false, err.message);
+      } else {
+        this.showError('Failed to adjust length. Please try again.');
+      }
+      // Restore previous tone on error so user isn't stuck on concise/elaborate
+      this.currentTone = savedTone;
+    } finally {
+      this.isProcessing = false;
+      if (copyBtn) copyBtn.disabled = false;
+    }
+  }
+
   private async rewriteText(text: string): Promise<string> {
     const headers = await getApiHeaders();
     const response = await fetch(`${API_BASE}/api/rewrite`, {
@@ -1100,6 +1156,10 @@ class RewordlyContentScript {
       applyBtn.style.background = '';
     }
 
+    // Hide length buttons while loading
+    const lengthBtns = this.modal.querySelector('.rewordly-length-btns') as HTMLDivElement | null;
+    if (lengthBtns) lengthBtns.style.display = 'none';
+
     // Show tone selector only for rewrite; keep user's persisted tone
     const toneSelector = this.modal.querySelector('.rewordly-tone-selector') as HTMLDivElement;
     if (toneSelector) {
@@ -1152,6 +1212,10 @@ class RewordlyContentScript {
       const toneSelector = this.modal.querySelector('.rewordly-tone-selector') as HTMLDivElement | null;
       if (toneSelector) toneSelector.style.display = 'none';
 
+      // Hide length buttons
+      const lengthBtns = this.modal.querySelector('.rewordly-length-btns') as HTMLDivElement | null;
+      if (lengthBtns) lengthBtns.style.display = 'none';
+
       // Unlock background scroll
       try {
         const body = document.body;
@@ -1189,6 +1253,12 @@ class RewordlyContentScript {
       applyBtn.style.display = this.isEditableSource ? '' : 'none';
       applyBtn.textContent = 'Apply';
       applyBtn.style.background = '';
+    }
+
+    // Show Shorter/Longer only for rewrite results
+    const lengthBtns = this.modal.querySelector('.rewordly-length-btns') as HTMLDivElement | null;
+    if (lengthBtns) {
+      lengthBtns.style.display = this.currentOperation === 'rewrite' ? 'flex' : 'none';
     }
     
     // Set titles based on operation
