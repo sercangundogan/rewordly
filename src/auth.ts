@@ -1,11 +1,18 @@
 /**
  * Auth and identity helpers for the extension.
  * - Anonymous ID: persisted in local storage for usage limits when not logged in.
- * - Session: Supabase session (access_token) stored in local storage when logged in.
+ * - Session: Supabase session stored in local storage when logged in.
+ *   Silent token refresh: if access_token is expiring within REFRESH_THRESHOLD_SEC,
+ *   getSession() will attempt a background refresh before returning.
  */
+
+import { API_BASE } from './config';
 
 const ANON_ID_KEY = 'rewordly_anonymous_id';
 export const SESSION_KEY = 'rewordly_session';
+
+/** Refresh token if fewer than this many seconds remain. */
+const REFRESH_THRESHOLD_SEC = 300; // 5 minutes
 
 function generateId(): string {
   const arr = new Uint8Array(16);
@@ -15,7 +22,8 @@ function generateId(): string {
 
 export interface StoredSession {
   access_token: string;
-  expires_at?: number;
+  refresh_token?: string;
+  expires_at?: number; // Unix timestamp (seconds)
 }
 
 /**
@@ -32,7 +40,7 @@ export async function getAnonymousId(): Promise<string> {
 }
 
 /**
- * Get stored session (access_token) if any.
+ * Get stored session, silently refreshing it when the access_token is close to expiry.
  */
 export async function getSession(): Promise<StoredSession | null> {
   const result = await chrome.storage.local.get([SESSION_KEY]);
@@ -40,7 +48,61 @@ export async function getSession(): Promise<StoredSession | null> {
   if (!raw || typeof raw !== 'object' || !(raw as StoredSession).access_token) {
     return null;
   }
-  return raw as StoredSession;
+  const session = raw as StoredSession;
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  const expiresSoon =
+    session.expires_at !== undefined && session.expires_at - nowSec < REFRESH_THRESHOLD_SEC;
+
+  if (expiresSoon && session.refresh_token) {
+    const refreshed = await refreshSession(session.refresh_token);
+    if (refreshed) return refreshed;
+    // If refresh failed but token isn't actually expired yet, still use it.
+    if (session.expires_at !== undefined && session.expires_at > nowSec) {
+      return session;
+    }
+    // Token is expired and refresh failed — clear session.
+    await setSession(null);
+    return null;
+  }
+
+  // Token has expired (no refresh_token available or unknown expiry).
+  if (session.expires_at !== undefined && session.expires_at <= nowSec) {
+    await setSession(null);
+    return null;
+  }
+
+  return session;
+}
+
+/**
+ * Attempt a silent token refresh via the web API.
+ * Returns the new session on success, null on failure.
+ */
+async function refreshSession(refreshToken: string): Promise<StoredSession | null> {
+  try {
+    const response = await fetch(`${API_BASE}/api/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    if (!response.ok) return null;
+    const data = await response.json() as {
+      access_token?: string;
+      refresh_token?: string;
+      expires_at?: number;
+    };
+    if (!data.access_token) return null;
+    const newSession: StoredSession = {
+      access_token:  data.access_token,
+      refresh_token: data.refresh_token ?? refreshToken,
+      ...(data.expires_at !== undefined ? { expires_at: data.expires_at } : {}),
+    };
+    await setSession(newSession);
+    return newSession;
+  } catch {
+    return null;
+  }
 }
 
 /**

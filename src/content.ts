@@ -25,7 +25,13 @@ import { getApiHeaders, setSession } from './auth';
           .then((r) => r.json())
           .then(async (data) => {
             const accessToken = data?.access_token;
-            if (accessToken) await setSession({ access_token: accessToken });
+            if (accessToken) {
+              await setSession({
+                access_token:  accessToken,
+                refresh_token: data?.refresh_token,
+                expires_at:    data?.expires_at,
+              });
+            }
           })
           .catch(() => {});
         return;
