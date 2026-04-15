@@ -1055,6 +1055,7 @@
 }
 
 .rewordly-copy-btn,
+.rewordly-apply-btn,
 .rewordly-replace-btn {
   flex: 1 !important;
   padding: 10px 16px !important;
@@ -1114,6 +1115,21 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
 }
 
+/* Apply button — primary green, matches system design */
+.rewordly-apply-btn {
+  background: #2d4a3e !important;
+  color: #ffffff !important;
+  border: 1px solid #2d4a3e !important;
+  box-shadow: 0 2px 8px rgba(45, 74, 62, 0.2) !important;
+}
+
+.rewordly-apply-btn:hover {
+  background: #1e3d32 !important;
+  border-color: #1e3d32 !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 12px rgba(45, 74, 62, 0.3) !important;
+}
+
 .rewordly-replace-btn {
   background: #000000 !important;
   color: #ffffff !important;
@@ -1128,6 +1144,7 @@
 }
 
 .rewordly-copy-btn:active,
+.rewordly-apply-btn:active,
 .rewordly-replace-btn:active {
   transform: translateY(0) !important;
 }
@@ -1231,6 +1248,7 @@
 .rewordly-rewrite-button:focus,
 .rewordly-close-btn:focus,
 .rewordly-copy-btn:focus,
+.rewordly-apply-btn:focus,
 .rewordly-replace-btn:focus {
   outline: 2px solid #000000 !important;
   outline-offset: 2px !important;

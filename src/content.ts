@@ -56,6 +56,13 @@ class RewordlyContentScript {
   private isModalOpen: boolean = false;
   private currentOperation: 'rewrite' | 'grammar' = 'rewrite';
 
+  // Source element tracking for "Apply" (direct replacement in editable fields)
+  private sourceElement: HTMLInputElement | HTMLTextAreaElement | Element | null = null;
+  private sourceSelectionStart: number = 0;
+  private sourceSelectionEnd: number = 0;
+  private savedRange: Range | null = null;
+  private isEditableSource: boolean = false;
+
   /** Delay (ms) before showing the rewrite button after selection is made */
   private static readonly SHOW_BUTTON_DELAY_MS = 150;
   private showButtonTimeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -253,8 +260,64 @@ class RewordlyContentScript {
     if (element instanceof HTMLTextAreaElement) {
       return true;
     }
-    const contentEditable = element.getAttribute('contenteditable');
-    return contentEditable === 'true' || contentEditable === '' || (contentEditable !== null && contentEditable !== 'false');
+    // isContentEditable covers nested nodes inside a contenteditable root and
+    // supports non-standard values (e.g. plaintext-only).
+    return element.isContentEditable;
+  }
+
+  /**
+   * Snapshot the current selection source so the Apply button can later
+   * replace the selected text directly in the originating editable element.
+   * Must be called before the modal opens (while focus / selection is intact).
+   */
+  private captureSelectionSource(): void {
+    this.sourceElement = null;
+    this.sourceSelectionStart = 0;
+    this.sourceSelectionEnd = 0;
+    this.savedRange = null;
+    this.isEditableSource = false;
+
+    // input / textarea — read selectionStart/End directly
+    const activeEl = document.activeElement;
+    if (activeEl instanceof HTMLInputElement || activeEl instanceof HTMLTextAreaElement) {
+      const start = activeEl.selectionStart ?? 0;
+      const end = activeEl.selectionEnd ?? 0;
+      if (end > start) {
+        this.sourceElement = activeEl;
+        this.sourceSelectionStart = start;
+        this.sourceSelectionEnd = end;
+        this.isEditableSource = true;
+        return;
+      }
+    }
+
+    // contenteditable — clone the current Range
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+
+    const focusNode = selection.focusNode;
+    if (!focusNode) return;
+
+    const el =
+      focusNode.nodeType === Node.TEXT_NODE
+        ? focusNode.parentElement
+        : (focusNode as HTMLElement);
+
+    if (el) {
+      // Prefer the nearest contenteditable root (many editors have nested spans)
+      const root =
+        (el.closest('[contenteditable]:not([contenteditable="false"])') as HTMLElement | null) || null;
+      const candidate = root || el;
+      if (!this.isEditableElement(candidate)) return;
+
+      this.sourceElement = candidate;
+      try {
+        this.savedRange = selection.getRangeAt(0).cloneRange();
+      } catch {
+        // ignore
+      }
+      this.isEditableSource = true;
+    }
   }
 
   private handleOutsideClick(event: Event): void {
@@ -414,7 +477,7 @@ class RewordlyContentScript {
         </div>
         <div class="rewordly-modal-footer">
           <button class="rewordly-copy-btn">Copy</button>
-          <!-- <button class="rewordly-replace-btn">Replace</button> -->
+          <button class="rewordly-apply-btn" style="display: none;">Apply</button>
         </div>
       </div>
     `;
@@ -422,9 +485,11 @@ class RewordlyContentScript {
     // Add event listeners
     const closeBtn = this.modal.querySelector('.rewordly-close-btn') as HTMLButtonElement;
     const copyBtn = this.modal.querySelector('.rewordly-copy-btn') as HTMLButtonElement;
-    
+    const applyBtn = this.modal.querySelector('.rewordly-apply-btn') as HTMLButtonElement;
+
     closeBtn.addEventListener('click', this.hideModal.bind(this));
     copyBtn.addEventListener('click', this.copyRewrittenText.bind(this));
+    applyBtn.addEventListener('click', this.applyRewrittenText.bind(this));
 
     const loginBtn = this.modal.querySelector('.rewordly-login-btn') as HTMLButtonElement;
     const upgradeBtn = this.modal.querySelector('.rewordly-upgrade-btn') as HTMLButtonElement;
@@ -687,6 +752,7 @@ class RewordlyContentScript {
       return;
     }
 
+    this.captureSelectionSource();
     this.currentOperation = 'rewrite';
     // Don't hide button immediately - let blur handle it if needed
     this.showModal();
@@ -719,6 +785,7 @@ class RewordlyContentScript {
       return;
     }
 
+    this.captureSelectionSource();
     this.currentOperation = 'grammar';
     this.showModal();
     this.isProcessing = true;
@@ -747,6 +814,7 @@ class RewordlyContentScript {
       return;
     }
 
+    this.captureSelectionSource();
     this.currentOperation = 'rewrite';
     this.selectedText = selectedText;
     this.showModal();
@@ -776,6 +844,7 @@ class RewordlyContentScript {
       return;
     }
 
+    this.captureSelectionSource();
     this.currentOperation = 'grammar';
     this.selectedText = selectedText;
     this.showModal();
@@ -882,6 +951,14 @@ class RewordlyContentScript {
       loadingText.textContent = 'Rewriting...';
     }
 
+    // Reset + hide Apply button while loading — shown in displayRewrittenText when ready
+    const applyBtn = this.modal.querySelector('.rewordly-apply-btn') as HTMLButtonElement;
+    if (applyBtn) {
+      applyBtn.style.display = 'none';
+      applyBtn.textContent = 'Apply';
+      applyBtn.style.background = '';
+    }
+
     this.modal.classList.add('show');
     this.isModalOpen = true; // Set flag when modal opens
     
@@ -893,6 +970,13 @@ class RewordlyContentScript {
     if (this.modal) {
       this.modal.classList.remove('show');
       this.isModalOpen = false;
+      // Reset Apply button state so it never "sticks" across opens
+      const applyBtn = this.modal.querySelector('.rewordly-apply-btn') as HTMLButtonElement | null;
+      if (applyBtn) {
+        applyBtn.textContent = 'Apply';
+        applyBtn.style.background = '';
+        applyBtn.style.display = 'none';
+      }
     }
   }
 
@@ -905,6 +989,7 @@ class RewordlyContentScript {
     const limitNotice = this.modal.querySelector('.rewordly-limit-notice') as HTMLDivElement;
     const modalTitle = this.modal.querySelector('.rewordly-modal-title') as HTMLHeadingElement;
     const loadingText = this.modal.querySelector('.rewordly-loading-text') as HTMLParagraphElement;
+    const applyBtn = this.modal.querySelector('.rewordly-apply-btn') as HTMLButtonElement;
 
     loading.classList.remove('show');
     if (limitNotice) limitNotice.style.display = 'none';
@@ -912,6 +997,13 @@ class RewordlyContentScript {
     rewrittenText.style.removeProperty('display');
     rewrittenText.textContent = text;
     rewrittenText.classList.add('show');
+
+    // Show Apply button only when the source was an editable element
+    if (applyBtn) {
+      applyBtn.style.display = this.isEditableSource ? '' : 'none';
+      applyBtn.textContent = 'Apply';
+      applyBtn.style.background = '';
+    }
     
     // Set titles based on operation
     if (this.currentOperation === 'grammar') {
@@ -1002,6 +1094,86 @@ class RewordlyContentScript {
         console.error('Failed to copy text:', err);
       });
     }
+  }
+
+  private applyRewrittenText(): void {
+    if (!this.modal || !this.sourceElement) return;
+
+    const rewrittenText = this.modal.querySelector('.rewordly-rewritten-text') as HTMLParagraphElement;
+    const rawText = rewrittenText.textContent;
+    if (!rawText) return;
+
+    const cleanText = rawText.trim().replace(/^["']|["']$/g, '');
+
+    // input / textarea: replace the original selection range in .value
+    if (
+      this.sourceElement instanceof HTMLInputElement ||
+      this.sourceElement instanceof HTMLTextAreaElement
+    ) {
+      const el = this.sourceElement;
+      el.value =
+        el.value.substring(0, this.sourceSelectionStart) +
+        cleanText +
+        el.value.substring(this.sourceSelectionEnd);
+
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+
+      el.focus();
+      const newCaret = this.sourceSelectionStart + cleanText.length;
+      el.setSelectionRange(newCaret, newCaret);
+
+      this.showApplySuccess();
+      return;
+    }
+
+    // contenteditable: restore the saved Range and replace its content
+    if (this.savedRange) {
+      try {
+        const selection = window.getSelection();
+        if (selection) {
+          selection.removeAllRanges();
+          selection.addRange(this.savedRange);
+        }
+
+        this.savedRange.deleteContents();
+        const textNode = document.createTextNode(cleanText);
+        this.savedRange.insertNode(textNode);
+
+        // Collapse cursor to end of inserted text
+        const newRange = document.createRange();
+        newRange.setStartAfter(textNode);
+        newRange.collapse(true);
+        if (selection) {
+          selection.removeAllRanges();
+          selection.addRange(newRange);
+        }
+
+        // Notify frameworks (React, Vue, etc.) of the change
+        const editableEl = this.sourceElement as HTMLElement;
+        editableEl.dispatchEvent(
+          new InputEvent('input', { bubbles: true, inputType: 'insertText', data: cleanText })
+        );
+
+        this.showApplySuccess();
+      } catch {
+        // Range restore failed (e.g. DOM changed) — fall back to clipboard
+        navigator.clipboard.writeText(cleanText).catch(() => {});
+        this.showApplySuccess();
+      }
+    }
+  }
+
+  private showApplySuccess(): void {
+    const applyBtn = this.modal?.querySelector('.rewordly-apply-btn') as HTMLButtonElement | null;
+    if (applyBtn) {
+      applyBtn.textContent = 'Applied ✓';
+      applyBtn.style.background = '#10b981';
+    }
+    setTimeout(() => {
+      // Hide modal (also resets button)
+      this.hideModal();
+    }, 700);
   }
 }
 
