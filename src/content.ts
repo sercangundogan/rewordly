@@ -355,9 +355,75 @@ class RewordlyContentScript {
   }
 
   private handleKeyDown(event: KeyboardEvent): void {
+    // Shortcuts only active while the modal is open
+    if (!this.isModalOpen) {
+      if (event.key === 'Escape') {
+        this.hideRewriteButton();
+      }
+      return;
+    }
+
+    // Esc — close modal
     if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
       this.hideModal();
       this.hideRewriteButton();
+      return;
+    }
+
+    // Cmd/Ctrl + C — copy result (only when result is visible and not loading)
+    if (event.key === 'c' && (event.metaKey || event.ctrlKey)) {
+      const rewrittenEl = this.modal?.querySelector('.rewordly-rewritten-text') as HTMLParagraphElement | null;
+      if (rewrittenEl?.classList.contains('show') && rewrittenEl.textContent) {
+        event.preventDefault();
+        event.stopPropagation();
+        this.copyRewrittenText();
+      }
+      return;
+    }
+
+    // Tab — cycle between Rewrite and Grammar buttons in the floating button bar,
+    //        or re-run the operation with the other type when modal is already showing a result
+    if (event.key === 'Tab' && !event.altKey && !event.metaKey && !event.ctrlKey) {
+      const rewrittenEl = this.modal?.querySelector('.rewordly-rewritten-text') as HTMLParagraphElement | null;
+      const hasResult = rewrittenEl?.classList.contains('show') && !this.isProcessing;
+      if (!hasResult) return; // Don't interrupt while loading
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      const next = this.currentOperation === 'rewrite' ? 'grammar' : 'rewrite';
+      this.currentOperation = next;
+
+      // Update modal title so the user sees which operation is active
+      const modalTitle = this.modal?.querySelector('.rewordly-modal-title') as HTMLHeadingElement | null;
+      const resultTitle = this.modal?.querySelector('.rewordly-result-title') as HTMLHeadingElement | null;
+      if (modalTitle) modalTitle.textContent = next === 'grammar' ? 'Grammar Check' : 'Rewordly';
+      if (resultTitle) resultTitle.textContent = next === 'grammar' ? 'Corrected Text:' : 'Rewritten Text:';
+
+      // Show/hide tone selector
+      const toneSelector = this.modal?.querySelector('.rewordly-tone-selector') as HTMLDivElement | null;
+      if (toneSelector) toneSelector.style.display = next === 'rewrite' ? '' : 'none';
+
+      // Re-run with the switched operation
+      this.showModal();
+      this.isProcessing = true;
+      const text = this.selectedText?.trim() ?? '';
+      const run = next === 'rewrite'
+        ? this.rewriteText(text)
+        : this.grammarText(text);
+
+      run.then((result) => this.displayRewrittenText(result))
+        .catch((error) => {
+          const err = error as Error & { code?: string; requireLogin?: boolean; requirePayment?: boolean };
+          if (err.code === 'LIMIT_REACHED') {
+            this.showLimitNotice(err.requireLogin ?? true, err.requirePayment ?? false, err.message);
+          } else {
+            this.showError(`Failed to ${next === 'rewrite' ? 'rewrite' : 'check grammar'}. Please try again.`);
+          }
+        })
+        .finally(() => { this.isProcessing = false; });
     }
   }
 
