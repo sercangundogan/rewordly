@@ -4,7 +4,7 @@
  */
 
 import { API_BASE, AUTH_ENABLED } from './config';
-import { getSession, setSession, SESSION_KEY } from './auth';
+import { getSession, setSession, SESSION_KEY, getApiHeaders } from './auth';
 
 interface RewordlySettings {
   rewriteEnabled: boolean;
@@ -40,6 +40,122 @@ class RewordlyPopup {
     chrome.storage.onChanged.addListener((changes, areaName) => {
       if (areaName === 'local' && changes[SESSION_KEY]) void this.renderAccount();
     });
+  }
+
+  private async fetchUsageData(): Promise<{ ok: boolean; status: number; data: Record<string, unknown> }> {
+    try {
+      const headers = await getApiHeaders();
+      const res = await fetch(`${API_BASE}/api/usage`, { method: 'GET', headers });
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      return { ok: res.ok, status: res.status, data };
+    } catch {
+      return { ok: false, status: 0, data: {} };
+    }
+  }
+
+  /**
+   * Updates the "Today's usage" card from /api/usage payload.
+   */
+  private applyUsageToUI(data: Record<string, unknown> | null, opts?: { error?: string }): void {
+    const section = document.getElementById('usageSection');
+    const summary = document.getElementById('usageSummary');
+    const rows = document.getElementById('usageRows');
+    const footnote = section?.querySelector('.usage-footnote') as HTMLElement | null;
+    const rewriteVals = document.getElementById('usageRewriteValues');
+    const grammarVals = document.getElementById('usageGrammarValues');
+    const rewriteBar = document.getElementById('usageRewriteBar');
+    const grammarBar = document.getElementById('usageGrammarBar');
+
+    if (!section || !summary || !rows || !rewriteVals || !grammarVals || !rewriteBar || !grammarBar) return;
+
+    section.style.display = 'block';
+
+    if (opts?.error) {
+      summary.textContent = opts.error;
+      rows.style.display = 'none';
+      if (footnote) footnote.style.display = 'none';
+      return;
+    }
+
+    if (!data) {
+      summary.textContent = "Couldn't load today's usage.";
+      rows.style.display = 'none';
+      if (footnote) footnote.style.display = 'none';
+      return;
+    }
+
+    const rLimit = data['rewriteLimit'];
+    const gLimit = data['grammarLimit'];
+    const unlimited = rLimit === null && gLimit === null;
+
+    if (unlimited) {
+      summary.textContent = 'Unlimited rewrites and grammar today (Pro).';
+      rows.style.display = 'none';
+      if (footnote) {
+        footnote.style.display = 'block';
+        footnote.textContent = 'Your plan has no daily cap for these actions.';
+      }
+      return;
+    }
+
+    rows.style.display = 'block';
+    if (footnote) {
+      footnote.style.display = 'block';
+      footnote.textContent =
+        data['requireLogin'] === true
+          ? 'Anonymous limits apply to this browser. Log in for higher daily limits.'
+          : 'Counts reset daily (UTC).';
+    }
+
+    const rUsed = Number(data['rewriteUsed'] ?? 0);
+    const gUsed = Number(data['grammarUsed'] ?? 0);
+    const rMax = typeof rLimit === 'number' ? rLimit : Number(rLimit);
+    const gMax = typeof gLimit === 'number' ? gLimit : Number(gLimit);
+
+    summary.textContent = "Today's usage for rewrite and grammar.";
+
+    const setBar = (el: HTMLElement, used: number, max: number) => {
+      if (!Number.isFinite(max) || max <= 0) {
+        el.style.width = '0%';
+        el.classList.remove('usage-bar-warn', 'usage-bar-full');
+        return;
+      }
+      const ratio = used / max;
+      const pct = Math.min(100, Math.round(ratio * 100));
+      el.style.width = `${pct}%`;
+      el.classList.remove('usage-bar-warn', 'usage-bar-full');
+      if (used >= max) el.classList.add('usage-bar-full');
+      else if (ratio >= 0.8) el.classList.add('usage-bar-warn');
+    };
+
+    if (rLimit === null || rLimit === undefined) {
+      rewriteVals.textContent = 'Unlimited';
+      rewriteBar.style.width = '0%';
+      rewriteBar.classList.remove('usage-bar-warn', 'usage-bar-full');
+    } else {
+      rewriteVals.textContent = `${rUsed} / ${rMax}`;
+      setBar(rewriteBar, rUsed, rMax);
+    }
+
+    if (gLimit === null || gLimit === undefined) {
+      grammarVals.textContent = 'Unlimited';
+      grammarBar.style.width = '0%';
+      grammarBar.classList.remove('usage-bar-warn', 'usage-bar-full');
+    } else {
+      grammarVals.textContent = `${gUsed} / ${gMax}`;
+      setBar(grammarBar, gUsed, gMax);
+    }
+  }
+
+  private async refreshUsageFromNetwork(): Promise<void> {
+    const { ok, status, data } = await this.fetchUsageData();
+    if (status === 401) {
+      await setSession(null);
+      void this.renderAccount();
+      return;
+    }
+    if (ok) this.applyUsageToUI(data);
+    else this.applyUsageToUI(null, { error: "Couldn't load today's usage." });
   }
 
   private async loadSettings(): Promise<void> {
@@ -124,14 +240,16 @@ class RewordlyPopup {
 
     if (!AUTH_ENABLED) {
       this.showAccountState(notConfigured, loggedOut, loggedIn, 'notConfigured');
+      await this.refreshUsageFromNetwork();
       return;
     }
 
     this.showAccountState(notConfigured, loggedOut, loggedIn, 'loggedOut');
+    await this.refreshUsageFromNetwork();
   }
 
   private async showLoggedInState(
-    session: { access_token: string },
+    _session: { access_token: string },
     notConfigured: HTMLElement | null,
     loggedOut: HTMLElement | null,
     loggedIn: HTMLElement | null
@@ -148,24 +266,21 @@ class RewordlyPopup {
 
     let email: string = 'Logged in';
     let isPro = false;
-    try {
-      const usageRes = await fetch(`${API_BASE}/api/usage`, {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
-      const data = await usageRes.json().catch(() => ({}));
+    const { ok, status, data } = await this.fetchUsageData();
 
-      if (usageRes.status === 401 || (usageRes.ok && data.requireLogin)) {
-        await setSession(null);
-        void this.renderAccount();
-        return;
-      }
+    if (status === 401 || (ok && data['requireLogin'])) {
+      await setSession(null);
+      void this.renderAccount();
+      return;
+    }
 
-      if (usageRes.ok && !data.requireLogin) {
-        email = data?.user?.email ?? 'Logged in';
-        isPro = Boolean(data?.isSubscribed);
-      }
-    } catch {
-      // Network error: keep session, show logged in with fallback text
+    if (ok) {
+      const user = data['user'] as { email?: string } | undefined;
+      email = user?.email ?? 'Logged in';
+      isPro = Boolean(data['isSubscribed']);
+      this.applyUsageToUI(data);
+    } else {
+      this.applyUsageToUI(null, { error: "Couldn't load today's usage." });
     }
 
     if (skeletonEl) skeletonEl.style.display = 'none';
