@@ -598,8 +598,29 @@ class RewordlyContentScript {
         </div>
         <div class="rewordly-modal-footer">
           <div class="rewordly-length-btns" style="display: none;">
-            <button type="button" class="rewordly-length-btn rewordly-shorter-btn" title="Make it shorter">Shorter ↓</button>
-            <button type="button" class="rewordly-length-btn rewordly-longer-btn"  title="Make it longer">Longer ↑</button>
+            <span class="rewordly-length-section-label">Length</span>
+            <div class="rewordly-length-pair">
+              <button type="button" class="rewordly-length-btn rewordly-shorter-btn" title="Tighten wording — fewer words, same point" aria-label="Make rewrite shorter">
+                <span class="rewordly-length-bars" aria-hidden="true">
+                  <span class="rewordly-lbar"></span>
+                  <span class="rewordly-lbar"></span>
+                  <span class="rewordly-lbar"></span>
+                  <span class="rewordly-lbar"></span>
+                </span>
+                <span class="rewordly-length-label">Shorter</span>
+                <span class="rewordly-length-hint">Fewer words, same meaning</span>
+              </button>
+              <button type="button" class="rewordly-length-btn rewordly-longer-btn" title="Add breathing room — more detail and connective phrasing" aria-label="Make rewrite longer">
+                <span class="rewordly-length-bars" aria-hidden="true">
+                  <span class="rewordly-lbar"></span>
+                  <span class="rewordly-lbar"></span>
+                  <span class="rewordly-lbar"></span>
+                  <span class="rewordly-lbar"></span>
+                </span>
+                <span class="rewordly-length-label">Longer</span>
+                <span class="rewordly-length-hint">More detail, fuller sentences</span>
+              </button>
+            </div>
           </div>
           <div class="rewordly-action-btns">
             <button class="rewordly-copy-btn">Copy</button>

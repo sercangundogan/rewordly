@@ -1087,10 +1087,34 @@ body.rewordly-modal-open {
   border-radius: 0 0 16px 16px !important;
 }
 
-/* Length adjust buttons row */
+/* Length adjust — “compress vs expand” cards (distinctive, semantic) */
 .rewordly-length-btns {
   display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
   gap: 8px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 100% !important;
+}
+
+.rewordly-length-section-label {
+  display: block !important;
+  font-family: 'Source Serif 4', 'Palatino Linotype', 'Book Antiqua', Palatino, serif !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.16em !important;
+  text-transform: uppercase !important;
+  color: #78716c !important;
+  margin: 0 !important;
+  padding: 0 2px !important;
+}
+
+.rewordly-length-pair {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 10px !important;
+  width: 100% !important;
   margin: 0 !important;
   padding: 0 !important;
 }
@@ -1103,42 +1127,170 @@ body.rewordly-modal-open {
 }
 
 .rewordly-length-btn {
-  flex: 1 !important;
-  padding: 7px 12px !important;
-  font-size: 12px !important;
-  font-weight: 600 !important;
-  line-height: 1.4 !important;
-  border-radius: 8px !important;
-  border: 1.5px solid #e0e0e0 !important;
-  background: #ffffff !important;
-  color: #374151 !important;
+  flex: 1 1 0 !important;
+  min-width: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  justify-content: flex-start !important;
+  padding: 12px 12px 14px !important;
+  border-radius: 12px !important;
   cursor: pointer !important;
-  transition: all 0.15s ease !important;
-  font-family: 'Source Serif 4', 'Palatino Linotype', 'Book Antiqua', Palatino, serif !important;
-  white-space: nowrap !important;
-  text-align: center !important;
+  text-align: left !important;
   outline: none !important;
   box-sizing: border-box !important;
   margin: 0 !important;
-  letter-spacing: normal !important;
+  white-space: normal !important;
   text-decoration: none !important;
   text-transform: none !important;
+  letter-spacing: normal !important;
   -webkit-font-smoothing: antialiased !important;
+  transition:
+    transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.2s ease,
+    border-color 0.2s ease,
+    background 0.2s ease !important;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.65) inset !important;
 }
 
-.rewordly-length-btn:hover {
-  border-color: #2d4a3e !important;
-  color: #1e3d32 !important;
-  background: #f0f9f4 !important;
+.rewordly-length-btn:focus-visible {
+  outline: 2px solid #1c1917 !important;
+  outline-offset: 2px !important;
+}
+
+/* Shorter = cool / compressed lines (narrowing) */
+.rewordly-shorter-btn {
+  border: 1.5px solid rgba(42, 74, 61, 0.28) !important;
+  background: linear-gradient(160deg, #f6faf8 0%, #e8f2ec 55%, #eef5f1 100%) !important;
+  color: #1e3a30 !important;
+}
+
+.rewordly-shorter-btn:hover {
+  border-color: rgba(42, 74, 61, 0.5) !important;
+  background: linear-gradient(160deg, #f0f7f3 0%, #e2efe8 100%) !important;
+  box-shadow: 0 4px 14px rgba(42, 74, 61, 0.12), 0 1px 0 rgba(255, 255, 255, 0.65) inset !important;
+  transform: translateY(-1px) !important;
+}
+
+/* Longer = warm / expanding lines (widening) */
+.rewordly-longer-btn {
+  border: 1.5px solid rgba(196, 113, 61, 0.38) !important;
+  background: linear-gradient(160deg, #fffdfb 0%, #fdf4ed 50%, #fceadc 100%) !important;
+  color: #7c2d12 !important;
+}
+
+.rewordly-longer-btn:hover {
+  border-color: rgba(196, 113, 61, 0.55) !important;
+  background: linear-gradient(160deg, #fff9f5 0%, #fcefdc 100%) !important;
+  box-shadow: 0 4px 14px rgba(196, 113, 61, 0.14), 0 1px 0 rgba(255, 255, 255, 0.65) inset !important;
+  transform: translateY(-1px) !important;
 }
 
 .rewordly-length-btn:active {
-  transform: scale(0.97) !important;
+  transform: translateY(0) scale(0.99) !important;
 }
 
 .rewordly-length-btn:disabled {
   opacity: 0.45 !important;
   cursor: not-allowed !important;
+  transform: none !important;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.65) inset !important;
+}
+
+/* Mini “paragraph” preview: bar widths imply length */
+.rewordly-length-bars {
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  align-items: flex-start !important;
+  gap: 4px !important;
+  width: 100% !important;
+  max-width: 64px !important;
+  height: 46px !important;
+  padding: 7px 8px !important;
+  margin: 0 0 10px !important;
+  border-radius: 9px !important;
+  box-sizing: border-box !important;
+  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1) !important;
+  transform-origin: left center !important;
+}
+
+.rewordly-shorter-btn .rewordly-length-bars {
+  background: rgba(42, 74, 61, 0.12) !important;
+}
+
+.rewordly-longer-btn .rewordly-length-bars {
+  background: rgba(196, 113, 61, 0.14) !important;
+}
+
+.rewordly-lbar {
+  display: block !important;
+  height: 4px !important;
+  border-radius: 2px !important;
+  background: currentColor !important;
+  opacity: 0.88 !important;
+  transition: width 0.25s cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+
+/* Narrowing stack → “shorter” */
+.rewordly-shorter-btn .rewordly-lbar:nth-child(1) { width: 100% !important; }
+.rewordly-shorter-btn .rewordly-lbar:nth-child(2) { width: 78% !important; }
+.rewordly-shorter-btn .rewordly-lbar:nth-child(3) { width: 56% !important; }
+.rewordly-shorter-btn .rewordly-lbar:nth-child(4) { width: 40% !important; }
+
+/* Widening stack → “longer” */
+.rewordly-longer-btn .rewordly-lbar:nth-child(1) { width: 38% !important; }
+.rewordly-longer-btn .rewordly-lbar:nth-child(2) { width: 58% !important; }
+.rewordly-longer-btn .rewordly-lbar:nth-child(3) { width: 82% !important; }
+.rewordly-longer-btn .rewordly-lbar:nth-child(4) { width: 100% !important; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .rewordly-shorter-btn:hover .rewordly-length-bars {
+    transform: scaleX(0.94) !important;
+  }
+  .rewordly-shorter-btn:hover .rewordly-lbar:nth-child(1) { width: 92% !important; }
+  .rewordly-shorter-btn:hover .rewordly-lbar:nth-child(2) { width: 68% !important; }
+  .rewordly-shorter-btn:hover .rewordly-lbar:nth-child(3) { width: 48% !important; }
+  .rewordly-shorter-btn:hover .rewordly-lbar:nth-child(4) { width: 34% !important; }
+
+  .rewordly-longer-btn:hover .rewordly-length-bars {
+    transform: scaleX(1.04) !important;
+  }
+  .rewordly-longer-btn:hover .rewordly-lbar:nth-child(1) { width: 48% !important; }
+  .rewordly-longer-btn:hover .rewordly-lbar:nth-child(2) { width: 68% !important; }
+  .rewordly-longer-btn:hover .rewordly-lbar:nth-child(3) { width: 90% !important; }
+  .rewordly-longer-btn:hover .rewordly-lbar:nth-child(4) { width: 100% !important; }
+}
+
+.rewordly-length-label {
+  display: block !important;
+  font-family: 'Fraunces', 'Palatino Linotype', Georgia, serif !important;
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+  margin: 0 0 4px !important;
+  padding: 0 !important;
+  color: inherit !important;
+}
+
+.rewordly-length-hint {
+  display: block !important;
+  font-family: 'Source Serif 4', 'Palatino Linotype', 'Book Antiqua', Palatino, serif !important;
+  font-size: 11px !important;
+  font-weight: 400 !important;
+  line-height: 1.35 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  opacity: 0.82 !important;
+  color: inherit !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rewordly-length-btn,
+  .rewordly-lbar,
+  .rewordly-length-bars {
+    transition: none !important;
+  }
 }
 
 .rewordly-copy-btn,
