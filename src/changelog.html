@@ -1,222 +1,258 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Rewordly - What's New</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rewordly — What's new</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;0,9..144,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600&display=swap" rel="stylesheet">
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
+    :root {
+      --rw-ink: #1c1917;
+      --rw-muted: #57534e;
+      --rw-line: rgba(28, 25, 23, 0.09);
+      --rw-paper: #faf7f2;
+      --rw-surface: #fffefb;
+      --rw-forest: #2a4a3d;
+      --rw-forest-deep: #1e3a30;
+      --rw-amber: #c4713d;
+      --rw-ease: cubic-bezier(0.22, 1, 0.36, 1);
+      --rw-font-display: 'Fraunces', 'Palatino Linotype', Georgia, serif;
+      --rw-font-body: 'Source Serif 4', 'Palatino Linotype', Palatino, Georgia, serif;
     }
 
+    @keyframes rw-rise {
+      from { opacity: 0; transform: translateY(14px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #e8e8e8;
+      font-family: var(--rw-font-body);
+      background: #ebe6dc;
+      background-image:
+        radial-gradient(ellipse 90% 70% at 80% 0%, rgba(42, 74, 61, 0.06), transparent 50%);
       min-height: 100vh;
-      padding: 40px 20px;
-      color: #1f2937;
+      padding: 36px 20px;
+      color: var(--rw-ink);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
     }
 
     .container {
-      max-width: 700px;
+      max-width: 720px;
       margin: 0 auto;
-      background: white;
-      border-radius: 16px;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+      background: var(--rw-paper);
+      border-radius: 20px;
       overflow: hidden;
+      border: 1px solid var(--rw-line);
+      box-shadow: 0 4px 32px rgba(28, 25, 23, 0.1), 0 1px 0 rgba(255, 255, 255, 0.5) inset;
+      animation: rw-rise 0.5s var(--rw-ease) both;
     }
 
     .header {
-      background: #1a1a1a;
-      color: white;
-      padding: 40px 32px;
-      text-align: center;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-    }
-
-    .header h1 {
-      font-size: 32px;
-      font-weight: 700;
-      margin-bottom: 8px;
-      letter-spacing: -0.025em;
-    }
-
-    .header p {
-      font-size: 16px;
-      opacity: 0.9;
-    }
-
-    .version-badge {
-      display: inline-block;
-      background: rgba(255, 255, 255, 0.15);
-      padding: 4px 12px;
-      border-radius: 12px;
-      font-size: 14px;
-      font-weight: 600;
-      margin-top: 12px;
-    }
-
-    .content {
-      padding: 32px;
-    }
-
-    .content a {
-      color: #1a1a1a;
-      font-weight: 600;
-      text-decoration: underline;
-    }
-
-    .content a:hover {
-      text-decoration: none;
-    }
-
-    .section {
-      margin-bottom: 32px;
-    }
-
-    .section:last-child {
-      margin-bottom: 0;
-    }
-
-    .section-title {
-      font-size: 20px;
-      font-weight: 700;
-      color: #1f2937;
-      margin-bottom: 16px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .section-title::before {
-      content: '';
-      width: 4px;
-      height: 20px;
-      background: #1a1a1a;
-      border-radius: 2px;
-    }
-
-    .changelog-list {
-      list-style: none;
-    }
-
-    .changelog-item {
-      padding: 12px 0;
-      padding-left: 24px;
       position: relative;
-      line-height: 1.6;
-      color: #4b5563;
-      display: flex;
-      align-items: center;
-      
-    }
-
-    .changelog-item::before {
-      content: '✓';
-      position: absolute;
-      left: 0;
-      color: #2d4a3e;
-      font-weight: bold;
-      font-size: 16px;
-    }
-
-    .changelog-item.new {
-      color: #1f2937;
-      font-weight: 500;
-    }
-
-    .changelog-item.new::before {
-      content: '✨';
-    }
-
-    .changelog-item.fix {
-      color: #1f2937;
-    }
-
-    .changelog-item.fix::before {
-      content: '🔧';
-    }
-
-    .footer {
-      background: #f5f5f5;
-      padding: 24px 32px;
-      border-top: 1px solid #e0e0e0;
+      padding: 40px 36px 36px;
+      color: #faf7f2;
       text-align: center;
+      background: linear-gradient(145deg, #2c241c 0%, #1a1614 50%, #1e2d26 100%);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
     }
 
-    .footer p {
-      color: #6b7280;
-      font-size: 14px;
-      margin-bottom: 16px;
+    .header::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+      pointer-events: none;
+      mix-blend-mode: overlay;
     }
 
-    .button {
-      display: inline-block;
-      padding: 12px 24px;
-      background: #1a1a1a;
-      color: white;
-      border: none;
-      border-radius: 12px;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s;
-      text-decoration: none;
-      margin-top: 8px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-    }
-
-    .button:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
-    }
-
-    .button:active {
-      transform: translateY(0);
-    }
+    .header-inner { position: relative; z-index: 1; }
 
     .close-button {
       position: absolute;
       top: 16px;
       right: 16px;
-      background: rgba(255, 255, 255, 0.15);
-      border: none;
-      color: white;
-      width: 32px;
-      height: 32px;
+      z-index: 2;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #faf7f2;
+      width: 36px;
+      height: 36px;
       border-radius: 50%;
       cursor: pointer;
-      font-size: 20px;
+      font-size: 22px;
+      line-height: 1;
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: background 0.2s;
+      transition: background 0.2s, transform 0.2s var(--rw-ease);
     }
 
     .close-button:hover {
-      background: rgba(255, 255, 255, 0.25);
+      background: rgba(255, 255, 255, 0.18);
+      transform: scale(1.05);
     }
 
-    .header {
+    .header h1 {
+      font-family: var(--rw-font-display);
+      font-size: clamp(26px, 4vw, 34px);
+      font-weight: 600;
+      margin-bottom: 8px;
+      letter-spacing: -0.02em;
+    }
+
+    .header p {
+      font-size: 16px;
+      color: rgba(250, 247, 242, 0.78);
+    }
+
+    .version-badge {
+      display: inline-block;
+      margin-top: 14px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #faf7f2;
+    }
+
+    .content { padding: 36px; }
+
+    .content a {
+      color: var(--rw-forest-deep);
+      font-weight: 600;
+      text-decoration: none;
+      border-bottom: 1px solid rgba(42, 74, 61, 0.25);
+    }
+
+    .content a:hover { color: var(--rw-amber); border-color: rgba(196, 113, 61, 0.35); }
+
+    .section { margin-bottom: 32px; }
+    .section:last-child { margin-bottom: 0; }
+
+    .section-title {
+      font-family: var(--rw-font-display);
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--rw-ink);
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .section-title::before {
+      content: '';
+      width: 4px;
+      height: 1em;
+      background: linear-gradient(180deg, var(--rw-forest), var(--rw-amber));
+      border-radius: 3px;
+    }
+
+    .changelog-list { list-style: none; }
+
+    .changelog-item {
+      padding: 12px 0 12px 28px;
       position: relative;
+      line-height: 1.65;
+      color: var(--rw-muted);
+      border-bottom: 1px solid var(--rw-line);
+    }
+
+    .changelog-item:last-child { border-bottom: none; }
+
+    .changelog-item::before {
+      content: '';
+      position: absolute;
+      left: 4px;
+      top: 20px;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--rw-forest);
+    }
+
+    .changelog-item.new { color: var(--rw-ink); font-weight: 500; }
+    .changelog-item.new::before {
+      background: var(--rw-amber);
+      box-shadow: 0 0 0 3px rgba(196, 113, 61, 0.2);
+    }
+
+    .changelog-item.fix::before { background: #78716c; }
+
+    kbd {
+      font-family: ui-monospace, 'Cascadia Code', 'Segoe UI Mono', monospace;
+      font-size: 12px;
+      padding: 2px 7px;
+      border-radius: 6px;
+      background: var(--rw-surface);
+      border: 1px solid var(--rw-line);
+    }
+
+    .footer {
+      padding: 24px 36px 32px;
+      border-top: 1px solid var(--rw-line);
+      text-align: center;
+      background: rgba(255, 254, 251, 0.7);
+    }
+
+    .footer p {
+      color: var(--rw-muted);
+      font-size: 14px;
+      margin-bottom: 14px;
+    }
+
+    .button {
+      display: inline-block;
+      padding: 12px 26px;
+      background: linear-gradient(135deg, var(--rw-forest), var(--rw-forest-deep));
+      color: #faf7f2;
+      border: none;
+      border-radius: 12px;
+      font-family: var(--rw-font-body);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s var(--rw-ease), box-shadow 0.2s;
+      text-decoration: none;
+      margin-top: 6px;
+      box-shadow: 0 4px 16px rgba(42, 74, 61, 0.28);
+    }
+
+    .button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 22px rgba(42, 74, 61, 0.32);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .container { animation: none; }
+      .button, .close-button { transition: none; }
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <div class="header">
-      <button class="close-button" id="closeBtn" title="Close">×</button>
-      <h1>What's New in Rewordly</h1>
-      <p>We've made some updates!</p>
-      <span class="version-badge" id="versionBadge">Version 1.4.0</span>
-    </div>
-    
+    <header class="header">
+      <button type="button" class="close-button" id="closeBtn" title="Close" aria-label="Close">×</button>
+      <div class="header-inner">
+        <h1>What's new</h1>
+        <p>Release notes for Rewordly</p>
+        <span class="version-badge" id="versionBadge">Version 1.4.0</span>
+      </div>
+    </header>
+
     <div class="content">
       <div class="section">
         <h2 class="section-title">Changes in 1.4.0</h2>
         <ul class="changelog-list">
-          <li class="changelog-item new">Keyboard shortcuts: Rewrite with <kbd>Ctrl+Shift+E</kbd> and check grammar with <kbd>Ctrl+Shift+L</kbd>. Popup shows your shortcuts and a link to Chrome’s shortcut settings.</li>
+          <li class="changelog-item new">Keyboard shortcuts: Rewrite with <kbd>Ctrl+Shift+E</kbd> and check grammar with <kbd>Ctrl+Shift+L</kbd>. The popup shows your shortcuts and a link to Chrome’s shortcut settings.</li>
           <li class="changelog-item new">On update, the extension opens Chrome’s shortcuts page once so you can assign or confirm the default shortcuts.</li>
           <li class="changelog-item new">Uninstall feedback: When you remove the extension, Chrome can open an optional feedback form so we can learn how to improve.</li>
           <li class="changelog-item fix">Context menu (Rewrite / Check grammar) now works correctly even when “Show hover buttons” is off for the current page.</li>
@@ -231,16 +267,14 @@
           <li class="changelog-item fix">Popup UI: Account section in English; "Sign out" and clearer messaging. Upgrade button replaced with "Payment plans coming soon" and email link for free limits.</li>
         </ul>
       </div>
+    </div>
 
-    </div>
-    
-    <div class="footer">
-      <p>Have feedback or suggestions? We'd love to hear from you!</p>
-      <a href="mailto:sercangundogan35@gmail.com?subject=Rewordly Feedback" class="button">Send Feedback</a>
-    </div>
+    <footer class="footer">
+      <p>Have feedback or suggestions? We'd love to hear from you.</p>
+      <a href="mailto:sercangundogan35@gmail.com?subject=Rewordly%20Feedback" class="button">Send feedback</a>
+    </footer>
   </div>
 
   <script src="changelog.js"></script>
 </body>
 </html>
-

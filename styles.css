@@ -13,7 +13,7 @@
   gap: 8px !important;
   z-index: 2147483645 !important; /* Below modal when it's open */
   transition: all 0.2s ease !important;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  font-family: 'Source Serif 4', 'Palatino Linotype', 'Book Antiqua', Palatino, serif !important;
   pointer-events: auto !important;
   user-select: none !important;
   -webkit-user-select: none !important;
@@ -71,14 +71,14 @@
   padding: 0 !important;
   width: 32px !important;
   height: 32px !important;
-  background: #1a1a1a !important;
+  background: linear-gradient(145deg, #2a241c 0%, #1e2d26 100%) !important;
   color: white !important;
   border: none !important;
   border-radius: 50% !important;
   cursor: pointer !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25) !important;
+  box-shadow: 0 4px 14px rgba(28, 25, 23, 0.28), 0 0 0 1px rgba(255, 255, 255, 0.06) inset !important;
   transition: all 0.2s ease !important;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  font-family: 'Source Serif 4', 'Palatino Linotype', 'Book Antiqua', Palatino, serif !important;
   pointer-events: auto !important;
   user-select: none !important;
   -webkit-user-select: none !important;
@@ -120,15 +120,15 @@
   flex-direction: row !important;
   width: 56px !important;
   height: 32px !important;
-  background: #1a1a1a !important;
+  background: linear-gradient(135deg, #2a241c 0%, #1e2d26 55%, #1a1614 100%) !important;
   color: white !important;
   border: none !important;
   border-radius: 50px !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25) !important;
+  box-shadow: 0 4px 16px rgba(28, 25, 23, 0.28), 0 0 0 1px rgba(255, 255, 255, 0.06) inset !important;
   overflow: hidden !important;
   padding: 0 !important;
   margin: 0 !important;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  font-family: 'Source Serif 4', 'Palatino Linotype', 'Book Antiqua', Palatino, serif !important;
   pointer-events: auto !important;
   user-select: none !important;
   -webkit-user-select: none !important;
@@ -216,7 +216,7 @@
   cursor: pointer !important;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25) !important;
   transition: all 0.2s ease !important;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  font-family: 'Source Serif 4', 'Palatino Linotype', 'Book Antiqua', Palatino, serif !important;
   pointer-events: auto !important;
   user-select: none !important;
   -webkit-user-select: none !important;
@@ -303,12 +303,12 @@
 /* AI Button Tooltip */
 .rewordly-ai-tooltip {
   position: fixed !important;
-  background: #000000 !important;
-  color: #ffffff !important;
-  padding: 6px 10px !important;
-  border-radius: 4px !important;
+  background: linear-gradient(135deg, #1e2d26, #1a1614) !important;
+  color: #faf7f2 !important;
+  padding: 7px 12px !important;
+  border-radius: 8px !important;
   font-size: 12px !important;
-  font-weight: 500 !important;
+  font-weight: 600 !important;
   white-space: nowrap !important;
   pointer-events: none !important;
   z-index: 2147483648 !important; /* Above everything */
@@ -316,8 +316,9 @@
   visibility: hidden !important;
   transform: translate(-50%, -100%) translateY(-8px) !important;
   transition: opacity 0.2s ease, transform 0.2s ease, visibility 0s 0.2s !important;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+  font-family: 'Source Serif 4', 'Palatino Linotype', 'Book Antiqua', Palatino, serif !important;
+  box-shadow: 0 6px 20px rgba(28, 25, 23, 0.25) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
   margin: 0 !important;
   border: none !important;
   outline: none !important;
@@ -353,7 +354,7 @@
   left: 50% !important;
   transform: translateX(-50%) !important;
   border: 4px solid transparent !important;
-  border-top-color: #000000 !important;
+  border-top-color: #1a1614 !important;
   margin: 0 !important;
   padding: 0 !important;
   width: 0 !important;
@@ -377,7 +378,7 @@
   visibility: hidden !important;
   transform: translate(-50%, -100%) translateY(-8px) !important;
   transition: opacity 0.2s ease, transform 0.2s ease, visibility 0s 0.2s !important;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  font-family: 'Source Serif 4', 'Palatino Linotype', 'Book Antiqua', Palatino, serif !important;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
   margin: 0 !important;
   border: none !important;
@@ -445,7 +446,7 @@
   cursor: pointer !important;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25) !important;
   transition: all 0.2s ease !important;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  font-family: 'Source Serif 4', 'Palatino Linotype', 'Book Antiqua', Palatino, serif !important;
   pointer-events: auto !important;
   user-select: none !important;
   -webkit-user-select: none !important;
@@ -534,7 +535,7 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25) !important;
   z-index: 2147483645 !important; /* Below modal when it's open */
   transition: all 0.2s ease !important;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  font-family: 'Source Serif 4', 'Palatino Linotype', 'Book Antiqua', Palatino, serif !important;
   pointer-events: auto !important;
   user-select: none !important;
   -webkit-user-select: none !important;
@@ -617,7 +618,7 @@
   justify-content: center !important;
   align-items: center !important;
   z-index: 2147483647 !important; /* Above buttons when modal is open */
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  font-family: 'Source Serif 4', 'Palatino Linotype', 'Book Antiqua', Palatino, serif !important;
   opacity: 0 !important;
   transition: opacity 0.3s ease !important;
   margin: 0 !important;
@@ -635,9 +636,9 @@
 }
 
 .rewordly-modal-content {
-  background: #ffffff !important;
-  border-radius: 16px !important;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.04) !important;
+  background: #fffefb !important;
+  border-radius: 18px !important;
+  box-shadow: 0 8px 40px rgba(28, 25, 23, 0.12), 0 0 0 1px rgba(28, 25, 23, 0.06) !important;
   max-width: 600px !important;
   width: 90% !important;
   max-height: 80vh !important;
@@ -708,9 +709,10 @@ body.rewordly-modal-open {
 
 .rewordly-modal-header h3 {
   margin: 0 !important;
-  font-size: 18px !important;
+  font-family: 'Fraunces', 'Palatino Linotype', Georgia, serif !important;
+  font-size: 19px !important;
   font-weight: 600 !important;
-  color: #000000 !important;
+  color: #1c1917 !important;
   letter-spacing: -0.02em !important;
   padding: 0 !important;
   border: none !important;
@@ -812,9 +814,9 @@ body.rewordly-modal-open {
   flex: 1 !important;
   display: flex !important;
   flex-direction: column !important;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
-  background: #fafafa !important;
-  color: #1a1a1a !important;
+  font-family: 'Source Serif 4', 'Palatino Linotype', 'Book Antiqua', Palatino, serif !important;
+  background: #faf7f2 !important;
+  color: #1c1917 !important;
   font-size: 14px !important;
   line-height: 1.6 !important;
 }
@@ -822,8 +824,8 @@ body.rewordly-modal-open {
 .rewordly-modal-body p,
 .rewordly-modal-body span,
 .rewordly-modal-body div {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
-  color: #1a1a1a !important;
+  font-family: 'Source Serif 4', 'Palatino Linotype', 'Book Antiqua', Palatino, serif !important;
+  color: #1c1917 !important;
   font-size: 14px !important;
   line-height: 1.6 !important;
 }
@@ -928,7 +930,7 @@ body.rewordly-modal-open {
   font-variation-settings: normal !important;
   -webkit-font-smoothing: antialiased !important;
   -moz-osx-font-smoothing: grayscale !important;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  font-family: 'Source Serif 4', 'Palatino Linotype', 'Book Antiqua', Palatino, serif !important;
   font-weight: 400 !important;
 }
 
@@ -978,7 +980,7 @@ body.rewordly-modal-open {
   font-variation-settings: normal !important;
   -webkit-font-smoothing: antialiased !important;
   -moz-osx-font-smoothing: grayscale !important;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  font-family: 'Source Serif 4', 'Palatino Linotype', 'Book Antiqua', Palatino, serif !important;
   font-weight: 400 !important;
 }
 
@@ -1112,7 +1114,7 @@ body.rewordly-modal-open {
   color: #374151 !important;
   cursor: pointer !important;
   transition: all 0.15s ease !important;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  font-family: 'Source Serif 4', 'Palatino Linotype', 'Book Antiqua', Palatino, serif !important;
   white-space: nowrap !important;
   text-align: center !important;
   outline: none !important;
@@ -1254,7 +1256,7 @@ body.rewordly-modal-open {
   color: #374151 !important;
   cursor: pointer !important;
   transition: all 0.15s ease !important;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  font-family: 'Source Serif 4', 'Palatino Linotype', 'Book Antiqua', Palatino, serif !important;
   white-space: nowrap !important;
   outline: none !important;
   box-sizing: border-box !important;

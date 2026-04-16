@@ -1,71 +1,138 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Welcome to Rewordly</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;0,9..144,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600&display=swap" rel="stylesheet">
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
+    :root {
+      --rw-ink: #1c1917;
+      --rw-muted: #57534e;
+      --rw-line: rgba(28, 25, 23, 0.09);
+      --rw-paper: #faf7f2;
+      --rw-surface: #fffefb;
+      --rw-forest: #2a4a3d;
+      --rw-forest-deep: #1e3a30;
+      --rw-amber: #c4713d;
+      --rw-ease: cubic-bezier(0.22, 1, 0.36, 1);
+      --rw-font-display: 'Fraunces', 'Palatino Linotype', Georgia, serif;
+      --rw-font-body: 'Source Serif 4', 'Palatino Linotype', Palatino, Georgia, serif;
     }
 
+    @keyframes rw-rise {
+      from { opacity: 0; transform: translateY(16px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #e8e8e8;
+      font-family: var(--rw-font-body);
+      background: #ebe6dc;
+      background-image:
+        radial-gradient(ellipse 100% 80% at 50% -20%, rgba(196, 113, 61, 0.08), transparent 55%);
       min-height: 100vh;
-      padding: 40px 20px;
-      color: #1f2937;
+      padding: 36px 20px;
+      color: var(--rw-ink);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
     }
 
     .container {
-      max-width: 700px;
+      max-width: 720px;
       margin: 0 auto;
-      background: white;
-      border-radius: 16px;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+      background: var(--rw-paper);
+      border-radius: 20px;
       overflow: hidden;
+      border: 1px solid var(--rw-line);
+      box-shadow: 0 4px 32px rgba(28, 25, 23, 0.1), 0 1px 0 rgba(255, 255, 255, 0.5) inset;
+      animation: rw-rise 0.55s var(--rw-ease) both;
     }
 
     .header {
-      background: #1a1a1a;
-      color: white;
-      padding: 50px 32px;
-      text-align: center;
       position: relative;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      padding: 48px 36px 44px;
+      color: #faf7f2;
+      background: linear-gradient(145deg, #2c241c 0%, #1a1614 50%, #1e2d26 100%);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .header::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+      pointer-events: none;
+      mix-blend-mode: overlay;
+    }
+
+    .header-inner { position: relative; z-index: 1; text-align: center; }
+
+    .header-eyebrow {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: rgba(250, 247, 242, 0.5);
+      margin-bottom: 10px;
     }
 
     .header h1 {
-      font-size: 36px;
-      font-weight: 700;
+      font-family: var(--rw-font-display);
+      font-size: clamp(28px, 5vw, 40px);
+      font-weight: 600;
       margin-bottom: 12px;
-      letter-spacing: -0.025em;
+      letter-spacing: -0.02em;
+      font-variation-settings: 'SOFT' 40, 'WONK' 0.8;
     }
 
     .header p {
-      font-size: 18px;
-      opacity: 0.95;
-      line-height: 1.5;
+      font-size: 17px;
+      color: rgba(250, 247, 242, 0.82);
+      max-width: 36ch;
+      margin: 0 auto;
+      line-height: 1.55;
     }
 
-    .content {
-      padding: 40px 32px;
+    .close-button {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      z-index: 2;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #faf7f2;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 22px;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s, transform 0.2s var(--rw-ease);
     }
 
-    .section {
-      margin-bottom: 32px;
+    .close-button:hover {
+      background: rgba(255, 255, 255, 0.18);
+      transform: scale(1.05);
     }
 
-    .section:last-child {
-      margin-bottom: 0;
-    }
+    .content { padding: 40px 36px; }
+
+    .section { margin-bottom: 36px; }
+    .section:last-child { margin-bottom: 0; }
 
     .section-title {
+      font-family: var(--rw-font-display);
       font-size: 22px;
-      font-weight: 700;
-      color: #1f2937;
-      margin-bottom: 16px;
+      font-weight: 600;
+      color: var(--rw-ink);
+      margin-bottom: 14px;
       display: flex;
       align-items: center;
       gap: 12px;
@@ -74,217 +141,205 @@
     .section-title::before {
       content: '';
       width: 4px;
-      height: 24px;
-      background: #1a1a1a;
-      border-radius: 2px;
+      height: 1.1em;
+      background: linear-gradient(180deg, var(--rw-amber), var(--rw-forest));
+      border-radius: 3px;
     }
 
-    .feature-list {
-      list-style: none;
+    .lead {
+      color: var(--rw-muted);
+      line-height: 1.75;
+      font-size: 16px;
     }
+
+    .feature-list { list-style: none; }
 
     .feature-item {
-      padding: 16px 0;
-      padding-left: 32px;
+      padding: 14px 0 14px 36px;
       position: relative;
-      line-height: 1.6;
-      color: #4b5563;
-      display: flex;
-      align-items: center;
+      line-height: 1.65;
+      color: var(--rw-muted);
+      border-bottom: 1px solid var(--rw-line);
     }
 
+    .feature-item:last-child { border-bottom: none; }
+
     .feature-item::before {
-      content: '✨';
+      content: '';
       position: absolute;
       left: 0;
-      font-size: 20px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--rw-forest);
+      box-shadow: 0 0 0 3px rgba(42, 74, 61, 0.15);
     }
 
     .feature-item strong {
-      color: #1f2937;
+      color: var(--rw-ink);
       font-weight: 600;
     }
 
     .how-to-use {
-      background: #f5f5f5;
-      border: 1px solid #e0e0e0;
-      border-left: 4px solid #1a1a1a;
-      border-radius: 12px;
-      padding: 24px;
-      margin-top: 24px;
+      background: var(--rw-surface);
+      border: 1px solid var(--rw-line);
+      border-left: 3px solid var(--rw-forest);
+      border-radius: 14px;
+      padding: 26px 24px;
+      margin-top: 8px;
+      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.8) inset;
     }
 
     .how-to-use h3 {
-      color: #1f2937;
+      font-family: var(--rw-font-display);
+      color: var(--rw-ink);
       font-size: 18px;
       margin-bottom: 16px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
+      font-weight: 600;
     }
 
-    .steps {
-      list-style: none;
-      counter-reset: step-counter;
-    }
+    .steps { list-style: none; counter-reset: step-counter; }
 
     .step {
       counter-increment: step-counter;
-      padding: 12px 0;
-      padding-left: 40px;
+      padding: 12px 0 12px 44px;
       position: relative;
-      color: #4b5563;
-      line-height: 1.6;
-      display: flex;
-      align-items: center;
+      color: var(--rw-muted);
+      line-height: 1.65;
     }
 
     .step::before {
       content: counter(step-counter);
       position: absolute;
       left: 0;
-      width: 28px;
-      height: 28px;
-      background: #1a1a1a;
-      color: white;
+      top: 10px;
+      width: 30px;
+      height: 30px;
+      background: linear-gradient(135deg, var(--rw-forest), var(--rw-forest-deep));
+      color: #faf7f2;
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
       font-weight: 600;
-      font-size: 14px;
+      font-size: 13px;
+      font-family: var(--rw-font-body);
+      box-shadow: 0 2px 10px rgba(42, 74, 61, 0.25);
     }
 
     .footer {
-      background: #f5f5f5;
-      padding: 32px;
-      border-top: 1px solid #e0e0e0;
+      padding: 28px 36px 36px;
+      border-top: 1px solid var(--rw-line);
       text-align: center;
+      background: rgba(255, 254, 251, 0.7);
     }
 
     .footer p {
-      color: #6b7280;
+      color: var(--rw-muted);
       font-size: 14px;
-      margin-bottom: 20px;
-      line-height: 1.6;
+      margin-bottom: 18px;
+      line-height: 1.65;
     }
 
     .footer a:not(.button) {
-      color: #1a1a1a;
-      text-decoration: none;
+      color: var(--rw-forest-deep);
       font-weight: 600;
-      transition: color 0.2s;
+      text-decoration: none;
+      border-bottom: 1px solid rgba(42, 74, 61, 0.25);
+      transition: color 0.2s, border-color 0.2s;
     }
 
     .footer a:not(.button):hover {
-      color: #2d2d2d;
-      text-decoration: underline;
+      color: var(--rw-amber);
+      border-color: rgba(196, 113, 61, 0.4);
     }
 
     .button {
       display: inline-block;
       padding: 14px 28px;
-      background: #1a1a1a;
-      color: white;
+      background: linear-gradient(135deg, var(--rw-forest), var(--rw-forest-deep));
+      color: #faf7f2;
       border: none;
       border-radius: 12px;
+      font-family: var(--rw-font-body);
       font-size: 15px;
       font-weight: 600;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: transform 0.2s var(--rw-ease), box-shadow 0.2s;
       text-decoration: none;
       margin-top: 8px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      box-shadow: 0 4px 18px rgba(42, 74, 61, 0.3);
     }
 
     .button:hover {
       transform: translateY(-2px);
-      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+      box-shadow: 0 8px 24px rgba(42, 74, 61, 0.35);
     }
 
-    .button:active {
-      transform: translateY(0);
-    }
+    .button:active { transform: translateY(0); }
 
-    .close-button {
-      position: absolute;
-      top: 16px;
-      right: 16px;
-      background: rgba(255, 255, 255, 0.15);
-      border: none;
-      color: white;
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      cursor: pointer;
-      font-size: 20px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: background 0.2s;
-    }
-
-    .close-button:hover {
-      background: rgba(255, 255, 255, 0.25);
-    }
-
-    .header {
-      position: relative;
+    @media (prefers-reduced-motion: reduce) {
+      .container { animation: none; }
+      .button, .close-button { transition: none; }
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <div class="header">
-      <button class="close-button" id="closeBtn" title="Close">×</button>
-      <h1>Welcome to Rewordly!</h1>
-      <p>Your AI-powered writing assistant is ready to help you improve your text.</p>
-    </div>
-    
+    <header class="header">
+      <button type="button" class="close-button" id="closeBtn" title="Close" aria-label="Close">×</button>
+      <div class="header-inner">
+        <p class="header-eyebrow">You're set</p>
+        <h1>Welcome to Rewordly</h1>
+        <p>Your writing assistant for clearer, sharper text on any page.</p>
+      </div>
+    </header>
+
     <div class="content">
       <div class="section">
-        <h2 class="section-title">What is Rewordly?</h2>
-        <p style="color: #4b5563; line-height: 1.7; margin-bottom: 16px;">
-          Rewordly helps you rewrite and improve your text with AI. Simply select any text on any website, 
-          and get instant suggestions to make your writing clearer, more professional, and error-free.
+        <h2 class="section-title">What it does</h2>
+        <p class="lead">
+          Rewordly rewrites and refines selected text with AI—whether you need a more formal tone,
+          tighter wording, or a quick grammar pass.
         </p>
       </div>
 
       <div class="section">
-        <h2 class="section-title">Key Features</h2>
+        <h2 class="section-title">Highlights</h2>
         <ul class="feature-list">
           <li class="feature-item">
-            <strong>Smart Rewriting:</strong>&nbsp;Improve clarity, tone, and style of your text with AI
+            <strong>Smart rewrite:</strong> Adjust clarity, tone, and style without leaving the tab.
           </li>
           <li class="feature-item">
-            <strong>Context Menu Access:</strong>&nbsp;Right-click on selected text to rewrite or check grammar
+            <strong>Context menu:</strong> Right-click selected text for Rewrite or Check grammar.
           </li>
           <li class="feature-item">
-            <strong>Site Optimized:</strong>&nbsp;Works perfectly on Gmail, Twitter/X, Reddit, Medium, Notion, and more
+            <strong>Works where you write:</strong> Gmail, X, Reddit, Medium, Notion, and more.
           </li>
         </ul>
       </div>
 
       <div class="how-to-use">
-        <h3>How to Use</h3>
+        <h3>How to use</h3>
         <ol class="steps">
-          <li class="step">Select any text on a page, the rewrite button appears; click it to get an AI-improved version.</li>
-          <li class="step">Or right-click on selected text and choose "Rewrite" or "Check grammar" from the context menu.</li>
-          <li class="step">Use the extension popup to turn rewrite on/off or disable Rewordly on specific pages.</li>
+          <li class="step">Select text—the hover control appears; open it to get an improved version.</li>
+          <li class="step">Or right-click the selection and choose Rewrite or Check grammar.</li>
+          <li class="step">Use the extension popup for hover toggles, default tone, and account.</li>
         </ol>
       </div>
     </div>
-    
-    <div class="footer">
+
+    <footer class="footer">
       <p>
-        Need help or have suggestions? We'd love to hear from you!<br>
-        <a href="mailto:sercangundogan35@gmail.com?subject=Rewordly Feedback">Send us your feedback</a>
+        Questions or ideas? We'd love to hear from you.<br>
+        <a href="mailto:sercangundogan35@gmail.com?subject=Rewordly%20Feedback">Send feedback</a>
       </p>
-      <a href="#" class="button" id="getStartedBtn">Get Started</a>
-    </div>
+      <a href="#" class="button" id="getStartedBtn">Get started</a>
+    </footer>
   </div>
 
   <script src="welcome.js"></script>
 </body>
 </html>
-

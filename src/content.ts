@@ -6,6 +6,30 @@
 import { API_BASE } from './config';
 import { getApiHeaders, setSession } from './auth';
 
+/** Distinctive typography for injected UI (falls back if a page CSP blocks the request). */
+function ensureRewordlyFontsInjected(): void {
+  try {
+    if (typeof document === 'undefined' || !document.head) return;
+    if (document.getElementById('rewordly-google-fonts')) return;
+    const href =
+      'https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;0,9..144,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600&display=swap';
+    const preG = document.createElement('link');
+    preG.rel = 'preconnect';
+    preG.href = 'https://fonts.googleapis.com';
+    const preF = document.createElement('link');
+    preF.rel = 'preconnect';
+    preF.href = 'https://fonts.gstatic.com';
+    preF.crossOrigin = 'anonymous';
+    const link = document.createElement('link');
+    link.id = 'rewordly-google-fonts';
+    link.rel = 'stylesheet';
+    link.href = href;
+    document.head.append(preG, preF, link);
+  } catch {
+    // ignore
+  }
+}
+
 // Auto-connect / logout: website sends token or logout via postMessage (dashboard page)
 (function setupConnectAndLogoutListener() {
   try {
@@ -120,6 +144,7 @@ class RewordlyContentScript {
   }
 
   private async init(): Promise<void> {
+    ensureRewordlyFontsInjected();
     // Always set up message listener first so context menu (Rewrite/Grammar) works even on disabled pages
     this.setupMessageListener();
 
@@ -178,7 +203,11 @@ class RewordlyContentScript {
     const hint = document.createElement('div');
     hint.className = 'rewordly-shortcut-hint';
     hint.textContent = 'Select at least 3 characters of text first';
-    hint.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1f2937;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;z-index:2147483647;box-shadow:0 4px 12px rgba(0,0,0,0.3);font-family:system-ui,sans-serif;';
+    hint.style.cssText =
+      'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);' +
+      'background:linear-gradient(135deg,#1e2d26,#1a1614);color:#faf7f2;padding:11px 18px;border-radius:10px;' +
+      'font-size:13px;z-index:2147483647;box-shadow:0 8px 28px rgba(28,25,23,0.35);' +
+      'font-family:"Source Serif 4",Georgia,serif;border:1px solid rgba(255,255,255,0.08);';
     document.body.appendChild(hint);
     setTimeout(() => hint.remove(), 2500);
   }
