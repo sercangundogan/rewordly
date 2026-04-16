@@ -103,7 +103,6 @@ V1.5.0 – Tone, length, apply & polish
 
 V1.4.0 – Keyboard shortcuts & feedback
 • Keyboard shortcuts: Rewrite with Ctrl+Shift+E, check grammar with Ctrl+Shift+L. Popup shows shortcut info and a link to Chrome shortcut settings.
-• On update, the extension opens Chrome’s shortcuts page once so you can assign or confirm default shortcuts.
 • Uninstall feedback: When you remove the extension, Chrome can open an optional feedback form.
 • Context menu (Rewrite / Check grammar) now works correctly when “Show hover buttons” is off for the current page.
 
