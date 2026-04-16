@@ -1,12 +1,12 @@
-Rewordly has a single, focused purpose: to help users improve their writing on any webpage through AI-powered rewriting and on-demand grammar checking.
+Rewordly has a single, focused purpose: improve the text you already have on any webpage—using AI for rewrites and on-demand grammar fixes—without pulling you into another app.
 
 The extension works in two ways:
 
-1. **AI Rewriting:** When you select text, a floating button appears. Click it to send the text to the API; the improved version is shown in a clean modal—all without leaving the page.
+1. AI Rewriting: Select text and use the floating control or context menu. The result opens in a clean modal where you can set tone, nudge length with Shorter / Longer, copy—or Apply straight back into the field when you started from an input or editor.
 
-2. **On-Demand Grammar Check:** Select text and click the grammar option on the same floating button, or right-click and choose "Check grammar." Corrections and suggestions are displayed in the same modal.
+2. On-Demand Grammar Check: Use the grammar option on the same floating control, or right-click selected text and choose Check grammar. Corrections and suggestions appear in the same modal.
 
-Both features share the same goal: improving clarity, fluency, and correctness with AI—directly in your browser. Rewordly does not include unrelated features. Its sole purpose is to help you write better, faster, and with fewer errors.
+Both flows share one goal: clearer, more fluent, more correct writing in the tab where you work. Rewordly stays narrow on purpose—better words, faster, with fewer mistakes—not a grab bag of unrelated tools.
 
 💡 Completely free to use—no API keys required, no monthly limits, no subscriptions.
 
