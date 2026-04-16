@@ -187,6 +187,14 @@
 
     .changelog-item.fix::before { background: #78716c; }
 
+    .changelog-item strong {
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--rw-ink);
+    }
+
+    .changelog-item.new strong { color: var(--rw-forest-deep); }
+
     kbd {
       font-family: ui-monospace, 'Cascadia Code', 'Segoe UI Mono', monospace;
       font-size: 12px;
@@ -244,27 +252,22 @@
       <div class="header-inner">
         <h1>What's new</h1>
         <p>Release notes for Rewordly</p>
-        <span class="version-badge" id="versionBadge">Version 1.4.0</span>
+        <span class="version-badge" id="versionBadge">Version 1.5.0</span>
       </div>
     </header>
 
     <div class="content">
       <div class="section">
-        <h2 class="section-title">Changes in 1.4.0</h2>
+        <h2 class="section-title">This release</h2>
         <ul class="changelog-list">
-          <li class="changelog-item new">Keyboard shortcuts: Rewrite with <kbd>Ctrl+Shift+E</kbd> and check grammar with <kbd>Ctrl+Shift+L</kbd>. The popup shows your shortcuts and a link to Chrome’s shortcut settings.</li>
-          <li class="changelog-item new">On update, the extension opens Chrome’s shortcuts page once so you can assign or confirm the default shortcuts.</li>
-          <li class="changelog-item new">Uninstall feedback: When you remove the extension, Chrome can open an optional feedback form so we can learn how to improve.</li>
-          <li class="changelog-item fix">Context menu (Rewrite / Check grammar) now works correctly even when “Show hover buttons” is off for the current page.</li>
-        </ul>
-      </div>
-      <div class="section">
-        <h2 class="section-title">Changes in 1.3.0</h2>
-        <ul class="changelog-list">
-          <li class="changelog-item new">Account &amp; login: Sign in via the website for more daily usage. Session is managed in the extension popup.</li>
-          <li class="changelog-item new">Supabase authentication: Secure login integrated; API requests use your session for usage tracking.</li>
-          <li class="changelog-item new">Free limits by email: When you hit limits, use "Email for free limits" to request more—or email us directly. Payment plans coming soon.</li>
-          <li class="changelog-item fix">Popup UI: Account section in English; "Sign out" and clearer messaging. Upgrade button replaced with "Payment plans coming soon" and email link for free limits.</li>
+          <li class="changelog-item new"><strong>Rewrite tone:</strong> pick a default tone in the popup (Standard, Formal, Casual, Concise, Elaborate). In the rewrite modal, switch tone with one tap.</li>
+          <li class="changelog-item new"><strong>Shorter &amp; Longer:</strong> dedicated buttons in the modal to make your text <strong>more concise or more detailed</strong> in one click.</li>
+          <li class="changelog-item new"><strong>Apply to the page:</strong> when you started from an input, textarea, or editor, use <strong>Apply</strong> to replace the selection with the rewritten or corrected text in place.</li>
+          <li class="changelog-item new"><strong>Faster AI:</strong> the <strong>model behind the scenes</strong> has been upgraded—rewrites and grammar checks should feel <strong>quicker and sharper</strong>.</li>
+          <li class="changelog-item new"><strong>Refreshed design:</strong> updated <strong>visuals and flow</strong> across the popup and modal for a <strong>clearer, smoother</strong> experience.</li>
+          <li class="changelog-item new"><strong>Usage in the popup:</strong> a counter shows <strong>how much of your limit is left</strong> when you’re signed in, so you always know where you stand.</li>
+          <li class="changelog-item new"><strong>Stay signed in:</strong> your session now <strong>refreshes automatically in the background</strong> after you log in, so you shouldn’t need to <strong>sign in again and again</strong> like before.</li>
+          <li class="changelog-item new"><strong>Modal shortcuts:</strong> press <strong>Esc</strong> to close the modal—no need to hunt for the close control.</li>
         </ul>
       </div>
     </div>

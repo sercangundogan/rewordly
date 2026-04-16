@@ -28,6 +28,24 @@ Both features share the same goal: improving clarity, fluency, and correctness w
 
 🔸 One-Click Copy – Easily copy your improved text with a single click.
 
+🔸 Rewrite Tone – Choose a default tone in the popup; switch tone in the modal in one tap (Standard, Formal, Casual, Concise, Elaborate).
+
+🔸 Shorter & Longer – Dedicated modal buttons to tighten or expand your text without retyping.
+
+🔸 Apply In Place – When you started from an input or editor, apply the rewritten or corrected text directly into the field.
+
+🔸 Upgraded AI – Backend model tuned for faster, higher-quality rewrites and grammar checks.
+
+🔸 Polished UI – Cleaner layout and smoother interactions in the popup and on-page modal.
+
+🔸 Usage at a Glance – When you’re signed in, the popup shows how much of your daily allowance is left.
+
+🔸 Stay Signed In – Session refreshes in the background after login so you’re not stuck re-authenticating.
+
+🔸 Modal Comfort – Press Esc to close the result modal.
+
+🔸 Keyboard Shortcuts – Rewrite with Ctrl+Shift+E and grammar check with Ctrl+Shift+L (defaults; configurable in Chrome). See the extension popup for a link to shortcut settings.
+
 🖋 How It Works
 
 1️⃣ Select the text you want to improve on any webpage.
@@ -36,9 +54,9 @@ Both features share the same goal: improving clarity, fluency, and correctness w
 
 3️⃣ Or right-click on selected text and choose "Rewrite" or "Check grammar" from the context menu.
 
-4️⃣ Review the improved text in a clean modal interface.
+4️⃣ Review the improved text in a clean modal—refine with tone or Shorter / Longer, press Esc to close, or Apply back into the field.
 
-5️⃣ Copy the result with one click.
+5️⃣ Copy the result with one click (check the popup for remaining usage when signed in).
 
 ⚡ Quick Access
 
@@ -46,6 +64,7 @@ Both features share the same goal: improving clarity, fluency, and correctness w
 • Rewrite button appears when you select
 • Right-click context menu for rewrite and grammar check
 • Toggle features on/off from the extension popup
+• Esc closes the result modal; see remaining usage in the popup when signed in
 
 🎯 Perfect For
 
@@ -71,6 +90,16 @@ Need help or have a feature request? Contact us anytime.
 ↑ Changelog
 
 -----------------
+
+V1.5.0 – Tone, length, apply & polish
+• Rewrite tone: default in the popup plus one-tap tone switches in the modal—biggest upgrade this release.
+• Shorter / Longer: modal buttons to make your draft tighter or longer in one click.
+• Apply: paste the result back into inputs and editors in one click.
+• Backend AI model upgraded for faster, sharper rewrites and grammar checks.
+• Design refresh: cleaner visuals and smoother flow in the popup and modal.
+• Popup usage counter: see how much of your limit is left when you’re signed in.
+• Session handling: automatic background refresh after login—fewer repeated sign-ins.
+• Modal shortcut: Esc closes the modal.
 
 V1.4.0 – Keyboard shortcuts & feedback
 • Keyboard shortcuts: Rewrite with Ctrl+Shift+E, check grammar with Ctrl+Shift+L. Popup shows shortcut info and a link to Chrome shortcut settings.
