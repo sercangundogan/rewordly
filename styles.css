@@ -1074,8 +1074,8 @@ body.rewordly-modal-open {
   flex-direction: column !important;
   gap: 10px !important;
   padding: 16px 24px 20px !important;
-  border-top: 1px solid rgba(0, 0, 0, 0.06) !important;
-  background: #ffffff !important;
+  border-top: 1px solid rgba(28, 25, 23, 0.08) !important;
+  background: #fffefb !important;
   margin: 0 !important;
   border-bottom: none !important;
   border-left: none !important;
@@ -1121,9 +1121,17 @@ body.rewordly-modal-open {
 
 .rewordly-action-btns {
   display: flex !important;
-  gap: 12px !important;
+  flex-direction: row !important;
+  align-items: stretch !important;
+  gap: 10px !important;
   margin: 0 !important;
   padding: 0 !important;
+  width: 100% !important;
+}
+
+.rewordly-action-btns.rewordly-action-solo .rewordly-copy-btn {
+  flex: 1 1 auto !important;
+  max-width: none !important;
 }
 
 .rewordly-length-btn {
@@ -1296,27 +1304,27 @@ body.rewordly-modal-open {
 .rewordly-copy-btn,
 .rewordly-apply-btn,
 .rewordly-replace-btn {
-  flex: 1 !important;
-  padding: 10px 16px !important;
-  border: none !important;
-  border-radius: 6px !important;
-  font-size: 14px !important;
-  font-weight: 500 !important;
   cursor: pointer !important;
-  transition: all 0.2s ease !important;
-  font-family: inherit !important;
+  transition:
+    transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.2s ease,
+    border-color 0.2s ease,
+    background 0.2s ease,
+    color 0.2s ease !important;
+  font-family: 'Source Serif 4', 'Palatino Linotype', 'Book Antiqua', Palatino, serif !important;
   margin: 0 !important;
-  line-height: 1.2 !important;
   text-decoration: none !important;
   outline: none !important;
   box-sizing: border-box !important;
   position: relative !important;
-  display: inline-block !important;
+  display: inline-flex !important;
+  align-items: stretch !important;
+  justify-content: center !important;
   vertical-align: middle !important;
-  white-space: nowrap !important;
+  white-space: normal !important;
   word-wrap: normal !important;
   direction: ltr !important;
-  text-align: center !important;
+  text-align: left !important;
   text-transform: none !important;
   text-indent: 0 !important;
   text-shadow: none !important;
@@ -1325,48 +1333,168 @@ body.rewordly-modal-open {
   font-style: normal !important;
   font-variant: normal !important;
   font-stretch: normal !important;
-  font-size-adjust: none !important;
-  font-kerning: auto !important;
-  font-feature-settings: normal !important;
-  font-language-override: normal !important;
-  font-synthesis: weight style !important;
-  font-variant-alternates: normal !important;
-  font-variant-caps: normal !important;
-  font-variant-east-asian: normal !important;
-  font-variant-ligatures: normal !important;
-  font-variant-numeric: normal !important;
-  font-variant-position: normal !important;
-  font-variation-settings: normal !important;
   -webkit-font-smoothing: antialiased !important;
   -moz-osx-font-smoothing: grayscale !important;
+  border-radius: 12px !important;
+  padding: 0 !important;
+  min-height: 52px !important;
 }
 
-.rewordly-modal .rewordly-copy-btn {
-  background: #ffffff !important;
-  color: #1a1a1a !important;
-  border: 1px solid rgba(0, 0, 0, 0.12) !important;
+.rewordly-action-btn-inner {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 10px !important;
+  width: 100% !important;
+  padding: 10px 12px !important;
+  box-sizing: border-box !important;
+}
+
+.rewordly-apply-inner {
+  align-items: flex-start !important;
+  padding: 11px 14px !important;
+}
+
+.rewordly-action-icon {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-shrink: 0 !important;
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 10px !important;
+}
+
+.rewordly-copy-btn .rewordly-action-icon {
+  background: rgba(28, 25, 23, 0.06) !important;
+  color: #1c1917 !important;
+}
+
+.rewordly-apply-btn .rewordly-apply-icon {
+  background: rgba(255, 255, 255, 0.14) !important;
+  color: #faf7f2 !important;
+}
+
+.rewordly-action-svg {
+  display: block !important;
+  flex-shrink: 0 !important;
+}
+
+.rewordly-action-text-col {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  justify-content: center !important;
+  gap: 2px !important;
+  min-width: 0 !important;
+  flex: 1 1 auto !important;
+}
+
+.rewordly-copy-label,
+.rewordly-apply-label {
+  font-family: 'Fraunces', 'Palatino Linotype', Georgia, serif !important;
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+  display: block !important;
+}
+
+.rewordly-copy-sublabel,
+.rewordly-apply-sublabel {
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  line-height: 1.3 !important;
+  opacity: 0.88 !important;
+  display: block !important;
+}
+
+.rewordly-copy-btn {
+  flex: 0 1 36% !important;
+  min-width: 112px !important;
+  border: 1.5px solid rgba(28, 25, 23, 0.12) !important;
+  background: linear-gradient(180deg, #fffefb 0%, #faf7f2 100%) !important;
+  color: #1c1917 !important;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.9) inset !important;
 }
 
 .rewordly-modal .rewordly-copy-btn:hover {
-  background: #f5f5f5 !important;
-  border-color: rgba(0, 0, 0, 0.2) !important;
+  border-color: rgba(42, 74, 61, 0.35) !important;
+  background: #f4faf7 !important;
   transform: translateY(-1px) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
+  box-shadow: 0 4px 14px rgba(28, 25, 23, 0.08) !important;
 }
 
-/* Apply button — primary green, matches system design */
+.rewordly-modal .rewordly-copy-btn.rewordly-action-btn--success {
+  border-color: rgba(22, 163, 74, 0.45) !important;
+  background: linear-gradient(180deg, #ecfdf5 0%, #d1fae5 100%) !important;
+  color: #14532d !important;
+}
+
+.rewordly-modal .rewordly-copy-btn.rewordly-action-btn--success .rewordly-action-icon {
+  background: rgba(22, 163, 74, 0.18) !important;
+  color: #166534 !important;
+}
+
+/* Replace selection — primary, unmistakable commit control (stable width next to Copy) */
 .rewordly-modal .rewordly-apply-btn {
-  background: #2d4a3e !important;
-  color: #ffffff !important;
-  border: 1px solid #2d4a3e !important;
-  box-shadow: 0 2px 8px rgba(45, 74, 62, 0.2) !important;
+  flex: 1 1 58% !important;
+  min-width: 200px !important;
+  min-height: 56px !important;
+  border: 1.5px solid #1e3a30 !important;
+  background: linear-gradient(155deg, #2f5244 0%, #1e3a30 48%, #1a2e26 100%) !important;
+  color: #faf7f2 !important;
+  box-shadow:
+    0 2px 0 rgba(255, 255, 255, 0.12) inset,
+    0 6px 20px rgba(30, 58, 48, 0.35) !important;
+}
+
+/* API in flight: same footprint, clearly inactive until the result lands */
+.rewordly-modal .rewordly-apply-btn.rewordly-apply-btn--pending {
+  flex: 1 1 58% !important;
+  min-width: 200px !important;
+  min-height: 58px !important;
+  cursor: wait !important;
+  opacity: 0.94 !important;
+  border-color: rgba(30, 58, 48, 0.55) !important;
+  background: linear-gradient(155deg, #3a5248 0%, #2a4038 50%, #243530 100%) !important;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.08) inset,
+    0 3px 12px rgba(30, 58, 48, 0.22) !important;
+  filter: saturate(0.88) !important;
+}
+
+.rewordly-modal .rewordly-apply-btn.rewordly-apply-btn--pending .rewordly-apply-icon {
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+.rewordly-modal .rewordly-apply-btn .rewordly-apply-sublabel {
+  color: rgba(250, 247, 242, 0.82) !important;
+  opacity: 1 !important;
 }
 
 .rewordly-modal .rewordly-apply-btn:hover {
-  background: #1e3d32 !important;
-  border-color: #1e3d32 !important;
+  border-color: #163028 !important;
+  filter: brightness(1.05) !important;
   transform: translateY(-1px) !important;
-  box-shadow: 0 4px 12px rgba(45, 74, 62, 0.3) !important;
+  box-shadow:
+    0 2px 0 rgba(255, 255, 255, 0.14) inset,
+    0 8px 26px rgba(30, 58, 48, 0.42) !important;
+}
+
+.rewordly-modal .rewordly-apply-btn.rewordly-action-btn--success {
+  border-color: #15803d !important;
+  background: linear-gradient(155deg, #22c55e 0%, #16a34a 45%, #15803d 100%) !important;
+  color: #fff !important;
+  box-shadow: 0 4px 18px rgba(22, 163, 74, 0.35) !important;
+}
+
+.rewordly-modal .rewordly-apply-btn.rewordly-action-btn--success .rewordly-apply-sublabel {
+  color: rgba(255, 255, 255, 0.92) !important;
+}
+
+.rewordly-modal .rewordly-apply-btn.rewordly-action-btn--success .rewordly-apply-icon {
+  background: rgba(255, 255, 255, 0.22) !important;
+  color: #fff !important;
 }
 
 .rewordly-replace-btn {
@@ -1386,6 +1514,29 @@ body.rewordly-modal-open {
 .rewordly-apply-btn:active,
 .rewordly-replace-btn:active {
   transform: translateY(0) !important;
+}
+
+.rewordly-copy-btn:disabled {
+  opacity: 0.48 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+  filter: none !important;
+  pointer-events: none !important;
+}
+
+.rewordly-apply-btn:disabled:not(.rewordly-apply-btn--pending) {
+  opacity: 0.48 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+  filter: none !important;
+  pointer-events: none !important;
+}
+
+.rewordly-apply-btn.rewordly-apply-btn--pending:disabled {
+  opacity: 0.94 !important;
+  cursor: wait !important;
+  pointer-events: none !important;
+  filter: saturate(0.88) !important;
 }
 
 /* Tone selector pill row */
@@ -1515,9 +1666,16 @@ body.rewordly-modal-open {
     flex-direction: column !important;
   }
   
+  .rewordly-action-btns {
+    flex-direction: column !important;
+  }
+
   .rewordly-copy-btn,
+  .rewordly-apply-btn,
   .rewordly-replace-btn {
+    flex: 1 1 auto !important;
     width: 100% !important;
+    max-width: none !important;
   }
 }
 
@@ -1560,6 +1718,7 @@ body.rewordly-modal-open {
 @media (prefers-reduced-motion: reduce) {
   .rewordly-rewrite-button,
   .rewordly-copy-btn,
+  .rewordly-apply-btn,
   .rewordly-replace-btn {
     transition: none !important;
   }

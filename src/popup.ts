@@ -20,6 +20,9 @@ class RewordlyPopup {
   private rewriteToggle: HTMLButtonElement | null = null;
   private toneSelect: HTMLSelectElement | null = null;
 
+  /** Fingerprint of the session we already painted account email for (avoids skeleton flash on redundant re-renders). */
+  private accountRenderSessionKey: string | null = null;
+
   constructor() {
     this.init();
   }
@@ -33,8 +36,8 @@ class RewordlyPopup {
     this.updateShortcutLabels();
     await this.renderAccount();
 
-    // Re-render shortly so we pick up session set by dashboard (e.g. user just logged in)
-    setTimeout(() => void this.renderAccount(), 400);
+    // Session updates are handled by chrome.storage.onChanged (dashboard / content script writes session).
+    // A delayed second renderAccount() caused the account skeleton to flash twice for logged-in users.
 
     // Re-render when session changes (e.g. after dashboard sets it)
     chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -238,6 +241,8 @@ class RewordlyPopup {
       return;
     }
 
+    this.accountRenderSessionKey = null;
+
     if (!AUTH_ENABLED) {
       this.showAccountState(notConfigured, loggedOut, loggedIn, 'notConfigured');
       await this.refreshUsageFromNetwork();
@@ -249,7 +254,7 @@ class RewordlyPopup {
   }
 
   private async showLoggedInState(
-    _session: { access_token: string },
+    session: { access_token: string },
     notConfigured: HTMLElement | null,
     loggedOut: HTMLElement | null,
     loggedIn: HTMLElement | null
@@ -258,10 +263,20 @@ class RewordlyPopup {
 
     const emailEl = document.getElementById('accountEmail') as HTMLElement | null;
     const skeletonEl = document.getElementById('accountEmailSkeleton') as HTMLElement | null;
-    if (skeletonEl) skeletonEl.style.display = 'block';
-    if (emailEl) {
-      emailEl.style.display = 'none';
-      emailEl.textContent = '';
+    const sessionKey = session.access_token.slice(0, 48);
+    const existingEmail = emailEl?.textContent?.trim() ?? '';
+    const emailAlreadyVisible =
+      Boolean(emailEl && emailEl.style.display !== 'none' && existingEmail.length > 0);
+    const skipSkeletonFlash = this.accountRenderSessionKey === sessionKey && emailAlreadyVisible;
+
+    if (skipSkeletonFlash) {
+      if (skeletonEl) skeletonEl.style.display = 'none';
+    } else {
+      if (skeletonEl) skeletonEl.style.display = 'block';
+      if (emailEl) {
+        emailEl.style.display = 'none';
+        emailEl.textContent = '';
+      }
     }
 
     let email: string = 'Logged in';
@@ -269,6 +284,7 @@ class RewordlyPopup {
     const { ok, status, data } = await this.fetchUsageData();
 
     if (status === 401 || (ok && data['requireLogin'])) {
+      this.accountRenderSessionKey = null;
       await setSession(null);
       void this.renderAccount();
       return;
@@ -288,6 +304,7 @@ class RewordlyPopup {
       emailEl.textContent = email;
       emailEl.style.display = 'block';
     }
+    this.accountRenderSessionKey = sessionKey;
     const proBadge = document.getElementById('proBadge');
     const plansComingSoon = document.getElementById('plansComingSoon');
     if (proBadge) proBadge.style.display = isPro ? 'inline-block' : 'none';

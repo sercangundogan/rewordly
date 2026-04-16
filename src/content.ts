@@ -623,8 +623,28 @@ class RewordlyContentScript {
             </div>
           </div>
           <div class="rewordly-action-btns">
-            <button class="rewordly-copy-btn">Copy</button>
-            <button class="rewordly-apply-btn" style="display: none;">Apply</button>
+            <button type="button" class="rewordly-copy-btn" aria-label="Copy result to clipboard">
+              <span class="rewordly-action-btn-inner">
+                <span class="rewordly-action-icon" aria-hidden="true">
+                  <svg class="rewordly-action-svg" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                </span>
+                <span class="rewordly-action-text-col">
+                  <span class="rewordly-copy-label">Copy</span>
+                  <span class="rewordly-copy-sublabel">Save to clipboard</span>
+                </span>
+              </span>
+            </button>
+            <button type="button" class="rewordly-apply-btn" style="display: none;" aria-label="Replace your selection with this text">
+              <span class="rewordly-action-btn-inner rewordly-apply-inner">
+                <span class="rewordly-action-icon rewordly-apply-icon" aria-hidden="true">
+                  <svg class="rewordly-action-svg" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v10"/><path d="m8 12 4 4 4-4"/><path d="M5 21h14"/></svg>
+                </span>
+                <span class="rewordly-action-text-col">
+                  <span class="rewordly-apply-label">Replace selection</span>
+                  <span class="rewordly-apply-sublabel">Overwrites your selected text on this page</span>
+                </span>
+              </span>
+            </button>
           </div>
         </div>
       </div>
@@ -1054,8 +1074,9 @@ class RewordlyContentScript {
     rewrittenText.textContent = '';
     loading.classList.add('show');
     if (loadingText) loadingText.textContent = 'Rewriting...';
-    if (applyBtn) applyBtn.style.display = 'none';
+    if (applyBtn) this.showApplyWhileLoading(applyBtn);
     if (copyBtn) copyBtn.disabled = true;
+    this.setActionRowSoloCopy(!this.isEditableSource);
 
     this.isProcessing = true;
     try {
@@ -1097,8 +1118,9 @@ class RewordlyContentScript {
     loading.classList.add('show');
     if (loadingText) loadingText.textContent = direction === 'shorter' ? 'Making it shorter…' : 'Making it longer…';
     if (lengthBtns)  lengthBtns.style.display = 'none';
-    if (applyBtn)    applyBtn.style.display = 'none';
+    if (applyBtn) this.showApplyWhileLoading(applyBtn);
     if (copyBtn)     copyBtn.disabled = true;
+    this.setActionRowSoloCopy(!this.isEditableSource);
 
     this.isProcessing = true;
     try {
@@ -1204,13 +1226,12 @@ class RewordlyContentScript {
       loadingText.textContent = 'Rewriting...';
     }
 
-    // Reset + hide Apply button while loading — shown in displayRewrittenText when ready
+    // Editable: keep Replace visible (disabled) so the control stays full-size while the API runs
     const applyBtn = this.modal.querySelector('.rewordly-apply-btn') as HTMLButtonElement;
     if (applyBtn) {
-      applyBtn.style.display = 'none';
-      applyBtn.textContent = 'Apply';
-      applyBtn.style.background = '';
+      this.showApplyWhileLoading(applyBtn);
     }
+    this.setActionRowSoloCopy(!this.isEditableSource);
 
     // Hide length buttons while loading
     const lengthBtns = this.modal.querySelector('.rewordly-length-btns') as HTMLDivElement | null;
@@ -1260,10 +1281,10 @@ class RewordlyContentScript {
       // Reset Apply button state so it never "sticks" across opens
       const applyBtn = this.modal.querySelector('.rewordly-apply-btn') as HTMLButtonElement | null;
       if (applyBtn) {
-        applyBtn.textContent = 'Apply';
-        applyBtn.style.background = '';
+        this.syncApplyButtonDefault(applyBtn);
         applyBtn.style.display = 'none';
       }
+      this.setActionRowSoloCopy(true);
       // Hide tone selector (tone is persisted; do not reset)
       const toneSelector = this.modal.querySelector('.rewordly-tone-selector') as HTMLDivElement | null;
       if (toneSelector) toneSelector.style.display = 'none';
@@ -1306,10 +1327,10 @@ class RewordlyContentScript {
 
     // Show Apply button only when the source was an editable element
     if (applyBtn) {
-      applyBtn.style.display = this.isEditableSource ? '' : 'none';
-      applyBtn.textContent = 'Apply';
-      applyBtn.style.background = '';
+      applyBtn.style.display = this.isEditableSource ? 'inline-flex' : 'none';
+      this.syncApplyButtonDefault(applyBtn);
     }
+    this.setActionRowSoloCopy(!this.isEditableSource);
 
     // Show Shorter/Longer only for rewrite results
     const lengthBtns = this.modal.querySelector('.rewordly-length-btns') as HTMLDivElement | null;
@@ -1346,6 +1367,13 @@ class RewordlyContentScript {
     rewrittenText.textContent = `Error: ${message}`;
     rewrittenText.classList.add('show');
     rewrittenText.classList.add('error');
+
+    const applyBtnErr = this.modal.querySelector('.rewordly-apply-btn') as HTMLButtonElement | null;
+    if (applyBtnErr) {
+      applyBtnErr.style.display = 'none';
+      this.syncApplyButtonDefault(applyBtnErr);
+    }
+    this.setActionRowSoloCopy(true);
     
     if (this.currentOperation === 'grammar') {
       modalTitle.textContent = 'Grammar Check';
@@ -1378,6 +1406,13 @@ class RewordlyContentScript {
     if (loginBtn) loginBtn.style.display = requireLogin ? '' : 'none';
     if (upgradeBtn) upgradeBtn.style.display = requirePayment ? '' : 'none';
     if (limitNotice) limitNotice.style.display = 'block';
+
+    const applyBtnLim = this.modal.querySelector('.rewordly-apply-btn') as HTMLButtonElement | null;
+    if (applyBtnLim) {
+      applyBtnLim.style.display = 'none';
+      this.syncApplyButtonDefault(applyBtnLim);
+    }
+    this.setActionRowSoloCopy(true);
   }
 
   private copyRewrittenText(): void {
@@ -1391,15 +1426,17 @@ class RewordlyContentScript {
       const cleanText = text.trim().replace(/^["']|["']$/g, '');
       
       navigator.clipboard.writeText(cleanText).then(() => {
-        // Show success feedback
         const copyBtn = this.modal?.querySelector('.rewordly-copy-btn') as HTMLButtonElement;
         if (copyBtn) {
-          const originalText = copyBtn.textContent;
-          copyBtn.textContent = 'Copied!';
-          copyBtn.style.background = '#10b981';
+          const label = copyBtn.querySelector('.rewordly-copy-label');
+          const sub = copyBtn.querySelector('.rewordly-copy-sublabel');
+          copyBtn.classList.add('rewordly-action-btn--success');
+          if (label) label.textContent = 'Copied!';
+          if (sub) sub.textContent = 'Paste anywhere';
           setTimeout(() => {
-            copyBtn.textContent = originalText;
-            copyBtn.style.background = '';
+            copyBtn.classList.remove('rewordly-action-btn--success');
+            if (label) label.textContent = 'Copy';
+            if (sub) sub.textContent = 'Save to clipboard';
           }, 2000);
         }
       }).catch(err => {
@@ -1479,13 +1516,57 @@ class RewordlyContentScript {
   private showApplySuccess(): void {
     const applyBtn = this.modal?.querySelector('.rewordly-apply-btn') as HTMLButtonElement | null;
     if (applyBtn) {
-      applyBtn.textContent = 'Applied ✓';
-      applyBtn.style.background = '#10b981';
+      const label = applyBtn.querySelector('.rewordly-apply-label');
+      const sub = applyBtn.querySelector('.rewordly-apply-sublabel');
+      applyBtn.classList.add('rewordly-action-btn--success');
+      if (label) label.textContent = 'Replaced!';
+      if (sub) sub.textContent = 'Closing…';
     }
     setTimeout(() => {
-      // Hide modal (also resets button)
       this.hideModal();
     }, 700);
+  }
+
+  /** Default Apply labels — makes the overwrite action obvious. */
+  private syncApplyButtonDefault(applyBtn: HTMLButtonElement): void {
+    applyBtn.classList.remove('rewordly-action-btn--success', 'rewordly-apply-btn--pending');
+    applyBtn.disabled = false;
+    const label = applyBtn.querySelector('.rewordly-apply-label');
+    const sub = applyBtn.querySelector('.rewordly-apply-sublabel');
+    if (label) label.textContent = 'Replace selection';
+    if (sub) {
+      sub.textContent =
+        this.currentOperation === 'grammar'
+          ? 'Puts the correction where your selection was'
+          : 'Puts the rewrite where your selection was';
+    }
+    applyBtn.style.removeProperty('background');
+  }
+
+  /** Keeps Replace selection in layout (full width next to Copy) while the API is in flight. */
+  private showApplyWhileLoading(applyBtn: HTMLButtonElement): void {
+    if (!this.isEditableSource) {
+      applyBtn.style.display = 'none';
+      this.syncApplyButtonDefault(applyBtn);
+      return;
+    }
+    applyBtn.style.display = 'inline-flex';
+    this.syncApplyButtonDefault(applyBtn);
+    applyBtn.disabled = true;
+    applyBtn.classList.add('rewordly-apply-btn--pending');
+    const sub = applyBtn.querySelector('.rewordly-apply-sublabel');
+    if (sub) {
+      sub.textContent =
+        this.currentOperation === 'grammar'
+          ? 'Waiting for correction — then replaces your selection.'
+          : 'Waiting for rewrite — then replaces your selection.';
+    }
+  }
+
+  /** When Apply is hidden, let Copy use full row width. */
+  private setActionRowSoloCopy(solo: boolean): void {
+    const row = this.modal?.querySelector('.rewordly-action-btns');
+    row?.classList.toggle('rewordly-action-solo', solo);
   }
 }
 
