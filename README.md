@@ -18,6 +18,7 @@ A Chrome extension that rewrites or grammar-checks selected text using AI to imp
 - **Welcome & changelog** — Welcome page on first install, changelog on update.
 - **Account & login** (v1.3.0) — Sign in via the website for more daily usage; session is shown in the popup. Free limits can be requested by email; payment plans coming soon.
 - **Keyboard shortcuts** (v1.4.0) — `Ctrl+Shift+E` (rewrite) and `Ctrl+Shift+L` (grammar); popup shows bindings and opens Chrome shortcut settings. Optional uninstall feedback link.
+- **v1.6.0** — **Rewordly Pro** subscriptions ($4.99/mo, $49/yr); **Upgrade to Pro** in popup and limit modal; secure checkout on rewordly.store; billing management from dashboard.
 - **v1.5.0** — **Rewrite tone** (popup default + modal switches); **Shorter / Longer** in the modal; **Apply** into editable fields; **upgraded backend AI model**; **refreshed UI**; popup **usage counter** when signed in; **automatic session refresh** after login; **Esc** closes the modal.
 
 ## Security & Privacy

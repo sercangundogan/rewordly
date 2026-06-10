@@ -8,7 +8,7 @@ The extension works in two ways:
 
 Both flows share one goal: clearer, more fluent, more correct writing in the tab where you work. Rewordly stays narrow on purpose—better words, faster, with fewer mistakes—not a grab bag of unrelated tools.
 
-💡 Completely free to use—no API keys required, no monthly limits, no subscriptions.
+💡 Free to start—no API keys required. Generous daily limits on the free plan. Upgrade to Rewordly Pro for unlimited rewrites and grammar checks ($4.99/month or $49/year).
 
 ✨ Key Features
 
@@ -39,6 +39,10 @@ Both flows share one goal: clearer, more fluent, more correct writing in the tab
 🔸 Polished UI – Cleaner layout and smoother interactions in the popup and on-page modal.
 
 🔸 Usage at a Glance – When you’re signed in, the popup shows how much of your daily allowance is left.
+
+🔸 Rewordly Pro – Unlimited daily rewrites and grammar checks. Subscribe monthly or yearly on rewordly.store; manage billing from your dashboard.
+
+🔸 Upgrade in One Tap – Hit your limit? The popup and on-page modal link straight to checkout—no email workarounds.
 
 🔸 Stay Signed In – Session refreshes in the background after login so you’re not stuck re-authenticating.
 
@@ -91,6 +95,13 @@ Need help or have a feature request? Contact us anytime.
 
 -----------------
 
+V1.6.0 – Rewordly Pro & upgrade flow
+• Rewordly Pro: unlimited daily rewrites and grammar checks—$4.99/month or $49/year (2 months free on yearly).
+• Popup upgrade card: one-tap path to checkout when you're on the free plan.
+• Limit modal: "Upgrade to Pro" replaces the old email-for-limits flow when your daily cap is reached.
+• Secure checkout on rewordly.store; manage subscription and billing from your account dashboard.
+• Website pricing page with Free vs Pro comparison.
+
 V1.5.0 – Tone, length, apply & polish
 • Rewrite tone: default in the popup plus one-tap tone switches in the modal—biggest upgrade this release.
 • Shorter / Longer: modal buttons to make your draft tighter or longer in one click.
@@ -106,11 +117,11 @@ V1.4.0 – Keyboard shortcuts & feedback
 • Uninstall feedback: When you remove the extension, Chrome can open an optional feedback form.
 • Context menu (Rewrite / Check grammar) now works correctly when “Show hover buttons” is off for the current page.
 
-V1.3.0 – Account, login & free limits
+V1.3.0 – Account, login & usage limits
 • Account and login: Sign in via the website for more daily usage. Session is managed in the extension popup.
 • Supabase authentication: Secure login integrated; API requests use your session for usage tracking.
-• Free limits by email: When you hit limits, use "Email for free limits" to request more—or email us directly. Payment plans coming soon.
-• Popup UI: Account section in English; "Sign out" and clearer messaging. Upgrade button replaced with "Payment plans coming soon" and email link for free limits.
+• Daily usage limits with clear messaging in the popup when signed in.
+• Popup UI: Account section in English; "Sign out" and clearer messaging.
 
 V1.2.0 – Focus on core features
 • Real-time grammar checking removed (we may revisit it later)
