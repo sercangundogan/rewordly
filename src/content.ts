@@ -590,8 +590,8 @@ class RewordlyContentScript {
             <div class="rewordly-limit-notice" style="display: none;">
               <p class="rewordly-limit-message"></p>
               <div class="rewordly-limit-actions">
-                <button type="button" class="rewordly-limit-btn rewordly-login-btn">Log in</button>
-                <button type="button" class="rewordly-limit-btn rewordly-upgrade-btn">Email for free limits</button>
+                <button type="button" class="rewordly-limit-btn rewordly-login-btn">Log in for more</button>
+                <button type="button" class="rewordly-limit-btn rewordly-upgrade-btn">Upgrade to Pro — from $4.99/mo</button>
               </div>
             </div>
           </div>
@@ -686,7 +686,7 @@ class RewordlyContentScript {
     const loginBtn = this.modal.querySelector('.rewordly-login-btn') as HTMLButtonElement;
     const upgradeBtn = this.modal.querySelector('.rewordly-upgrade-btn') as HTMLButtonElement;
     const loginUrl = `${API_BASE}/login`;
-    const freeLimitsEmail = 'mailto:sercangundogan35@gmail.com?subject=Rewordly%20Free%20Limits';
+    const upgradeUrl = `${API_BASE}/dashboard?upgrade=1`;
     if (loginBtn) {
       loginBtn.addEventListener('click', () => {
         chrome.runtime.sendMessage({ type: 'OPEN_TAB', url: loginUrl });
@@ -694,7 +694,7 @@ class RewordlyContentScript {
     }
     if (upgradeBtn) {
       upgradeBtn.addEventListener('click', () => {
-        window.open(freeLimitsEmail, '_blank');
+        chrome.runtime.sendMessage({ type: 'OPEN_TAB', url: upgradeUrl });
       });
     }
 
@@ -1402,9 +1402,21 @@ class RewordlyContentScript {
     rewrittenText.classList.remove('show', 'error');
     rewrittenText.style.setProperty('display', 'none', 'important');
     if (resultTitle) resultTitle.style.setProperty('display', 'none', 'important');
-    if (limitMessage) limitMessage.textContent = message;
-    if (loginBtn) loginBtn.style.display = requireLogin ? '' : 'none';
-    if (upgradeBtn) upgradeBtn.style.display = requirePayment ? '' : 'none';
+    const showLogin = requireLogin;
+    const showUpgrade = requirePayment;
+    if (limitMessage) {
+      limitMessage.textContent = showUpgrade
+        ? 'Your daily limit has been reached. Upgrade to Pro for unlimited rewrites and grammar checks.'
+        : message;
+    }
+    if (loginBtn) loginBtn.style.display = showLogin ? '' : 'none';
+    if (upgradeBtn) upgradeBtn.style.display = showUpgrade ? '' : 'none';
+    const limitActions = this.modal.querySelector('.rewordly-limit-actions') as HTMLDivElement | null;
+    if (limitActions) {
+      const visibleCount = (showLogin ? 1 : 0) + (showUpgrade ? 1 : 0);
+      limitActions.classList.toggle('rewordly-limit-solo', visibleCount === 1);
+      limitActions.classList.toggle('rewordly-limit-upgrade-primary', showUpgrade && !showLogin);
+    }
     if (limitNotice) limitNotice.style.display = 'block';
 
     const applyBtnLim = this.modal.querySelector('.rewordly-apply-btn') as HTMLButtonElement | null;

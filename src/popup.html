@@ -242,28 +242,71 @@
       box-shadow: 0 2px 8px var(--rw-forest-glow);
     }
 
-    .plans-coming-soon {
+    .upgrade-card {
+      position: relative;
       margin-bottom: 12px;
-      padding: 12px 14px;
-      background: var(--rw-success-bg);
-      border: 1px solid rgba(42, 74, 61, 0.25);
+      padding: 14px 16px;
+      background: linear-gradient(135deg, var(--rw-forest) 0%, var(--rw-forest-deep) 100%);
       border-radius: var(--rw-radius-sm);
+      overflow: hidden;
+      box-shadow: 0 4px 14px var(--rw-forest-glow);
     }
 
-    .plans-coming-soon-text {
-      margin: 0;
-      font-size: 12px;
-      color: var(--rw-forest-deep);
-      line-height: 1.5;
+    .upgrade-card::after {
+      content: '';
+      position: absolute;
+      top: -60%;
+      right: -20%;
+      width: 65%;
+      height: 180%;
+      background: linear-gradient(105deg, transparent 0%, rgba(196, 113, 61, 0.18) 50%, transparent 75%);
+      animation: rw-shimmer-header 7s ease-in-out infinite alternate;
+      pointer-events: none;
     }
 
-    .plans-coming-soon-text a {
-      color: var(--rw-forest);
+    .upgrade-card-title {
+      position: relative;
+      margin: 0 0 2px;
+      font-family: var(--rw-font-display);
+      font-size: 15px;
       font-weight: 600;
-      text-decoration: none;
+      color: #faf7f2;
+      letter-spacing: -0.01em;
     }
 
-    .plans-coming-soon-text a:hover { text-decoration: underline; }
+    .upgrade-card-text {
+      position: relative;
+      margin: 0 0 10px;
+      font-size: 12px;
+      color: rgba(250, 247, 242, 0.78);
+      line-height: 1.45;
+    }
+
+    .upgrade-card-btn {
+      position: relative;
+      display: block;
+      width: 100%;
+      padding: 9px 12px;
+      background: #faf7f2;
+      color: var(--rw-forest-deep);
+      border: none;
+      border-radius: 999px;
+      font-family: var(--rw-font-body);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s var(--rw-ease), box-shadow 0.2s var(--rw-ease);
+    }
+
+    .upgrade-card-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    }
+
+    .upgrade-card-price {
+      font-weight: 400;
+      opacity: 0.75;
+    }
 
     .usage-section {
       margin-bottom: 16px;
@@ -774,8 +817,10 @@
           <div class="account-badges">
             <span id="proBadge" class="pro-badge" style="display: none;">Pro</span>
           </div>
-          <div id="plansComingSoon" class="plans-coming-soon" style="display: none;">
-            <p class="plans-coming-soon-text">Payment plans coming soon. Unlimited daily use will be available. Until then, email <a href="mailto:sercangundogan35@gmail.com" target="_blank">sercangundogan35@gmail.com</a> to request free limits.</p>
+          <div id="upgradeCard" class="upgrade-card" style="display: none;">
+            <p class="upgrade-card-title">Rewordly Pro</p>
+            <p class="upgrade-card-text">Unlimited rewrites and grammar checks, every day.</p>
+            <button type="button" id="upgradeBtn" class="upgrade-card-btn">Upgrade to Pro <span class="upgrade-card-price">· from $4.99/mo</span></button>
           </div>
           <div class="account-actions">
             <button type="button" id="logoutBtn" class="button secondary">Sign out</button>

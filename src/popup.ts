@@ -199,6 +199,7 @@ class RewordlyPopup {
     }
     document.getElementById('loginWebsiteBtn')?.addEventListener('click', () => this.openWebsiteLogin());
     document.getElementById('logoutBtn')?.addEventListener('click', () => this.handleLogout());
+    document.getElementById('upgradeBtn')?.addEventListener('click', () => this.openUpgradePage());
     document.getElementById('openShortcutsBtn')?.addEventListener('click', () => this.openShortcutsPage());
   }
 
@@ -306,9 +307,13 @@ class RewordlyPopup {
     }
     this.accountRenderSessionKey = sessionKey;
     const proBadge = document.getElementById('proBadge');
-    const plansComingSoon = document.getElementById('plansComingSoon');
+    const upgradeCard = document.getElementById('upgradeCard');
     if (proBadge) proBadge.style.display = isPro ? 'inline-block' : 'none';
-    if (plansComingSoon) plansComingSoon.style.display = isPro ? 'none' : 'block';
+    if (upgradeCard) upgradeCard.style.display = isPro ? 'none' : 'block';
+  }
+
+  private openUpgradePage(): void {
+    chrome.tabs.create({ url: `${API_BASE}/dashboard?upgrade=1` });
   }
 
   private openWebsiteLogin(): void {
