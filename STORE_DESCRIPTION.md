@@ -40,6 +40,12 @@ Both flows share one goal: clearer, more fluent, more correct writing in the tab
 
 🔸 Usage at a Glance – When you’re signed in, the popup shows how much of your daily allowance is left.
 
+🔸 Auto Grammar Check (Pro) – Checks spelling and grammar as you type in inputs and editors. A small Fix badge appears when a correction is ready—hover to preview the diff, click to apply. Includes a loading spinner while checks run.
+
+🔸 Rewrite Alternatives (Pro) – Each rewrite can return up to three variants. Switch between them with one-tap pills in the result modal.
+
+🔸 Auto Check Toggle – Turn proactive grammar checking on or off from the popup; status shows "Checking as you type" or "Off".
+
 🔸 Rewordly Pro – Unlimited daily rewrites and grammar checks. Subscribe monthly or yearly on rewordly.store; manage billing from your dashboard.
 
 🔸 Upgrade in One Tap – Hit your limit? The popup and on-page modal link straight to checkout—no email workarounds.
@@ -94,6 +100,12 @@ Need help or have a feature request? Contact us anytime.
 ↑ Changelog
 
 -----------------
+
+V1.7.0 – Proactive grammar & rewrite alternatives
+• Auto grammar check (Pro): spelling and grammar checked as you type in inputs and editors. A Fix badge appears when a correction is ready—hover to preview, click to apply.
+• Loading spinner on the Fix badge while proactive checks run.
+• Rewrite alternatives (Pro): up to three variants per rewrite; switch with one-tap pills in the modal.
+• Popup toggle for auto grammar check with live status ("Checking as you type" / "Off").
 
 V1.6.0 – Rewordly Pro & upgrade flow
 • Rewordly Pro: unlimited daily rewrites and grammar checks—$4.99/month or $49/year (2 months free on yearly).

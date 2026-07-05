@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Rewordly",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "Rewrite selected text instantly with advanced AI to enhance clarity, tone, and readability.",
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://rewordly.store https://*.supabase.co;"

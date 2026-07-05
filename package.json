@@ -1,6 +1,6 @@
 {
   "name": "rewordly",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "Rewrite selected text instantly with advanced AI to enhance clarity, tone, and readability.",
   "main": "src/content.ts",
   "scripts": {
