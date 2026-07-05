@@ -488,7 +488,11 @@ class RewordlyContentScript {
       event.stopPropagation();
       event.stopImmediatePropagation();
       // mousedown (not click) so the source field keeps focus, matching the pill handler
-      if (event.type === 'mousedown' && targetEl.closest('.rewordly-proactive-pill')) {
+      if (
+        event.type === 'mousedown' &&
+        targetEl.closest('.rewordly-proactive-pill') &&
+        !this.proactiveBadge.classList.contains('rewordly-proactive-loading')
+      ) {
         event.preventDefault();
         this.applyProactiveCorrection();
       }
@@ -1720,6 +1724,8 @@ class RewordlyContentScript {
     // Long text → only send the tail the user is actively writing
     const { prefix, tail } = this.splitProactiveTail(text);
 
+    this.showProactiveLoading(target, abort);
+
     try {
       // Reuse the grammar endpoint (already deployed, Pro = unlimited, 402 = not Pro/limit)
       const response = await fetch(`${API_BASE}/api/grammar`, {
@@ -1755,6 +1761,8 @@ class RewordlyContentScript {
       this.showProactiveBadge(target, tail.trim(), correctedTail);
     } catch {
       // Network errors / aborts are silent — proactive is best-effort
+    } finally {
+      this.hideProactiveLoading(abort);
     }
   }
 
@@ -1765,7 +1773,8 @@ class RewordlyContentScript {
     badge.className = 'rewordly-proactive-badge';
     badge.innerHTML = `
       <button type="button" class="rewordly-proactive-pill" aria-label="Apply Rewordly correction">
-        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+        <span class="rewordly-proactive-spinner" aria-hidden="true"></span>
+        <svg class="rewordly-proactive-check" xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
         <span class="rewordly-proactive-label">Fix</span>
       </button>
       <div class="rewordly-proactive-popover">
@@ -1787,6 +1796,55 @@ class RewordlyContentScript {
     return badge;
   }
 
+  private showProactiveLoading(target: HTMLElement, abort: AbortController): void {
+    const badge = this.ensureProactiveBadge();
+    badge.dataset['rewordlyFor'] = this.proactiveFieldId(target);
+
+    const pill = badge.querySelector('.rewordly-proactive-pill') as HTMLButtonElement;
+    pill.setAttribute('aria-busy', 'true');
+    pill.setAttribute('aria-label', 'Checking grammar');
+
+    badge.classList.remove('rewordly-proactive-success');
+    badge.classList.add('rewordly-proactive-loading');
+
+    this.positionProactiveBadge(target);
+
+    badge.classList.remove('show');
+    void (badge as HTMLElement).offsetWidth;
+    badge.classList.add('show');
+
+    window.addEventListener('scroll', this.boundRepositionProactiveBadge, true);
+    window.addEventListener('resize', this.boundRepositionProactiveBadge);
+
+    // Stash which request owns the spinner so aborted checks don't clear a newer one
+    badge.dataset['rewordlyLoadingFor'] = String(abort.signal);
+  }
+
+  private hideProactiveLoading(abort?: AbortController): void {
+    if (!this.proactiveBadge) return;
+    if (
+      abort &&
+      this.proactiveBadge.dataset['rewordlyLoadingFor'] &&
+      this.proactiveBadge.dataset['rewordlyLoadingFor'] !== String(abort.signal)
+    ) {
+      return;
+    }
+
+    const pill = this.proactiveBadge.querySelector('.rewordly-proactive-pill') as HTMLButtonElement | null;
+    pill?.removeAttribute('aria-busy');
+    pill?.setAttribute('aria-label', 'Apply Rewordly correction');
+
+    this.proactiveBadge.classList.remove('rewordly-proactive-loading');
+    delete this.proactiveBadge.dataset['rewordlyLoadingFor'];
+
+    // No fix to show — hide the badge entirely
+    if (!this.proactiveCorrected) {
+      this.proactiveBadge.classList.remove('show');
+      window.removeEventListener('scroll', this.boundRepositionProactiveBadge, true);
+      window.removeEventListener('resize', this.boundRepositionProactiveBadge);
+    }
+  }
+
   private showProactiveBadge(target: HTMLElement, original: string, corrected: string): void {
     const badge = this.ensureProactiveBadge();
     badge.dataset['rewordlyFor'] = this.proactiveFieldId(target);
@@ -1794,7 +1852,11 @@ class RewordlyContentScript {
     // Reset pill label — clears any stale "Done" from a previous fix
     const label = badge.querySelector('.rewordly-proactive-label');
     if (label) label.textContent = 'Fix';
-    badge.classList.remove('rewordly-proactive-success');
+    badge.classList.remove('rewordly-proactive-success', 'rewordly-proactive-loading');
+    delete badge.dataset['rewordlyLoadingFor'];
+    const pill = badge.querySelector('.rewordly-proactive-pill') as HTMLButtonElement;
+    pill.removeAttribute('aria-busy');
+    pill.setAttribute('aria-label', 'Apply Rewordly correction');
 
     // Show a word-level diff in the popover
     const preview = badge.querySelector('.rewordly-proactive-preview') as HTMLElement;
@@ -1900,8 +1962,12 @@ class RewordlyContentScript {
       // Always reset the label so the next appearance starts clean
       const label = this.proactiveBadge.querySelector('.rewordly-proactive-label');
       if (label) label.textContent = 'Fix';
-      this.proactiveBadge.classList.remove('show', 'rewordly-proactive-success');
+      const pill = this.proactiveBadge.querySelector('.rewordly-proactive-pill') as HTMLButtonElement | null;
+      pill?.removeAttribute('aria-busy');
+      pill?.setAttribute('aria-label', 'Apply Rewordly correction');
+      this.proactiveBadge.classList.remove('show', 'rewordly-proactive-success', 'rewordly-proactive-loading');
       delete this.proactiveBadge.dataset['rewordlyFor'];
+      delete this.proactiveBadge.dataset['rewordlyLoadingFor'];
     }
     window.removeEventListener('scroll', this.boundRepositionProactiveBadge, true);
     window.removeEventListener('resize', this.boundRepositionProactiveBadge);
