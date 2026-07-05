@@ -413,6 +413,63 @@
       line-height: 1.5;
     }
 
+    .toggle-pro-tag {
+      display: inline-block;
+      margin-left: 6px;
+      padding: 1px 7px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      color: #fff;
+      background: linear-gradient(135deg, var(--rw-forest) 0%, var(--rw-forest-deep) 100%);
+      border-radius: 999px;
+      vertical-align: middle;
+    }
+
+    .toggle-label-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .grammar-status {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .grammar-status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: rgba(28, 25, 23, 0.18);
+      flex-shrink: 0;
+      transition: background 0.3s, box-shadow 0.3s;
+    }
+
+    .grammar-status-dot.active {
+      background: #16a34a;
+      box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15);
+      animation: rw-grammar-pulse 2.4s ease-in-out infinite;
+    }
+
+    @keyframes rw-grammar-pulse {
+      0%, 100% { box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15); }
+      50%       { box-shadow: 0 0 0 6px rgba(22, 163, 74, 0.04); }
+    }
+
+    #grammarStatusText {
+      font-size: 11px;
+      font-family: var(--rw-font-body);
+      color: var(--rw-muted);
+      transition: color 0.3s;
+    }
+
+    #grammarStatusText.active {
+      color: #16a34a;
+    }
+
     .tone-row {
       margin-top: 14px;
       display: flex;
@@ -857,6 +914,17 @@
           <button class="toggle active" id="rewriteToggle" type="button" aria-label="Toggle rewrite feature"></button>
         </div>
         <p class="toggle-hint">Show rewrite and grammar controls when you select text.</p>
+        <div class="toggle-container" style="margin-top: 14px;">
+          <div class="toggle-label-stack">
+            <span class="toggle-label">Auto grammar check <span class="toggle-pro-tag">Pro</span></span>
+            <span class="grammar-status" id="grammarStatus">
+              <span class="grammar-status-dot" id="grammarStatusDot"></span>
+              <span id="grammarStatusText">Off</span>
+            </span>
+          </div>
+          <button class="toggle active" id="proactiveToggle" type="button" aria-label="Toggle auto grammar check"></button>
+        </div>
+        <p class="toggle-hint">Checks spelling &amp; grammar as you type. A small "Fix" badge appears — hover for the diff, click to apply.</p>
         <div class="tone-row">
           <span class="tone-row-label">Default tone</span>
           <select id="rewriteTone" class="tone-select" aria-label="Default rewrite tone">

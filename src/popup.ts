@@ -9,15 +9,20 @@ import { getSession, setSession, SESSION_KEY, getApiHeaders } from './auth';
 interface RewordlySettings {
   rewriteEnabled: boolean;
   rewriteTone: 'standard' | 'formal' | 'casual' | 'concise' | 'elaborate';
+  proactiveEnabled: boolean;
 }
 
 class RewordlyPopup {
   private settings: RewordlySettings = {
     rewriteEnabled: true,
     rewriteTone: 'standard',
+    proactiveEnabled: true,
   };
 
   private rewriteToggle: HTMLButtonElement | null = null;
+  private proactiveToggle: HTMLButtonElement | null = null;
+  private grammarStatusDot: HTMLElement | null = null;
+  private grammarStatusText: HTMLElement | null = null;
   private toneSelect: HTMLSelectElement | null = null;
 
   /** Fingerprint of the session we already painted account email for (avoids skeleton flash on redundant re-renders). */
@@ -29,6 +34,9 @@ class RewordlyPopup {
 
   private async init(): Promise<void> {
     this.rewriteToggle = document.getElementById('rewriteToggle') as HTMLButtonElement;
+    this.proactiveToggle = document.getElementById('proactiveToggle') as HTMLButtonElement;
+    this.grammarStatusDot = document.getElementById('grammarStatusDot');
+    this.grammarStatusText = document.getElementById('grammarStatusText');
     this.toneSelect = document.getElementById('rewriteTone') as HTMLSelectElement;
 
     await this.loadSettings();
@@ -163,12 +171,22 @@ class RewordlyPopup {
 
   private async loadSettings(): Promise<void> {
     try {
-      const result = await chrome.storage.sync.get(['rewordlyRewriteEnabled', 'rewordlyRewriteTone']);
+      const result = await chrome.storage.sync.get([
+        'rewordlyRewriteEnabled',
+        'rewordlyRewriteTone',
+        'rewordlyProactiveEnabled',
+      ]);
       const stored = result['rewordlyRewriteEnabled'];
       // Default to true when never set (first install)
       this.settings.rewriteEnabled = stored !== false;
       if (stored === undefined) {
         await chrome.storage.sync.set({ rewordlyRewriteEnabled: true });
+      }
+
+      const storedProactive = result['rewordlyProactiveEnabled'];
+      this.settings.proactiveEnabled = storedProactive !== false;
+      if (storedProactive === undefined) {
+        await chrome.storage.sync.set({ rewordlyProactiveEnabled: true });
       }
 
       const storedTone = result['rewordlyRewriteTone'];
@@ -193,6 +211,9 @@ class RewordlyPopup {
   private setupEventListeners(): void {
     if (this.rewriteToggle) {
       this.rewriteToggle.addEventListener('click', this.toggleRewrite.bind(this));
+    }
+    if (this.proactiveToggle) {
+      this.proactiveToggle.addEventListener('click', this.toggleProactive.bind(this));
     }
     if (this.toneSelect) {
       this.toneSelect.addEventListener('change', this.handleToneChange.bind(this));
@@ -327,17 +348,33 @@ class RewordlyPopup {
     chrome.tabs.create({ url: `${API_BASE}/logout` });
   }
 
+  private setProactiveStatus(enabled: boolean): void {
+    if (this.proactiveToggle) {
+      this.proactiveToggle.classList.toggle('active', enabled);
+    }
+    if (this.grammarStatusDot) {
+      this.grammarStatusDot.classList.toggle('active', enabled);
+    }
+    if (this.grammarStatusText) {
+      this.grammarStatusText.textContent = enabled ? 'Checking as you type' : 'Off';
+      this.grammarStatusText.classList.toggle('active', enabled);
+    }
+  }
+
   private updateUI(): void {
     if (this.rewriteToggle) {
-      if (this.settings.rewriteEnabled) {
-        this.rewriteToggle.classList.add('active');
-      } else {
-        this.rewriteToggle.classList.remove('active');
-      }
+      this.rewriteToggle.classList.toggle('active', this.settings.rewriteEnabled);
     }
+    this.setProactiveStatus(this.settings.proactiveEnabled);
     if (this.toneSelect) {
       this.toneSelect.value = this.settings.rewriteTone;
     }
+  }
+
+  private async toggleProactive(): Promise<void> {
+    this.settings.proactiveEnabled = !this.settings.proactiveEnabled;
+    this.setProactiveStatus(this.settings.proactiveEnabled);
+    await this.saveSettings();
   }
 
   private async toggleRewrite(): Promise<void> {
@@ -367,6 +404,7 @@ class RewordlyPopup {
       await chrome.storage.sync.set({
         rewordlyRewriteEnabled: this.settings.rewriteEnabled,
         rewordlyRewriteTone: this.settings.rewriteTone,
+        rewordlyProactiveEnabled: this.settings.proactiveEnabled,
       });
 
       this.showSuccessMessage();
