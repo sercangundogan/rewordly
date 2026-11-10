@@ -1,7 +1,7 @@
 {
   "name": "rewordly",
-  "version": "1.7.0",
-  "description": "Rewrite selected text instantly with advanced AI to enhance clarity, tone, and readability.",
+  "version": "1.8.0",
+  "description": "Catch grammar & spelling mistakes as you type on any site, in any language, plus one-click AI rewriting. Free to start.",
   "main": "src/content.ts",
   "scripts": {
     "build": "webpack --mode=production",
