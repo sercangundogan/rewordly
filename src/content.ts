@@ -94,14 +94,12 @@ function ensureRewordlyFontsInjected(): void {
 interface RewordlyConfig {
   rewriteEnabled: boolean;
   rewriteTone: 'standard' | 'formal' | 'casual' | 'concise' | 'elaborate';
-  proactiveEnabled: boolean;
 }
 
 class RewordlyContentScript {
   private config: RewordlyConfig = {
     rewriteEnabled: true
     ,rewriteTone: 'standard'
-    ,proactiveEnabled: true
   };
   
   private rewriteButton: HTMLDivElement | null = null;
@@ -117,25 +115,6 @@ class RewordlyContentScript {
   // Rewrite alternatives (Pro returns up to 3 variants per request)
   private currentVariants: string[] = [];
   private activeVariantIndex: number = 0;
-
-  // Proactive (check-while-typing) state — Pro feature
-  private proactiveBadge: HTMLDivElement | null = null;
-  private proactiveTarget: HTMLElement | null = null;
-  private proactiveCorrected: string | null = null;
-  private proactiveLastCheckedText: string = '';
-  private proactiveDebounceId: ReturnType<typeof setTimeout> | null = null;
-  private proactiveHideTimeoutId: ReturnType<typeof setTimeout> | null = null;
-  private proactiveAbort: AbortController | null = null;
-  private proactiveDisabledForSession: boolean = false;
-  private proactiveApplying: boolean = false;
-  private static readonly PROACTIVE_DEBOUNCE_MS = 1800;
-  private static readonly PROACTIVE_MIN_CHARS = 20;
-  /** Sanity cap — beyond this we skip checks entirely (reading huge fields on every input is wasteful). */
-  private static readonly PROACTIVE_MAX_CHARS = 20000;
-  /** When the text is longer than this, only its tail is sent to the API (token cost control). */
-  private static readonly PROACTIVE_TAIL_THRESHOLD = 500;
-  /** Size of the tail window sent for long texts, before snapping to a sentence boundary. */
-  private static readonly PROACTIVE_TAIL_CHARS = 400;
 
   // Source element tracking for "Apply" (direct replacement in editable fields)
   private sourceElement: HTMLInputElement | HTMLTextAreaElement | Element | null = null;
@@ -229,8 +208,6 @@ class RewordlyContentScript {
     // Create modal (initially hidden)
     this.createModal();
 
-    // Proactive check-while-typing (Pro)
-    this.setupProactiveListeners();
   }
 
   private setupMessageListener(): void {
@@ -277,17 +254,12 @@ class RewordlyContentScript {
       const result = await chrome.storage.sync.get([
         'rewordlyRewriteEnabled',
         'rewordlyRewriteTone',
-        'rewordlyProactiveEnabled',
       ]);
       this.config.rewriteEnabled = result['rewordlyRewriteEnabled'] !== false;
       const storedTone = result['rewordlyRewriteTone'];
       const validTones: RewordlyConfig['rewriteTone'][] = ['standard', 'formal', 'casual', 'concise', 'elaborate'];
       this.config.rewriteTone = validTones.includes(storedTone) ? storedTone : 'standard';
       this.currentTone = this.config.rewriteTone;
-      this.config.proactiveEnabled = result['rewordlyProactiveEnabled'] !== false;
-      if (!this.config.proactiveEnabled) {
-        this.hideProactiveBadge();
-      }
     } catch (error) {
       console.error('Failed to load Rewordly config:', error);
     }
@@ -480,32 +452,18 @@ class RewordlyContentScript {
       return;
     }
 
-    // Proactive Fix badge — same isolation so host modals don't treat Fix as "click outside"
-    if (
-      this.proactiveBadge?.classList.contains('show') &&
-      this.proactiveBadge.contains(targetEl)
-    ) {
-      console.debug(`[Rewordly] Intercepting ${event.type} on proactive badge`);
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      // mousedown (not click) so the source field keeps focus, matching the pill handler
-      if (
-        event.type === 'mousedown' &&
-        targetEl.closest('.rewordly-proactive-pill') &&
-        !this.proactiveBadge.classList.contains('rewordly-proactive-loading')
-      ) {
-        event.preventDefault();
-        this.applyProactiveCorrection();
-      }
-      return;
-    }
-
-    // Check if clicking on our rewrite button - also isolate to prevent host modal closure
+    // Clicks on our floating button: isolate them from the host page, like the modal.
+    // Stopping propagation at window capture also keeps the event from ever reaching the
+    // button's own listeners, so the action is dispatched from here.
     if (this.rewriteButton?.contains(targetEl)) {
-      console.debug(`[Rewordly] Intercepting ${event.type} on rewrite button`);
       event.stopPropagation();
       event.stopImmediatePropagation();
-      // Let the button's own handlers run normally
+      // Keep the selection (and the field's focus) while pressing the button.
+      if (event.type === 'mousedown' || event.type === 'pointerdown') event.preventDefault();
+      if (event.type === 'click') {
+        if (targetEl.closest('.rewordly-rewrite-part')) void this.handleRewriteClick();
+        else if (targetEl.closest('.rewordly-grammar-part')) void this.handleGrammarClick();
+      }
       return;
     }
 
@@ -685,27 +643,11 @@ class RewordlyContentScript {
     tooltipGrammar.textContent = 'Check Grammar';
     document.body.appendChild(tooltipGrammar);
 
-    const combinedBtn = this.rewriteButton.querySelector('.rewordly-combined-rewrite-btn') as HTMLDivElement;
     const rewritePart = this.rewriteButton.querySelector('.rewordly-rewrite-part') as HTMLButtonElement;
     const grammarPart = this.rewriteButton.querySelector('.rewordly-grammar-part') as HTMLButtonElement;
 
-    // Prevent blur when clicking any part of the button
-    combinedBtn.addEventListener('mousedown', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-    });
-
-    rewritePart.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      this.handleRewriteClick();
-    });
-
-    grammarPart.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      this.handleGrammarClick();
-    });
+    // Clicks are handled in handleOutsideClick (window capture), which isolates them from
+    // the host page and dispatches Rewrite / Check Grammar from there.
 
     // Tooltip for rewrite part
     const showRewriteTooltip = () => {
@@ -1572,568 +1514,6 @@ class RewordlyContentScript {
     if (!this.modal) return;
     const selector = this.modal.querySelector('.rewordly-variant-selector') as HTMLDivElement | null;
     if (selector) selector.style.display = 'none';
-  }
-
-  // ---------------------------------------------------------------------
-  // Proactive check-while-typing (Pro feature)
-  //
-  // While a Pro user types in an editable field, the text is checked in
-  // the background after a typing pause. When corrections are found, a
-  // small badge appears at the field's corner; hovering it previews the
-  // corrected text and clicking applies it in place. Nothing is ever
-  // changed without the user's click.
-  // ---------------------------------------------------------------------
-
-  private setupProactiveListeners(): void {
-    document.addEventListener('focusin', (e) => {
-      const target = this.resolveProactiveTarget(e.target);
-      if (target) {
-        this.proactiveTarget = target;
-        // Field changed — stale results from another field don't apply
-        if (this.proactiveBadge?.dataset['rewordlyFor'] !== this.proactiveFieldId(target)) {
-          this.hideProactiveBadge();
-        }
-      }
-    }, true);
-
-    document.addEventListener('focusout', (e) => {
-      if (e.target !== this.proactiveTarget) return;
-      // Small delay so a click on the badge (which blurs the field) still lands
-      this.proactiveHideTimeoutId = setTimeout(() => {
-        if (!this.proactiveBadge?.matches(':hover')) {
-          this.hideProactiveBadge();
-        }
-      }, 250);
-    }, true);
-
-    document.addEventListener('input', (e) => {
-      if (!this.config.proactiveEnabled || this.proactiveDisabledForSession) return;
-      if (this.proactiveApplying) return; // ignore the input event our own apply dispatches
-      const target = this.resolveProactiveTarget(e.target);
-      if (!target) return;
-      this.proactiveTarget = target;
-      // Text changed — current badge is stale
-      this.hideProactiveBadge();
-      this.scheduleProactiveCheck(target);
-    }, true);
-  }
-
-  /** Returns the element to watch if the event target is an eligible editable field. */
-  private resolveProactiveTarget(raw: EventTarget | null): HTMLElement | null {
-    if (!(raw instanceof HTMLElement)) return null;
-    if (raw instanceof HTMLTextAreaElement) {
-      return raw.readOnly || raw.disabled ? null : raw;
-    }
-    if (raw instanceof HTMLInputElement) {
-      // Block non-text types — anything that isn't free-form text input
-      const BLOCKED = new Set([
-        'password', 'hidden', 'checkbox', 'radio',
-        'file', 'submit', 'button', 'image', 'reset', 'range', 'color',
-        'number', 'date', 'time', 'datetime-local', 'month', 'week',
-      ]);
-      const type = (raw.type || 'text').toLowerCase();
-      if (BLOCKED.has(type)) return null;
-      return raw.readOnly || raw.disabled ? null : raw;
-    }
-    if (raw.isContentEditable) {
-      // Walk up to find the outermost contenteditable root
-      let root: HTMLElement = raw;
-      while (root.parentElement && root.parentElement.isContentEditable) {
-        root = root.parentElement;
-      }
-      return root;
-    }
-    return null;
-  }
-
-  private proactiveFieldId(el: HTMLElement): string {
-    let id = el.dataset['rewordlyFieldId'];
-    if (!id) {
-      id = `rw-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-      el.dataset['rewordlyFieldId'] = id;
-    }
-    return id;
-  }
-
-  private getProactiveFieldText(el: HTMLElement): string {
-    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
-      return el.value;
-    }
-    return el.innerText ?? el.textContent ?? '';
-  }
-
-  private scheduleProactiveCheck(target: HTMLElement): void {
-    if (this.proactiveDebounceId) clearTimeout(this.proactiveDebounceId);
-    this.proactiveDebounceId = setTimeout(() => {
-      void this.runProactiveCheck(target);
-    }, RewordlyContentScript.PROACTIVE_DEBOUNCE_MS);
-  }
-
-  /**
-   * Token cost control: for long texts only the tail (where the user is typing)
-   * is sent to the API. The window is snapped forward to a sentence/paragraph
-   * boundary so the model always sees complete sentences.
-   * Returns { prefix, tail } where prefix + tail === full text.
-   */
-  private splitProactiveTail(text: string): { prefix: string; tail: string } {
-    if (text.length <= RewordlyContentScript.PROACTIVE_TAIL_THRESHOLD) {
-      return { prefix: '', tail: text };
-    }
-
-    const windowStart = text.length - RewordlyContentScript.PROACTIVE_TAIL_CHARS;
-    const rawTail = text.slice(windowStart);
-
-    // Snap to the first sentence end or paragraph break inside the window
-    const boundary = rawTail.match(/[.!?…]["')\]]?\s+|\n+/);
-    let cut = 0;
-    if (boundary && boundary.index !== undefined) {
-      cut = boundary.index + boundary[0].length;
-    } else {
-      // No sentence boundary — at least don't cut mid-word
-      const space = rawTail.indexOf(' ');
-      if (space >= 0) cut = space + 1;
-    }
-
-    // If snapping ate nearly the whole window, keep the raw tail instead
-    if (rawTail.length - cut < RewordlyContentScript.PROACTIVE_MIN_CHARS) cut = 0;
-
-    return {
-      prefix: text.slice(0, windowStart + cut),
-      tail: rawTail.slice(cut),
-    };
-  }
-
-  private async runProactiveCheck(target: HTMLElement): Promise<void> {
-    if (!this.config.proactiveEnabled || this.proactiveDisabledForSession) return;
-    if (document.activeElement !== target && !target.contains(document.activeElement)) return;
-
-    const text = this.getProactiveFieldText(target).trim();
-    if (
-      text.length < RewordlyContentScript.PROACTIVE_MIN_CHARS ||
-      text.length > RewordlyContentScript.PROACTIVE_MAX_CHARS
-    ) {
-      return;
-    }
-    if (text === this.proactiveLastCheckedText) return;
-
-    // Only logged-in users get proactive check — anon users have no Bearer token
-    const headers = await getApiHeaders();
-    if (!headers['Authorization']) return;
-
-    // Cancel any in-flight check for older text
-    this.proactiveAbort?.abort();
-    const abort = new AbortController();
-    this.proactiveAbort = abort;
-    this.proactiveLastCheckedText = text;
-
-    // Long text → only send the tail the user is actively writing
-    const { prefix, tail } = this.splitProactiveTail(text);
-
-    this.showProactiveLoading(target, abort);
-
-    try {
-      // Reuse the grammar endpoint (already deployed, Pro = unlimited, 402 = not Pro/limit)
-      const response = await fetch(`${API_BASE}/api/grammar`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ text: tail }),
-        signal: abort.signal,
-      });
-
-      if (response.status === 402 || response.status === 403) {
-        // Not Pro or limit hit — disable proactive for this session
-        this.proactiveDisabledForSession = true;
-        return;
-      }
-      if (!response.ok) return;
-
-      const data = await response.json().catch(() => null) as
-        | { corrected?: string }
-        | null;
-      if (!data?.corrected) return;
-
-      const correctedTail = data.corrected.trim();
-      // No real change — don't show badge
-      if (!correctedTail || correctedTail === tail.trim()) return;
-
-      // Field may have changed while the request was in flight
-      const currentText = this.getProactiveFieldText(target).trim();
-      if (currentText !== text) return;
-
-      // Full corrected text = untouched prefix + corrected tail
-      this.proactiveCorrected = prefix + correctedTail;
-      // Diff preview only covers the checked tail
-      this.showProactiveBadge(target, tail.trim(), correctedTail);
-    } catch {
-      // Network errors / aborts are silent — proactive is best-effort
-    } finally {
-      this.hideProactiveLoading(abort);
-    }
-  }
-
-  private ensureProactiveBadge(): HTMLDivElement {
-    if (this.proactiveBadge) return this.proactiveBadge;
-
-    const badge = document.createElement('div');
-    badge.className = 'rewordly-proactive-badge';
-    badge.innerHTML = `
-      <button type="button" class="rewordly-proactive-pill" aria-label="Apply Rewordly correction">
-        <span class="rewordly-proactive-spinner" aria-hidden="true"></span>
-        <svg class="rewordly-proactive-check" xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-        <span class="rewordly-proactive-label">Fix</span>
-      </button>
-      <div class="rewordly-proactive-popover">
-        <div class="rewordly-proactive-popover-title">Suggested fix · hover to preview, click to apply</div>
-        <p class="rewordly-proactive-preview"></p>
-      </div>
-    `;
-
-    const pill = badge.querySelector('.rewordly-proactive-pill') as HTMLButtonElement;
-    // mousedown (not click) so the source field doesn't lose focus before we apply
-    pill.addEventListener('mousedown', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      this.applyProactiveCorrection();
-    });
-
-    document.body.appendChild(badge);
-    this.proactiveBadge = badge;
-    return badge;
-  }
-
-  private showProactiveLoading(target: HTMLElement, abort: AbortController): void {
-    const badge = this.ensureProactiveBadge();
-    badge.dataset['rewordlyFor'] = this.proactiveFieldId(target);
-
-    const pill = badge.querySelector('.rewordly-proactive-pill') as HTMLButtonElement;
-    pill.setAttribute('aria-busy', 'true');
-    pill.setAttribute('aria-label', 'Checking grammar');
-
-    badge.classList.remove('rewordly-proactive-success');
-    badge.classList.add('rewordly-proactive-loading');
-
-    this.positionProactiveBadge(target);
-
-    badge.classList.remove('show');
-    void (badge as HTMLElement).offsetWidth;
-    badge.classList.add('show');
-
-    window.addEventListener('scroll', this.boundRepositionProactiveBadge, true);
-    window.addEventListener('resize', this.boundRepositionProactiveBadge);
-
-    // Stash which request owns the spinner so aborted checks don't clear a newer one
-    badge.dataset['rewordlyLoadingFor'] = String(abort.signal);
-  }
-
-  private hideProactiveLoading(abort?: AbortController): void {
-    if (!this.proactiveBadge) return;
-    if (
-      abort &&
-      this.proactiveBadge.dataset['rewordlyLoadingFor'] &&
-      this.proactiveBadge.dataset['rewordlyLoadingFor'] !== String(abort.signal)
-    ) {
-      return;
-    }
-
-    const pill = this.proactiveBadge.querySelector('.rewordly-proactive-pill') as HTMLButtonElement | null;
-    pill?.removeAttribute('aria-busy');
-    pill?.setAttribute('aria-label', 'Apply Rewordly correction');
-
-    this.proactiveBadge.classList.remove('rewordly-proactive-loading');
-    delete this.proactiveBadge.dataset['rewordlyLoadingFor'];
-
-    // No fix to show — hide the badge entirely
-    if (!this.proactiveCorrected) {
-      this.proactiveBadge.classList.remove('show');
-      window.removeEventListener('scroll', this.boundRepositionProactiveBadge, true);
-      window.removeEventListener('resize', this.boundRepositionProactiveBadge);
-    }
-  }
-
-  private showProactiveBadge(target: HTMLElement, original: string, corrected: string): void {
-    const badge = this.ensureProactiveBadge();
-    badge.dataset['rewordlyFor'] = this.proactiveFieldId(target);
-
-    // Reset pill label — clears any stale "Done" from a previous fix
-    const label = badge.querySelector('.rewordly-proactive-label');
-    if (label) label.textContent = 'Fix';
-    badge.classList.remove('rewordly-proactive-success', 'rewordly-proactive-loading');
-    delete badge.dataset['rewordlyLoadingFor'];
-    const pill = badge.querySelector('.rewordly-proactive-pill') as HTMLButtonElement;
-    pill.removeAttribute('aria-busy');
-    pill.setAttribute('aria-label', 'Apply Rewordly correction');
-
-    // Show a word-level diff in the popover
-    const preview = badge.querySelector('.rewordly-proactive-preview') as HTMLElement;
-    const trim = (s: string) => s.length > 360 ? `${s.slice(0, 360)}…` : s;
-    preview.innerHTML = this.diffWords(trim(original), trim(corrected));
-
-    this.positionProactiveBadge(target);
-
-    // Re-trigger slide-in animation each time
-    badge.classList.remove('show');
-    void (badge as HTMLElement).offsetWidth;
-    badge.classList.add('show');
-
-    window.addEventListener('scroll', this.boundRepositionProactiveBadge, true);
-    window.addEventListener('resize', this.boundRepositionProactiveBadge);
-  }
-
-  private boundRepositionProactiveBadge = (): void => {
-    if (this.proactiveTarget && this.proactiveBadge?.classList.contains('show')) {
-      this.positionProactiveBadge(this.proactiveTarget);
-    }
-  };
-
-  private positionProactiveBadge(target: HTMLElement): void {
-    if (!this.proactiveBadge) return;
-    const rect = target.getBoundingClientRect();
-    if (rect.width === 0 && rect.height === 0) {
-      this.hideProactiveBadge();
-      return;
-    }
-    const margin = 6;
-    const badgeHeight = 26;
-    let top = rect.bottom - badgeHeight - margin;
-    let left = rect.right - margin;
-    // Keep inside viewport
-    top = Math.min(Math.max(top, margin), window.innerHeight - badgeHeight - margin);
-    left = Math.min(left, window.innerWidth - margin);
-    this.proactiveBadge.style.top = `${top}px`;
-    this.proactiveBadge.style.left = `${left}px`;
-  }
-
-  /**
-   * Word-level LCS diff. Returns an HTML string with <del> for removed tokens
-   * and <ins> for inserted tokens — plain text for unchanged parts.
-   */
-  private diffWords(original: string, corrected: string): string {
-    if (original === corrected) return this.htmlEsc(corrected);
-
-    // Tokenize into word and whitespace runs so spaces are preserved
-    const tok = (s: string) => s.match(/\S+|\s+/g) ?? [];
-    const oToks = tok(original);
-    const cToks = tok(corrected);
-    const m = oToks.length, n = cToks.length;
-
-    // LCS DP table
-    const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0) as number[]);
-    for (let i = 1; i <= m; i++) {
-      for (let j = 1; j <= n; j++) {
-        dp[i]![j] = oToks[i - 1] === cToks[j - 1]
-          ? dp[i - 1]![j - 1]! + 1
-          : Math.max(dp[i - 1]![j]!, dp[i]![j - 1]!);
-      }
-    }
-
-    // Backtrack
-    type Op = { type: 'same' | 'del' | 'ins'; text: string };
-    const ops: Op[] = [];
-    let i = m, j = n;
-    while (i > 0 || j > 0) {
-      if (i > 0 && j > 0 && oToks[i - 1] === cToks[j - 1]) {
-        ops.unshift({ type: 'same', text: oToks[i - 1]! });
-        i--; j--;
-      } else if (j > 0 && (i === 0 || dp[i]![j - 1]! >= dp[i - 1]![j]!)) {
-        ops.unshift({ type: 'ins', text: cToks[j - 1]! });
-        j--;
-      } else {
-        ops.unshift({ type: 'del', text: oToks[i - 1]! });
-        i--;
-      }
-    }
-
-    return ops.map(({ type, text }) => {
-      const e = this.htmlEsc(text);
-      // Don't wrap whitespace-only tokens with markup
-      if (/^\s+$/.test(text)) return e;
-      if (type === 'del') return `<del>${e}</del>`;
-      if (type === 'ins') return `<ins>${e}</ins>`;
-      return e;
-    }).join('');
-  }
-
-  private htmlEsc(s: string): string {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  }
-
-  private hideProactiveBadge(): void {
-    if (this.proactiveHideTimeoutId) {
-      clearTimeout(this.proactiveHideTimeoutId);
-      this.proactiveHideTimeoutId = null;
-    }
-    this.proactiveCorrected = null;
-    if (this.proactiveBadge) {
-      // Always reset the label so the next appearance starts clean
-      const label = this.proactiveBadge.querySelector('.rewordly-proactive-label');
-      if (label) label.textContent = 'Fix';
-      const pill = this.proactiveBadge.querySelector('.rewordly-proactive-pill') as HTMLButtonElement | null;
-      pill?.removeAttribute('aria-busy');
-      pill?.setAttribute('aria-label', 'Apply Rewordly correction');
-      this.proactiveBadge.classList.remove('show', 'rewordly-proactive-success', 'rewordly-proactive-loading');
-      delete this.proactiveBadge.dataset['rewordlyFor'];
-      delete this.proactiveBadge.dataset['rewordlyLoadingFor'];
-    }
-    window.removeEventListener('scroll', this.boundRepositionProactiveBadge, true);
-    window.removeEventListener('resize', this.boundRepositionProactiveBadge);
-  }
-
-  /** Replace the watched field's full text with the proactive correction. */
-  private applyProactiveCorrection(): void {
-    const target = this.proactiveTarget;
-    const corrected = this.proactiveCorrected;
-    if (!target || !corrected) return;
-
-    // Guard stays up for the whole async flow so our own synthetic input
-    // events don't schedule a re-check mid-apply.
-    this.proactiveApplying = true;
-    void this.doApplyProactiveCorrection(target, corrected).finally(() => {
-      this.proactiveApplying = false;
-    });
-  }
-
-  private async doApplyProactiveCorrection(target: HTMLElement, corrected: string): Promise<void> {
-    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
-      // Native setter keeps React/Vue controlled inputs in sync
-      const proto = target instanceof HTMLInputElement
-        ? HTMLInputElement.prototype
-        : HTMLTextAreaElement.prototype;
-      const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-      if (setter) {
-        setter.call(target, corrected);
-      } else {
-        target.value = corrected;
-      }
-      target.dispatchEvent(new Event('input', { bubbles: true }));
-      target.dispatchEvent(new Event('change', { bubbles: true }));
-      target.focus();
-      const end = corrected.length;
-      try { target.setSelectionRange(end, end); } catch { /* number-like inputs */ }
-    } else {
-      try {
-        await this.applyToContentEditable(target, corrected);
-      } catch {
-        return;
-      }
-    }
-
-    // Avoid immediately re-checking the text we just inserted
-    this.proactiveLastCheckedText = corrected.trim();
-    this.proactiveCorrected = null;
-
-    // Brief success state, then hide
-    if (this.proactiveBadge) {
-      const label = this.proactiveBadge.querySelector('.rewordly-proactive-label');
-      if (label) label.textContent = '✓ Done';
-      this.proactiveBadge.classList.add('rewordly-proactive-success');
-      setTimeout(() => this.hideProactiveBadge(), 700);
-    }
-  }
-
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
-  /** Whitespace-insensitive comparison of the field's current text with the expected text. */
-  private fieldTextMatches(target: HTMLElement, expected: string): boolean {
-    const normalize = (s: string) => s.replace(/\s+/g, ' ').trim();
-    return normalize(this.getProactiveFieldText(target)) === normalize(expected);
-  }
-
-  /**
-   * Select all content in the editable and wait one task, so frameworks that sync
-   * their internal selection from the async `selectionchange` event (Draft.js on
-   * Twitter, Lexical on Reddit, Slate) catch up before we dispatch the paste.
-   */
-  private async selectAllAndSettle(target: HTMLElement): Promise<void> {
-    target.focus();
-    document.execCommand('selectAll');
-    await this.sleep(80);
-  }
-
-  /** Dispatch a synthetic plain-text paste. Returns true if the page handled it (preventDefault). */
-  private dispatchSyntheticPaste(target: HTMLElement, text: string): boolean {
-    try {
-      const dt = new DataTransfer();
-      dt.setData('text/plain', text);
-      const pasteEvent = new ClipboardEvent('paste', {
-        bubbles: true,
-        cancelable: true,
-        clipboardData: dt,
-      });
-      target.dispatchEvent(pasteEvent);
-      return pasteEvent.defaultPrevented;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * Replace a contenteditable's content across editor frameworks.
-   *
-   * Strategy (each step verified before falling through):
-   *  1. select-all → settle → synthetic paste. Draft.js / Lexical / Slate handle paste
-   *     natively and update their own state. The settle wait is essential: these
-   *     frameworks sync selection from the async `selectionchange` task, and pasting
-   *     in the same tick as selectAll inserts at the stale caret (text gets appended).
-   *     Verified + retried once, since heavy pages can miss the first window.
-   *  2. execCommand('insertText') — plain contenteditables (also fine in Gmail).
-   *  3. execCommand('insertHTML') with \n → <br> — keeps blank lines when insertText won't.
-   *  4. Direct DOM write + InputEvent — last resort.
-   */
-  private async applyToContentEditable(target: HTMLElement, corrected: string): Promise<void> {
-    // Strategy 1: framework paste path, with one verified retry
-    for (let attempt = 0; attempt < 2; attempt++) {
-      await this.selectAllAndSettle(target);
-      const handled = this.dispatchSyntheticPaste(target, corrected);
-      if (!handled) break; // page has no paste handler — use execCommand strategies
-      await this.sleep(120); // let React/Lexical commit + render
-      if (this.fieldTextMatches(target, corrected)) {
-        window.getSelection()?.collapseToEnd();
-        return;
-      }
-    }
-
-    // Strategy 2: insertText
-    await this.selectAllAndSettle(target);
-    const insertedText = document.execCommand('insertText', false, corrected);
-    if (insertedText) {
-      await this.sleep(50);
-      if (this.fieldTextMatches(target, corrected)) {
-        window.getSelection()?.collapseToEnd();
-        return;
-      }
-    }
-
-    // Strategy 3: insertHTML — preserves blank lines (\n → <br>)
-    await this.selectAllAndSettle(target);
-    const html = corrected
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/\n/g, '<br>');
-    const insertedHtml = document.execCommand('insertHTML', false, html);
-    if (insertedHtml) {
-      await this.sleep(50);
-      if (this.fieldTextMatches(target, corrected)) {
-        window.getSelection()?.collapseToEnd();
-        return;
-      }
-    }
-
-    // Strategy 4: direct DOM write
-    while (target.firstChild) target.removeChild(target.firstChild);
-    const lines = corrected.split('\n');
-    lines.forEach((line, idx) => {
-      if (line) target.appendChild(document.createTextNode(line));
-      if (idx < lines.length - 1) target.appendChild(document.createElement('br'));
-    });
-    target.dispatchEvent(new InputEvent('input', {
-      bubbles: true,
-      inputType: 'insertText',
-      data: corrected,
-    }));
-    window.getSelection()?.collapseToEnd();
   }
 
   private displayRewrittenText(text: string): void {
