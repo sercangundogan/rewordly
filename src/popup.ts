@@ -110,6 +110,7 @@ class RewordlyPopup {
     }
 
     rows.style.display = 'block';
+    this.applyAutoCheckUsage(data['autoCheck']);
     if (footnote) {
       footnote.style.display = 'block';
       footnote.textContent =
@@ -123,7 +124,7 @@ class RewordlyPopup {
     const rMax = typeof rLimit === 'number' ? rLimit : Number(rLimit);
     const gMax = typeof gLimit === 'number' ? gLimit : Number(gLimit);
 
-    summary.textContent = "Today's usage for rewrite and grammar.";
+    summary.textContent = 'Rewrite and grammar reset daily; auto-check counts the characters checked as you type.';
 
     const setBar = (el: HTMLElement, used: number, max: number) => {
       if (!Number.isFinite(max) || max <= 0) {
@@ -156,6 +157,35 @@ class RewordlyPopup {
       grammarVals.textContent = `${gUsed} / ${gMax}`;
       setBar(grammarBar, gUsed, gMax);
     }
+  }
+
+  /** Auto-check (underline as you type) quota: characters left, not requests. */
+  private applyAutoCheckUsage(raw: unknown): void {
+    const row = document.getElementById('usageAutoRow');
+    const values = document.getElementById('usageAutoValues');
+    const period = document.getElementById('usageAutoPeriod');
+    const bar = document.getElementById('usageAutoBar');
+    if (!row || !values || !period || !bar) return;
+
+    const quota = raw as { used?: unknown; limit?: unknown; period?: unknown } | undefined;
+    const used = Number(quota?.used);
+    const limit = Number(quota?.limit);
+    if (!Number.isFinite(used) || !Number.isFinite(limit) || limit <= 0) {
+      row.style.display = 'none';
+      return;
+    }
+
+    const left = Math.max(0, limit - used);
+    const fmt = (n: number) => n.toLocaleString('en-US');
+    row.style.display = 'block';
+    period.textContent =
+      quota?.period === 'lifetime' ? '· free trial' : quota?.period === 'month' ? '· this month' : '· today';
+    values.textContent = left > 0 ? `${fmt(left)} of ${fmt(limit)} chars left` : 'Used up';
+
+    const ratio = Math.min(1, used / limit);
+    bar.style.width = `${Math.round(ratio * 100)}%`;
+    bar.classList.toggle('usage-bar-full', ratio >= 1);
+    bar.classList.toggle('usage-bar-warn', ratio >= 0.8 && ratio < 1);
   }
 
   private async refreshUsageFromNetwork(): Promise<void> {
@@ -428,8 +458,10 @@ class RewordlyPopup {
     successMessage.className = 'rewordly-success-message';
     successMessage.innerHTML = `
       <div class="success-icon">✓</div>
-      <div class="success-text">${message ?? 'Settings saved!'}</div>
+      <div class="success-text"></div>
     `;
+    // Text, not markup: the message can carry what a server said.
+    successMessage.querySelector('.success-text')!.textContent = message ?? 'Settings saved!';
 
     // Add to the content area
     const content = document.querySelector('.content');
@@ -465,8 +497,9 @@ class RewordlyPopup {
     errorMessage.className = 'rewordly-error-message';
     errorMessage.innerHTML = `
       <div class="error-icon">⚠</div>
-      <div class="error-text">${message}</div>
+      <div class="error-text"></div>
     `;
+    errorMessage.querySelector('.error-text')!.textContent = message;
 
     // Add to the content area
     const content = document.querySelector('.content');

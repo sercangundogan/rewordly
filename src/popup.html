@@ -346,6 +346,11 @@
       color: var(--rw-ink-soft);
     }
 
+    .usage-row-period {
+      font-weight: 500;
+      color: var(--rw-muted);
+    }
+
     .usage-row-values {
       font-size: 12px;
       font-weight: 600;
@@ -886,7 +891,7 @@
       </div>
 
       <div id="usageSection" class="usage-section" style="display: none;">
-        <p class="usage-section-label">Today's usage</p>
+        <p class="usage-section-label">Usage</p>
         <p id="usageSummary" class="usage-summary">Loading…</p>
         <div id="usageRows">
           <div class="usage-row-head">
@@ -903,6 +908,15 @@
           <div class="usage-bar-track" aria-hidden="true">
             <div id="usageGrammarBar" class="usage-bar-fill"></div>
           </div>
+          <div id="usageAutoRow" style="display: none;">
+            <div class="usage-row-head">
+              <span class="usage-row-name">Auto-check <span id="usageAutoPeriod" class="usage-row-period"></span></span>
+              <span id="usageAutoValues" class="usage-row-values">—</span>
+            </div>
+            <div class="usage-bar-track" aria-hidden="true">
+              <div id="usageAutoBar" class="usage-bar-fill"></div>
+            </div>
+          </div>
         </div>
         <p class="usage-footnote">Counts reset daily (UTC). Log in for higher limits.</p>
       </div>
@@ -916,7 +930,7 @@
         <p class="toggle-hint">Show rewrite and grammar controls when you select text.</p>
         <div class="toggle-container" style="margin-top: 14px;">
           <div class="toggle-label-stack">
-            <span class="toggle-label">Auto grammar check <span class="toggle-pro-tag">Pro</span></span>
+            <span class="toggle-label">Auto grammar check</span>
             <span class="grammar-status" id="grammarStatus">
               <span class="grammar-status-dot" id="grammarStatusDot"></span>
               <span id="grammarStatusText">Off</span>
@@ -924,7 +938,7 @@
           </div>
           <button class="toggle active" id="proactiveToggle" type="button" aria-label="Toggle auto grammar check"></button>
         </div>
-        <p class="toggle-hint">Checks spelling &amp; grammar as you type. A small "Fix" badge appears — hover for the diff, click to apply.</p>
+        <p class="toggle-hint">Underlines spelling &amp; grammar mistakes as you type. Hover an underline to see the fix. Unlimited with Pro.</p>
         <div class="tone-row">
           <span class="tone-row-label">Default tone</span>
           <select id="rewriteTone" class="tone-select" aria-label="Default rewrite tone">
