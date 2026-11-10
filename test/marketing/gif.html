@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Rewordly live check demo</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 640px; height: 360px; overflow: hidden; background: #f6f1e8; font-family: Inter, system-ui, sans-serif; }
+  .win { position: absolute; left: 18px; top: 14px; width: 604px; height: 292px; background: #fff; border-radius: 12px; box-shadow: 0 14px 30px -14px rgba(28,25,23,.35), 0 0 0 1px rgba(28,25,23,.08); }
+  .bar { height: 30px; display: flex; align-items: center; padding: 0 12px; background: #f7f4ee; border-bottom: 1px solid #ece7de; border-radius: 12px 12px 0 0; position: relative; }
+  .dots { display: flex; gap: 6px; } .dots i { width: 9px; height: 9px; border-radius: 50%; display: block; }
+  .dots i:nth-child(1) { background: #ff5f57; } .dots i:nth-child(2) { background: #febc2e; } .dots i:nth-child(3) { background: #28c840; }
+  .bar b { position: absolute; left: 0; right: 0; text-align: center; font: 500 11px/1 Inter, sans-serif; color: #6b6560; }
+  .row { display: flex; gap: 10px; align-items: center; height: 32px; padding: 0 18px; border-bottom: 1px solid #f0ece5; font-size: 12.5px; }
+  .row span { width: 44px; color: #a39e97; }
+  .body { height: 186px; padding: 16px 18px; font-size: 17px; line-height: 1.6; color: #1f1d1b; outline: none; }
+  .body:empty::before { content: 'Write your message…'; color: #b5afa7; }
+  .foot { height: 44px; padding: 0 14px; border-top: 1px solid #f0ece5; display: flex; align-items: center; justify-content: space-between; }
+  .send { background: #2a4a3d; color: #fff; font: 600 12px/1 Inter, sans-serif; padding: 9px 18px; border-radius: 8px; }
+  #caption { position: absolute; left: 0; right: 0; bottom: 13px; text-align: center; }
+  #caption span { display: inline-block; background: #2a4a3d; color: #faf7f2; font: 600 13px/1 Inter, sans-serif; padding: 9px 18px; border-radius: 999px; }
+  #cursor { position: fixed; left: -40px; top: -40px; width: 20px; height: 27px; pointer-events: none; z-index: 2147483647; filter: drop-shadow(0 2px 3px rgba(0,0,0,.35)); }
+</style></head>
+<body>
+  <div class="win">
+    <div class="bar"><div class="dots"><i></i><i></i><i></i></div><b>New message</b></div>
+    <div class="row"><span>To</span>maria@example.com</div>
+    <div class="body" id="body" contenteditable="true" spellcheck="false" role="textbox" aria-multiline="true" aria-label="Message body"></div>
+    <div class="foot"><div class="send">Send</div></div>
+  </div>
+  <div id="caption"><span id="captionText"></span></div>
+  <svg id="cursor" viewBox="0 0 22 30" xmlns="http://www.w3.org/2000/svg"><path d="M2 2 L2 24 L7.6 19 L11.4 27.6 L15 26 L11.2 17.6 L18.6 17.4 Z" fill="#111" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>
+  <script>
+    function setCaption(t) { document.getElementById('captionText').textContent = t; }
+    addEventListener('pointermove', (e) => { const c = document.getElementById('cursor'); c.style.left = e.clientX - 2 + 'px'; c.style.top = e.clientY - 2 + 'px'; }, true);
+  </script>
+</body></html>

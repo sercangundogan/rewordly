@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Rewordly promo tiles</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Source+Serif+4:opsz,wght@8..60,400&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; overflow: hidden; }
+  body { position: relative; color: #1c1917; font-family: 'Source Serif 4', Georgia, serif;
+    background: radial-gradient(60% 90% at 95% 0%, rgba(196,113,61,.22), transparent 62%), radial-gradient(60% 80% at 0% 110%, rgba(42,74,61,.18), transparent 62%), #f6f1e8; }
+  .brand { display: flex; align-items: center; gap: 8px; font: 600 15px/1 'Fraunces', serif; }
+  .brand img { width: 24px; height: 24px; border-radius: 50%; }
+  h1 { margin: 0; font: 700 30px/1.08 'Fraunces', serif; letter-spacing: -.012em; }
+  h1 .u { white-space: nowrap; text-decoration: underline; text-decoration-color: #ce2c31; text-decoration-thickness: 3px; text-underline-offset: 5px; text-decoration-skip-ink: none; }
+  .shot { position: absolute; border-radius: 12px; box-shadow: 0 30px 60px -24px rgba(28,25,23,.5), 0 0 0 1px rgba(28,25,23,.08); }
+  body.tile { width: 440px; height: 280px; }
+  .tile .brand { position: absolute; left: 24px; top: 22px; }
+  .tile h1 { position: absolute; left: 24px; top: 66px; width: 300px; font-size: 26px; }
+  .tile .shot { width: 340px; left: 110px; top: 134px; }
+  body.marquee { width: 1400px; height: 560px; }
+  .marquee .brand { position: absolute; left: 90px; top: 70px; font-size: 26px; } .marquee .brand img { width: 40px; height: 40px; }
+  .marquee h1 { position: absolute; left: 90px; top: 170px; font-size: 68px; width: 620px; }
+  .marquee h1 .u { text-decoration-thickness: 6px; text-underline-offset: 10px; }
+  .marquee .sub { position: absolute; left: 90px; top: 400px; width: 520px; font-size: 24px; line-height: 1.5; color: #44403c; margin: 0; }
+  .marquee .shot { width: 600px; left: 740px; top: 60px; border-radius: 18px; }
+</style></head>
+<body>
+  <div class="brand"><img src="/logo.png" alt="">Rewordly</div>
+  <h1>Catch <span class="u">mistakes</span> as you type.</h1>
+  <p class="sub">Live spelling and grammar check on almost any website, in any language.</p>
+  <img class="shot" src="/generated/window-card.png" alt="">
+  <script>
+    const kind = new URLSearchParams(location.search).get('t');
+    document.body.className = kind;
+    if (kind === 'tile') { document.querySelector('.sub').remove(); document.querySelector('h1').innerHTML = 'Catch <span class="u">mistakes</span><br>as you type.'; }
+  </script>
+</body></html>
