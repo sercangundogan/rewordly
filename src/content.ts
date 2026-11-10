@@ -5,6 +5,7 @@
 
 import { API_BASE } from './config';
 import { getApiHeaders, setSession } from './auth';
+import { track } from './usage';
 
 /**
  * Content-script CSS is not applied on non-HTML documents (XML sitemaps, SVG, JSON, etc.),
@@ -1356,6 +1357,7 @@ class RewordlyContentScript {
         requireLogin?: boolean;
         requirePayment?: boolean;
       };
+      track('rewrite_limit');
       err.code = 'LIMIT_REACHED';
       err.requireLogin = data.requireLogin;
       err.requirePayment = data.requirePayment;
@@ -1364,6 +1366,7 @@ class RewordlyContentScript {
     if (!response.ok) {
       throw new Error((data.message as string) || `API request failed: ${response.status}`);
     }
+    track('rewrite');
     const variants = Array.isArray(data.variants)
       ? (data.variants as string[]).filter((v) => typeof v === 'string' && v.trim().length > 0)
       : [];
@@ -1386,6 +1389,7 @@ class RewordlyContentScript {
         requireLogin?: boolean;
         requirePayment?: boolean;
       };
+      track('grammar_limit');
       err.code = 'LIMIT_REACHED';
       err.requireLogin = data.requireLogin;
       err.requirePayment = data.requirePayment;
@@ -1394,6 +1398,7 @@ class RewordlyContentScript {
     if (!response.ok) {
       throw new Error((data.message as string) || `API request failed: ${response.status}`);
     }
+    track('grammar');
     return (data.corrected as string) || 'Failed to fix grammar.';
   }
 
