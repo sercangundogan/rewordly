@@ -75,11 +75,21 @@ export async function getSession(): Promise<StoredSession | null> {
   return session;
 }
 
+/** In-flight refresh, shared so parallel requests don't each spend the (single-use) refresh token. */
+let refreshing: Promise<StoredSession | null> | null = null;
+
+function refreshSession(refreshToken: string): Promise<StoredSession | null> {
+  refreshing ??= doRefreshSession(refreshToken).finally(() => {
+    refreshing = null;
+  });
+  return refreshing;
+}
+
 /**
  * Attempt a silent token refresh via the web API.
  * Returns the new session on success, null on failure.
  */
-async function refreshSession(refreshToken: string): Promise<StoredSession | null> {
+async function doRefreshSession(refreshToken: string): Promise<StoredSession | null> {
   try {
     const response = await fetch(`${API_BASE}/api/auth/refresh`, {
       method: 'POST',
