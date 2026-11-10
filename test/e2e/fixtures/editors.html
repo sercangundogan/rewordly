@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Rewordly live check fixtures</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.snow.css">
+  <style>
+    /* Common on web-component sites (Reddit): hide custom elements until they are defined.
+       Our own elements match it too, since content scripts can't define custom elements. */
+    :not(:defined) { visibility: hidden; }
+    body { font: 15px/1.5 system-ui, sans-serif; margin: 24px; max-width: 760px; }
+    section { margin: 0 0 28px; }
+    h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: #666; margin: 0 0 6px; }
+    textarea, input, [contenteditable], .ProseMirror { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid #bbb; border-radius: 6px; font: inherit; }
+    textarea { height: 90px; }
+    #ta-scroll { height: 70px; }
+    [contenteditable], .ProseMirror { min-height: 60px; outline: none; }
+    #quill { height: 90px; }
+    iframe { width: 100%; height: 120px; border: 0; }
+  </style>
+</head>
+<body>
+  <section><h2>textarea</h2><textarea id="ta"></textarea></section>
+  <section><h2>input</h2><input id="inp" type="text"></section>
+  <section><h2>contenteditable</h2><div id="ce" contenteditable="true"></div></section>
+  <section><h2>scrolling textarea</h2><textarea id="ta-scroll"></textarea></section>
+  <section><h2>React controlled textarea</h2><div id="react-root"></div></section>
+  <section><h2>Quill</h2><div id="quill"></div></section>
+  <section><h2>TipTap (ProseMirror)</h2><div id="tiptap"></div></section>
+  <section><h2>Quill 1.x with data-gramm="false" (Slack's composer)</h2><div id="quill1"></div></section>
+  <section><h2>Shadow DOM contenteditable</h2><shadow-editor id="shadow"></shadow-editor></section>
+  <section><h2>iframe textarea</h2>
+    <iframe id="frame" srcdoc="<!doctype html><body style='margin:0;font:15px system-ui'><textarea id='inner' style='width:96%;height:80px;font:inherit'></textarea></body>"></iframe>
+  </section>
+  <section><h2>Editor inside its own scroll area (side panels, chat logs)</h2>
+    <div id="panel" style="height: 140px; overflow: auto; border: 1px solid #bbb">
+      <div style="height: 50px">Panel header</div>
+      <div style="position: relative"><div id="panel-ce" contenteditable="true"></div></div>
+      <div style="height: 300px"></div>
+    </div>
+  </section>
+  <section><h2>Editor inside a scroll area with no positioned box to draw in</h2>
+    <div id="plain-panel" style="height: 140px; overflow: auto; border: 1px solid #bbb">
+      <div style="height: 40px">Panel header</div>
+      <div id="plain-ce" contenteditable="true"></div>
+      <div style="height: 300px"></div>
+    </div>
+  </section>
+  <section><h2>Editor slotted into a web component, inside a scroll area (Reddit's shreddit-composer)</h2>
+    <div id="slot-panel" style="height: 140px; overflow: auto; border: 1px solid #bbb">
+      <slotted-composer style="display: block; position: relative">
+        <div slot="rte" id="slotted-ce" contenteditable="true" role="textbox"></div>
+        <span slot="placeholder">Join the conversation</span>
+      </slotted-composer>
+      <div style="height: 300px"></div>
+    </div>
+  </section>
+  <section><h2>Block editor that turns spellcheck back on (Notion)</h2>
+    <div id="notion-ce" contenteditable="true" spellcheck="true"></div>
+  </section>
+  <section><h2>Scroll area whose page removes elements it didn't add</h2>
+    <div id="hostile-panel" style="height: 140px; overflow: auto; border: 1px solid #bbb">
+      <div style="height: 30px"></div>
+      <div id="hostile-box" style="position: relative"><div id="hostile-ce" contenteditable="true"></div></div>
+      <div style="height: 300px"></div>
+    </div>
+  </section>
+  <section><h2>Page that undoes our changes to its editor (Notion reverts attributes it didn't write)</h2>
+    <div id="fight-ce" contenteditable="true" spellcheck="true"></div>
+  </section>
+  <section><h2>Rich editor with a code block inside</h2>
+    <div id="ce-code" contenteditable="true"><p>Plain text here.</p><div class="ql-code-block">const teh = notify('dont forget');</div></div>
+  </section>
+  <section><h2>Excluded</h2>
+    <div class="notion-code-block"><div id="notion-code" contenteditable="true"></div></div>
+    <input id="email" type="email">
+    <textarea id="nospell" spellcheck="false"></textarea>
+    <div class="cm-editor"><div id="code" contenteditable="true"></div></div>
+    <!-- Same markup as Medium's header search box. -->
+    <input id="medium-search" role="combobox" aria-controls="searchResults" aria-expanded="false" aria-label="search" data-testid="headerSearchInput" placeholder="Search">
+    <form role="search"><input id="site-search" type="text" name="query" placeholder="Search the docs"></form>
+    <!-- A password field after its "show" toggle turned it into a text input, and a token box. -->
+    <input id="pw-shown" type="text" name="loginPassword" autocomplete="off" style="width: 240px">
+    <textarea id="token-box" name="access_token" rows="2" cols="30"></textarea>
+    <!-- A date picker's text input (numeric keyboard, format placeholder). -->
+    <input id="date-picker" class="pcx-input__control" inputmode="numeric" autocomplete="off" placeholder="MM/DD/YYYY" style="width: 200px">
+  </section>
+  <!-- Room to scroll the page. -->
+  <div style="height: 1200px"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.min.js"></script>
+  <script>
+    // Classic script: the global is Quill 1.x; the module below imports Quill 2 under the same name, scoped to itself.
+    window.__quill1 = new window.Quill('#quill1');
+    document.querySelector('#quill1 .ql-editor').setAttribute('data-gramm', 'false');
+    document.querySelector('#quill1 .ql-editor').setAttribute('spellcheck', 'true');
+    // As on Slack: the label carries a person's name, which is also the Turkish word for "search".
+    for (const [name, value] of [['role', 'textbox'], ['aria-multiline', 'true'], ['aria-label', 'Message to Ara Yilmaz']]) {
+      document.querySelector('#quill1 .ql-editor').setAttribute(name, value);
+    }
+  </script>
+  <script>
+    // Renders only named slots: anything else added to it is not displayed.
+    customElements.define('slotted-composer', class extends HTMLElement {
+      constructor() {
+        super();
+        this.attachShadow({ mode: 'open' }).innerHTML = `<div style="padding:4px;border:1px solid #ddd"><slot name="rte"></slot></div>`;
+      }
+    });
+    window.__anchorRemovals = 0;
+    new MutationObserver((records) => {
+      for (const r of records) for (const n of r.addedNodes) {
+        if (n.nodeName === 'REWORDLY-ANCHOR') { n.remove(); window.__anchorRemovals++; }
+      }
+    }).observe(document.getElementById('hostile-box'), { childList: true });
+    // Like Notion: whatever attribute change it didn't make itself is undone at once.
+    window.__fightWrites = 0;
+    new MutationObserver((records) => {
+      const el = document.getElementById('fight-ce');
+      for (const r of records) {
+        if (r.attributeName === 'spellcheck' && el.getAttribute('spellcheck') !== 'true') { el.setAttribute('spellcheck', 'true'); window.__fightWrites++; }
+        if (r.attributeName === 'data-rewordly-spellcheck') { el.removeAttribute('data-rewordly-spellcheck'); window.__fightWrites++; }
+      }
+    }).observe(document.getElementById('fight-ce'), { attributes: true });
+    // Like Notion: every edit re-renders the block's attributes, spellcheck included.
+    document.getElementById('notion-ce').addEventListener('input', (e) => e.currentTarget.setAttribute('spellcheck', 'true'));
+    customElements.define('shadow-editor', class extends HTMLElement {
+      constructor() {
+        super();
+        const root = this.attachShadow({ mode: 'open' });
+        root.innerHTML = `<style>div{border:1px solid #bbb;border-radius:6px;padding:8px 10px;min-height:50px;outline:none}</style><div id="inner" contenteditable="true"></div>`;
+      }
+    });
+  </script>
+  <script type="module">
+    import React from 'https://esm.sh/react@18.3.1';
+    import { createRoot } from 'https://esm.sh/react-dom@18.3.1/client';
+    import Quill from 'https://esm.sh/quill@2.0.2';
+    import { Editor } from 'https://esm.sh/@tiptap/core@2.10.3';
+    import StarterKit from 'https://esm.sh/@tiptap/starter-kit@2.10.3';
+
+    function Controlled() {
+      const [value, setValue] = React.useState('');
+      window.__reactValue = value;
+      return React.createElement('textarea', { id: 'react-ta', value, onChange: (e) => setValue(e.target.value) });
+    }
+    createRoot(document.getElementById('react-root')).render(React.createElement(Controlled));
+
+    window.__quill = new Quill('#quill', { theme: 'snow' });
+    window.__tiptap = new Editor({ element: document.getElementById('tiptap'), extensions: [StarterKit] });
+    window.__ready = true;
+  </script>
+</body>
+</html>
