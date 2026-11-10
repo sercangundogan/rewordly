@@ -5,12 +5,12 @@
 declare const process: { env: Record<string, string | undefined> };
 
 export const API_BASE =
-  (typeof process !== 'undefined' && process.env?.['API_BASE_URL']) || 'https://rewordly.store';
+  process.env['API_BASE_URL'] || 'https://rewordly.store';
 
 export const SUPABASE_URL =
-  (typeof process !== 'undefined' && process.env?.['SUPABASE_URL']) || '';
+  process.env['SUPABASE_URL'] || '';
 
 export const SUPABASE_ANON_KEY =
-  (typeof process !== 'undefined' && process.env?.['SUPABASE_ANON_KEY']) || '';
+  process.env['SUPABASE_ANON_KEY'] || '';
 
 export const AUTH_ENABLED = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);

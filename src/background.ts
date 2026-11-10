@@ -4,6 +4,14 @@
  */
 
 import { getApiHeaders } from './auth';
+import { API_BASE } from './config';
+import { IGNORED_MESSAGE, LIVE_CHECK_MESSAGE, type IgnoredMessage, type LiveCheckReply, type LiveCheckRequest } from './live/api';
+import { lookupResults, storeResults } from './live/result-cache';
+import { sanitizeIssues } from './live/text';
+import { siteOf, TRACK_MESSAGE, type TrackMessage } from './usage';
+import { recordUsage, resumeUsageFlush } from './usage-buffer';
+
+resumeUsageFlush();
 
 const UNINSTALL_FEEDBACK_URL = 'https://forms.gle/xSaZsCYBjdLibUh37';
 
@@ -271,7 +279,7 @@ chrome.runtime.onStartup.addListener(async () => {
 });
 
 // Handle messages from content script or popup
-chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   switch (request.type) {
     case 'GET_CONFIG':
       chrome.storage.sync.get(['rewordlyHighlightsEnabled', 'rewordlyRewriteEnabled'], (result) => {
@@ -295,6 +303,23 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
         sendResponse({ isValid: false, error: error.message });
       });
       return true;
+
+    case LIVE_CHECK_MESSAGE:
+      liveCheck(request as LiveCheckRequest, siteOf(sender.tab?.url ?? sender.url)).then(sendResponse);
+      return true;
+
+    case IGNORED_MESSAGE:
+      void reportIgnored((request as IgnoredMessage).fp);
+      sendResponse({ success: true });
+      return false;
+
+    case TRACK_MESSAGE: {
+      // The tab's site, also for fields inside iframes (a Gmail compose frame counts as Gmail).
+      const { event, count, chars } = request as TrackMessage;
+      recordUsage(siteOf(sender.tab?.url ?? sender.url), event, count, chars);
+      sendResponse({ success: true });
+      return false;
+    }
 
     case 'OPEN_TAB':
       if (request.url) {
@@ -365,3 +390,53 @@ if (contextMenusWithShown.onShown) {
     }
   });
 } 
+/** Longer than the server ever takes (it gives up on the model itself well before this). */
+const REQUEST_TIMEOUT_MS = 45_000;
+
+/** POST /api/feedback: one more person ignored this suggestion (see reportIgnored in src/live/api.ts). */
+async function reportIgnored(fp: string): Promise<void> {
+  try {
+    const headers = await getApiHeaders();
+    await fetch(`${API_BASE}/api/feedback`, { method: 'POST', headers, body: JSON.stringify({ fps: [fp] }), signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+  } catch {
+    // Feedback is a refinement; losing one vote is fine.
+  }
+}
+
+/**
+ * POST /api/check on behalf of the live checker content script (see src/live/api.ts).
+ * Sentences already checked on this device are answered from the persistent cache
+ * and never sent; only the rest goes to the API.
+ */
+async function liveCheck(request: LiveCheckRequest, site: string | null): Promise<LiveCheckReply> {
+  const ids = request.paragraphs.map((p) => p.id);
+  const hits = await lookupResults(ids);
+  const cached = Array.from(hits, ([id, issues]) => ({ id, language: '', issues }));
+  const misses = request.paragraphs.filter((p) => !hits.has(p.id));
+  if (misses.length === 0) return { ok: true, status: 200, data: { results: cached, quota: null } };
+
+  try {
+    const headers = await getApiHeaders();
+    const res = await fetch(`${API_BASE}/api/check`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ paragraphs: misses, host: site }),
+      // A server that never answers must not leave the field "checking" for good.
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    recordUsage(site, 'live_check', 1, misses.reduce((sum, p) => sum + p.text.length, 0));
+    const data = (await res.json().catch(() => ({}))) as LiveCheckReply['data'];
+    if (Array.isArray(data.results)) {
+      // What is kept for a week is only what holds up against the sentence it was asked for.
+      const texts = new Map(misses.map((p) => [p.id, p.text]));
+      const clean = data.results.flatMap((r) => {
+        const text = r && typeof r.id === 'string' ? texts.get(r.id) : undefined;
+        return text === undefined ? [] : [{ id: r.id, issues: sanitizeIssues(text, r.issues) }];
+      });
+      await storeResults(clean);
+    }
+    return { ok: res.ok, status: res.status, data: { ...data, results: [...cached, ...(data.results ?? [])] } };
+  } catch {
+    return { ok: false, status: 0, data: {} };
+  }
+}

@@ -35,6 +35,22 @@
       "css": [
         "styles.css"
       ]
+    },
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "exclude_matches": [
+        "https://chrome.google.com/*",
+        "https://webstore.google.com/*"
+      ],
+      "js": [
+        "live.js"
+      ],
+      "all_frames": true,
+      "match_about_blank": true,
+      "run_at": "document_idle"
     }
   ],
   "action": {
