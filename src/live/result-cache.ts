@@ -7,7 +7,7 @@
 import type { ParagraphIssue } from './text';
 
 /** Bump together with PROMPT_VERSION in rewordly-web (lib/check/llm.ts) to drop stale results. */
-const CACHE_VERSION = 4;
+const CACHE_VERSION = 5;
 const STORAGE_KEY = 'rewordlyLiveCache';
 const MAX_ENTRIES = 3000;
 /**
