@@ -134,6 +134,17 @@
 
     .content a:hover { color: var(--rw-amber); border-color: rgba(196, 113, 61, 0.35); }
 
+    .demo {
+      display: block;
+      width: 100%;
+      max-width: 640px;
+      height: auto;
+      margin: 0 0 18px;
+      border-radius: 14px;
+      border: 1px solid rgba(28, 25, 23, 0.08);
+      box-shadow: 0 10px 30px -14px rgba(28, 25, 23, 0.35);
+    }
+
     .section { margin-bottom: 32px; }
     .section:last-child { margin-bottom: 0; }
 
@@ -252,18 +263,31 @@
       <div class="header-inner">
         <h1>What's new</h1>
         <p>Release notes for Rewordly</p>
-        <span class="version-badge" id="versionBadge">Version 1.7.0</span>
+        <span class="version-badge" id="versionBadge">Version 1.8.0</span>
       </div>
     </header>
 
     <div class="content">
       <div class="section">
         <h2 class="section-title">This release</h2>
+        <img class="demo" src="live-check.gif" width="800" height="187" alt="Typing a sentence with mistakes: Rewordly underlines them, shows the fix on hover, and fixes everything at once">
         <ul class="changelog-list">
-          <li class="changelog-item new"><strong>Auto grammar check (Pro):</strong> spelling and grammar are checked as you type in inputs and editors. A small <strong>Fix</strong> badge appears when a correction is ready—hover to preview the diff, click to apply.</li>
-          <li class="changelog-item new"><strong>Loading feedback:</strong> a spinner on the Fix badge shows while a proactive check is running, so you know Rewordly is working in the background.</li>
-          <li class="changelog-item new"><strong>Rewrite alternatives (Pro):</strong> each rewrite can return up to three variants. Switch between them with one-tap pills in the result modal.</li>
-          <li class="changelog-item new"><strong>Popup toggle:</strong> turn auto grammar check on or off from the extension popup; the status line shows <strong>Checking as you type</strong> or <strong>Off</strong>.</li>
+          <li class="changelog-item new"><strong>Live grammar check, now for everyone:</strong> mistakes are underlined right where you type, on almost any website. Hover an underline to see the fix and why, then apply it in one click. No more "Fix" badge for the whole field.</li>
+          <li class="changelog-item new"><strong>Any language:</strong> each sentence is checked in its own language, automatically. Write English, Turkish, German, Spanish and more without changing a setting.</li>
+          <li class="changelog-item new"><strong>Fixes that respect the page:</strong> corrections go through the site's own editor, so formatting stays intact and undo works, including Medium, Reddit and X.</li>
+          <li class="changelog-item new"><strong>Ignore, dictionary, fix all:</strong> dismiss a suggestion, teach Rewordly a word, or fix every mistake in a field at once.</li>
+          <li class="changelog-item new"><strong>Free to try:</strong> live checking works right away without an account; sign in for a free daily allowance, or go Pro for unlimited. The popup shows how much is left.</li>
+          <li class="changelog-item"><strong>Fixed:</strong> the floating Rewrite / Check Grammar button now responds to clicks again.</li>
+        </ul>
+      </div>
+
+      <div class="section">
+        <h2 class="section-title">Version 1.7.0</h2>
+        <ul class="changelog-list">
+          <li class="changelog-item"><strong>Auto grammar check (Pro):</strong> spelling and grammar are checked as you type in inputs and editors. A small <strong>Fix</strong> badge appears when a correction is ready—hover to preview the diff, click to apply.</li>
+          <li class="changelog-item"><strong>Loading feedback:</strong> a spinner on the Fix badge shows while a proactive check is running, so you know Rewordly is working in the background.</li>
+          <li class="changelog-item"><strong>Rewrite alternatives (Pro):</strong> each rewrite can return up to three variants. Switch between them with one-tap pills in the result modal.</li>
+          <li class="changelog-item"><strong>Popup toggle:</strong> turn auto grammar check on or off from the extension popup; the status line shows <strong>Checking as you type</strong> or <strong>Off</strong>.</li>
         </ul>
       </div>
 

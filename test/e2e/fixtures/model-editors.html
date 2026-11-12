@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Rewordly model-based editor fixtures</title>
+  <style>
+    body { font: 15px/1.5 system-ui, sans-serif; margin: 24px; max-width: 760px; }
+    section { margin: 0 0 28px; }
+    h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: #666; margin: 0 0 6px; }
+    .box { border: 1px solid #bbb; border-radius: 6px; padding: 8px 10px; min-height: 60px; }
+    .box [contenteditable] { outline: none; min-height: 40px; }
+  </style>
+</head>
+<body>
+  <!-- Editors that keep their own document model; the DOM is only a projection of it.
+       Each exposes window.__text.<name>() returning the MODEL text, not the DOM text. -->
+  <section><h2>Slate (Medium)</h2><div class="box" id="slate-root"></div></section>
+  <section><h2>Draft.js (X / Twitter)</h2><div class="box" id="draft-root"></div></section>
+  <section><h2>Lexical (Reddit)</h2><div class="box"><div id="lexical" contenteditable="true"></div></div></section>
+
+  <script type="module">
+    import React from 'https://esm.sh/react@18.3.1';
+    import { createRoot } from 'https://esm.sh/react-dom@18.3.1/client';
+    import { createEditor, Node } from 'https://esm.sh/slate@0.112.0';
+    import { Slate, Editable, withReact } from 'https://esm.sh/slate-react@0.112.1?deps=react@18.3.1,react-dom@18.3.1,slate@0.112.0';
+    import { withHistory } from 'https://esm.sh/slate-history@0.110.3?deps=slate@0.112.0';
+    import { Editor as DraftEditor, EditorState } from 'https://esm.sh/draft-js@0.11.7?deps=react@18.3.1,react-dom@18.3.1';
+    import { createEditor as createLexical, $getRoot } from 'https://esm.sh/lexical@0.21.0';
+    import { registerPlainText } from 'https://esm.sh/@lexical/plain-text@0.21.0?deps=lexical@0.21.0';
+    import { registerHistory, createEmptyHistoryState } from 'https://esm.sh/@lexical/history@0.21.0?deps=lexical@0.21.0';
+
+    const h = React.createElement;
+    window.__text = {};
+
+    // Slate, rendered like Medium's response box (paragraph inside an element div).
+    const slate = withHistory(withReact(createEditor()));
+    window.__text.slate = () => slate.children.map((n) => Node.string(n)).join('\n');
+    function SlateBox() {
+      return h(Slate, { editor: slate, initialValue: [{ type: 'paragraph', children: [{ text: '' }] }] },
+        h(Editable, { id: 'slate', renderElement: ({ attributes, children }) => h('div', attributes, h('p', null, children)) }));
+    }
+    createRoot(document.getElementById('slate-root')).render(h(SlateBox));
+
+    // Draft.js
+    let draftState = EditorState.createEmpty();
+    window.__text.draft = () => draftState.getCurrentContent().getPlainText();
+    function DraftBox() {
+      const [state, setState] = React.useState(draftState);
+      draftState = state;
+      return h(DraftEditor, { editorState: state, onChange: (s) => { draftState = s; setState(s); }, placeholder: 'Write…' });
+    }
+    createRoot(document.getElementById('draft-root')).render(h(DraftBox));
+
+    // Lexical (vanilla)
+    const lexical = createLexical({ namespace: 'fixture', onError: (e) => console.error(e) });
+    lexical.setRootElement(document.getElementById('lexical'));
+    registerPlainText(lexical);
+    registerHistory(lexical, createEmptyHistoryState(), 300);
+    window.__text.lexical = () => lexical.getEditorState().read(() => $getRoot().getTextContent());
+
+    window.__ready = true;
+  </script>
+</body>
+</html>

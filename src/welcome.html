@@ -124,6 +124,16 @@
 
     .content { padding: 40px 36px; }
 
+    .demo {
+      display: block;
+      width: 100%;
+      height: auto;
+      margin: 0 0 32px;
+      border-radius: 14px;
+      border: 1px solid rgba(28, 25, 23, 0.08);
+      box-shadow: 0 10px 30px -14px rgba(28, 25, 23, 0.35);
+    }
+
     .section { margin-bottom: 36px; }
     .section:last-child { margin-bottom: 0; }
 
@@ -298,17 +308,24 @@
     </header>
 
     <div class="content">
+      <img class="demo" src="live-check.gif" width="800" height="187" alt="Typing a sentence with mistakes: Rewordly underlines them, shows the fix on hover, and fixes everything at once">
       <div class="section">
         <h2 class="section-title">What it does</h2>
         <p class="lead">
-          Rewordly rewrites and refines selected text with AI—whether you need a more formal tone,
-          tighter wording, or a quick grammar pass.
+          Rewordly underlines spelling and grammar mistakes while you type, on almost any website and
+          in any language, and rewrites selected text with AI when a sentence needs more than a fix.
         </p>
       </div>
 
       <div class="section">
         <h2 class="section-title">Highlights</h2>
         <ul class="feature-list">
+          <li class="feature-item">
+            <strong>Checks as you type:</strong> Mistakes get a red underline. Hover it to see the fix and apply it in one click.
+          </li>
+          <li class="feature-item">
+            <strong>Any language:</strong> Each sentence is checked in its own language, automatically.
+          </li>
           <li class="feature-item">
             <strong>Smart rewrite:</strong> Adjust clarity, tone, and style without leaving the tab.
           </li>
@@ -324,9 +341,10 @@
       <div class="how-to-use">
         <h3>How to use</h3>
         <ol class="steps">
+          <li class="step">Just write. When you finish a sentence, mistakes are underlined; hover to fix.</li>
           <li class="step">Select text—the hover control appears; open it to get an improved version.</li>
           <li class="step">Or right-click the selection and choose Rewrite or Check grammar.</li>
-          <li class="step">Use the extension popup for hover toggles, default tone, and account.</li>
+          <li class="step">Use the extension popup for live checking, hover toggles, default tone, and account.</li>
         </ol>
       </div>
     </div>
@@ -336,7 +354,7 @@
         Questions or ideas? We'd love to hear from you.<br>
         <a href="mailto:sercangundogan35@gmail.com?subject=Rewordly%20Feedback">Send feedback</a>
       </p>
-      <a href="#" class="button" id="getStartedBtn">Get started</a>
+      <a href="#" class="button" id="getStartedBtn">Try it now</a>
     </footer>
   </div>
 

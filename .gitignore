@@ -109,4 +109,12 @@ jspm_packages/
 
 # API keys and secrets
 config.json
-secrets.json 
+secrets.json
+
+# Live checker e2e
+.e2e-dist/
+test-results/
+playwright-report/
+
+# Intermediate images from the store-asset generator
+test/marketing/generated/

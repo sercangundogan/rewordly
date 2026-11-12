@@ -1,0 +1,161 @@
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { FieldAdapter } from './adapters';
+import type { SessionHost } from './session';
+
+const { requestCheck } = vi.hoisted(() => ({ requestCheck: vi.fn() }));
+vi.mock('./api', async (importOriginal) => ({ ...(await importOriginal<typeof import('./api')>()), requestCheck }));
+
+type Sent = string[];
+const ok = (paragraphs: Array<{ id: string }>) => ({ kind: 'ok' as const, quota: null, results: new Map(paragraphs.map((p) => [p.id, []])) });
+const failed = { kind: 'error' as const };
+
+function setup() {
+  const field = { text: '' };
+  const adapter = {
+    el: document.createElement('textarea'),
+    readText: () => field.text,
+    rectsFor: () => [],
+    textRects: () => [],
+    caret: () => field.text.length,
+    reveal: async () => undefined,
+    replace: async () => true,
+    dispose: () => undefined,
+  } as unknown as FieldAdapter;
+  const state = { composing: false };
+  const host: SessionHost = {
+    changed: () => undefined,
+    isPaused: () => false,
+    reportLimit: () => undefined,
+    reportQuota: () => undefined,
+    isIgnored: () => false,
+    isComposing: () => state.composing,
+  };
+  return { field, adapter, host, state };
+}
+
+async function session() {
+  vi.resetModules();
+  const { FieldSession } = await import('./session');
+  const env = setup();
+  return { ...env, session: new FieldSession(env.adapter, env.host) };
+}
+
+/** Types a sentence, the way a user does, and lets time pass. */
+async function type(s: Awaited<ReturnType<typeof session>>, text: string, wait = 1000) {
+  s.field.text += text;
+  s.session.sync(true);
+  await vi.advanceTimersByTimeAsync(wait);
+}
+
+const allSent = (): Sent => requestCheck.mock.calls.flatMap(([paragraphs]) => (paragraphs as Array<{ text: string }>).map((p) => p.text));
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  requestCheck.mockReset();
+});
+afterEach(() => vi.useRealTimers());
+
+describe('a server that keeps failing', () => {
+  it('is retried a few times and then left alone for a while, however much is typed', async () => {
+    requestCheck.mockResolvedValue(failed);
+    const s = await session();
+    for (let i = 0; i < 120; i++) await type(s, `Typing sentence number ${i} here. `);
+    // 120 seconds of typing: 6 failed requests, then a pause (not one request per keystroke pause).
+    expect(requestCheck.mock.calls.length).toBeLessThanOrEqual(6);
+    expect(requestCheck.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(s.session.status).toBe('error');
+  });
+
+  it('tries again once the pause is over, and recovers when the server does', async () => {
+    requestCheck.mockResolvedValue(failed);
+    const s = await session();
+    for (let i = 0; i < 60; i++) await type(s, `Sentence ${i} is typed here. `);
+    const during = requestCheck.mock.calls.length;
+    requestCheck.mockImplementation(async (p: Array<{ id: string }>) => ok(p));
+    await vi.advanceTimersByTimeAsync(3 * 60_000);
+    expect(requestCheck.mock.calls.length).toBeGreaterThan(during);
+    expect(s.session.status).not.toBe('error');
+    expect(s.session.hasResult).toBe(true);
+  });
+
+  it('is not mistaken for one bad sentence: a lone sentence is never marked checked while nothing has worked yet', async () => {
+    requestCheck.mockResolvedValue(failed);
+    const s = await session();
+    await type(s, 'Only one sentence here. ', 60_000);
+    requestCheck.mockImplementation(async (p: Array<{ id: string }>) => ok(p));
+    await vi.advanceTimersByTimeAsync(3 * 60_000);
+    // After the outage the sentence is still checked (not skipped for good).
+    expect(requestCheck.mock.calls[requestCheck.mock.calls.length - 1]![0]).toEqual([expect.objectContaining({ text: 'Only one sentence here.' })]);
+    expect(s.session.status).toBe('done');
+  });
+});
+
+describe('one sentence the server cannot handle', () => {
+  it('goes alone after a failure, so the others are checked; then it is set aside, and tried again later', async () => {
+    requestCheck.mockImplementation(async (p: Array<{ id: string; text: string }>) =>
+      p.some((x) => x.text.includes('POISON')) ? failed : ok(p)
+    );
+    const s = await session();
+    await type(s, 'The first one is fine. ', 3000);
+    expect(s.session.hasResult).toBe(true);
+
+    // Four sentences arrive at once (a paste): one of them breaks every request it is in.
+    await type(s, 'Second is fine. This POISON one breaks it. Third is fine. Fourth is fine. ', 60_000);
+    const sent = allSent();
+    for (const fine of ['Second is fine.', 'Third is fine.', 'Fourth is fine.']) expect(sent).toContain(fine);
+    const poisonTries = sent.filter((t) => t.includes('POISON')).length;
+    // A few tries on its own (and with the batch it started in), then no more.
+    expect(poisonTries).toBeGreaterThanOrEqual(3);
+    expect(poisonTries).toBeLessThanOrEqual(7);
+    const before = allSent().length;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(allSent().length).toBe(before);
+
+    // Set aside for a while, not for good: after a few minutes it is tried again.
+    await vi.advanceTimersByTimeAsync(6 * 60_000);
+    s.session.schedule(0);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(allSent().length).toBeGreaterThan(before);
+  });
+});
+
+describe('composition', () => {
+  it('nothing is sent while an IME is composing, and the text is checked once it ends', async () => {
+    requestCheck.mockImplementation(async (p: Array<{ id: string }>) => ok(p));
+    const s = await session();
+    s.state.composing = true;
+    await type(s, 'Half typed sentence here. ', 10_000);
+    expect(requestCheck).not.toHaveBeenCalled();
+    s.state.composing = false;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(allSent()).toEqual(['Half typed sentence here.']);
+  });
+
+  it('a suggestion is not applied in the middle of a composition', async () => {
+    requestCheck.mockImplementation(async (p: Array<{ id: string }>) => ok(p));
+    const s = await session();
+    s.state.composing = true;
+    const replace = vi.spyOn(s.adapter, 'replace');
+    const applied = await s.session.apply({ id: 'x', offset: 0, length: 4, original: 'Half', replacements: ['Whole'], message: '', type: 'spelling' }, 'Whole');
+    expect(applied).toBe(false);
+    expect(replace).not.toHaveBeenCalled();
+  });
+});
+
+describe('sensitive text never leaves the field', () => {
+  it('a sentence with a key, a card or a written-out password is not sent; its neighbours are', async () => {
+    requestCheck.mockImplementation(async (p: Array<{ id: string }>) => ok(p));
+    const s = await session();
+    await type(s, 'My key is sk-proj-AbCdEf1234567890AbCdEf1234567890 ok. Card 4242 4242 4242 4242 here. Şifre: kedi1234 oldu. This one is plain. ', 5000);
+    expect(allSent()).toEqual(['This one is plain.']);
+  });
+
+  it('the verdict does not depend on how often the field is re-read', async () => {
+    requestCheck.mockImplementation(async (p: Array<{ id: string }>) => ok(p));
+    const s = await session();
+    await type(s, 'Token a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8 here. ', 3000);
+    for (let i = 0; i < 20; i++) await type(s, 'x', 500);
+    expect(allSent().some((t) => t.includes('a1B2c3D4'))).toBe(false);
+  });
+});

@@ -1,105 +1,75 @@
-Rewordly has a single, focused purpose: improve the text you already have on any webpage—using AI for rewrites and on-demand grammar fixes—without pulling you into another app.
+Catch grammar and spelling mistakes as you type, on almost any website, in any language. Fix them in one click, or rewrite any sentence with AI.
 
-The extension works in two ways:
+Rewordly works where you already write: comments, posts, messages, forms and editors. Mistakes get a red underline right where you wrote them. Hover it, see the fix and why, click. Done. No copy-paste, no separate app.
 
-1. AI Rewriting: Select text and use the floating control or context menu. The result opens in a clean modal where you can set tone, nudge length with Shorter / Longer, copy—or Apply straight back into the field when you started from an input or editor.
+✨ What's new in 1.8: live grammar check for everyone
 
-2. On-Demand Grammar Check: Use the grammar option on the same floating control, or right-click selected text and choose Check grammar. Corrections and suggestions appear in the same modal.
+🔸 Underlines as you type – clear spelling, grammar and punctuation mistakes are underlined after you finish a sentence or pause. Rewordly stays quiet until something is actually wrong.
 
-Both flows share one goal: clearer, more fluent, more correct writing in the tab where you work. Rewordly stays narrow on purpose—better words, faster, with fewer mistakes—not a grab bag of unrelated tools.
+🔸 One-click fixes – hover an underline to see the suggestion and a short reason. Apply it, ignore it, or add the word to your dictionary. "Fix all" corrects a whole field at once.
 
-💡 Free to start—no API keys required. Generous daily limits on the free plan. Upgrade to Rewordly Pro for unlimited rewrites and grammar checks ($4.99/month or $49/year).
+🔸 Any language – each sentence is checked in its own language, automatically. Write English, Turkish, German, Spanish and more without changing a setting.
 
-✨ Key Features
+🔸 Fixes that respect the page – corrections go through the site's own editor, so formatting stays intact and undo works, on Reddit, X (Twitter), Medium, LinkedIn and more.
 
-🔸 Smart Rewriting – Transform your text with AI-powered rewriting that improves clarity, tone, and readability while preserving your original meaning.
+🔸 Free to try, no account needed – start right after installing. Sign in for a free daily allowance, or go Pro for unlimited. The popup shows how much is left.
 
-🔸 Grammar Check – Right-click on selected text and choose "Check grammar" for on-demand corrections and suggestions.
+✍️ AI rewriting, one click away
 
-🔸 Works Everywhere – Instantly enhance writing in any text box, editor, or webpage.
+🔸 Rewrite – select any text and click Rewrite to make it clearer and more fluent while keeping your meaning.
 
-🔸 Context Menu Integration – Right-click on any selected text to rewrite or check grammar.
+🔸 Tone – Standard, Formal, Casual, Concise or Elaborate.
 
-🔸 Site Optimized – Perfect integration with Gmail, Twitter/X, Reddit, Medium, Notion, and more.
+🔸 Shorter & Longer – tighten or expand a rewrite without retyping.
 
-🔸 Per-Page Control – Disable Rewordly on specific pages or toggle rewrite on/off from the popup.
+🔸 Apply in place – put the result straight back into the field, or copy it.
 
-🔸 Distraction-Free Design – A clean, intuitive interface that appears only when you select text.
+🔸 Rewrite alternatives (Pro) – up to three versions per rewrite.
 
-🔸 One-Click Copy – Easily copy your improved text with a single click.
+🔸 Right-click & shortcuts – Rewordly → Rewrite or Check Grammar from the context menu; Ctrl+Shift+E to rewrite, Ctrl+Shift+L to check grammar (configurable).
 
-🔸 Rewrite Tone – Choose a default tone in the popup; switch tone in the modal in one tap (Standard, Formal, Casual, Concise, Elaborate).
+💡 Pricing
 
-🔸 Shorter & Longer – Dedicated modal buttons to tighten or expand your text without retyping.
+• Free: try live checking without an account; with a free account, a daily allowance of live checks plus 10 rewrites and 10 grammar checks per day.
+• Rewordly Pro: unlimited live checks, rewrites and grammar checks, plus rewrite alternatives. $4.99/month or $49/year (2 months free). Fair use applies.
 
-🔸 Apply In Place – When you started from an input or editor, apply the rewritten or corrected text directly into the field.
+🖋 How it works
 
-🔸 Upgraded AI – Backend model tuned for faster, higher-quality rewrites and grammar checks.
+1️⃣ Install Rewordly and write as usual.
+2️⃣ When you finish a sentence, mistakes are underlined. Hover one and click the suggestion.
+3️⃣ To rewrite, select text and click Rewrite in the small button that appears, or right-click → Rewordly.
+4️⃣ Turn live checking off anytime in the popup, or disable Rewordly on a specific site.
 
-🔸 Polished UI – Cleaner layout and smoother interactions in the popup and on-page modal.
+🎯 Perfect for
 
-🔸 Usage at a Glance – When you’re signed in, the popup shows how much of your daily allowance is left.
+• Non-native English speakers who want a safety net before sending.
+• People who write in more than one language every day.
+• Professionals writing emails, messages and support replies in the browser.
+• Creators and community members posting on Reddit, X, Medium and LinkedIn.
+• Students who want to see what's wrong and why.
 
-🔸 Auto Grammar Check (Pro) – Checks spelling and grammar as you type in inputs and editors. A small Fix badge appears when a correction is ready—hover to preview the diff, click to apply. Includes a loading spinner while checks run.
+🔒 Privacy
 
-🔸 Rewrite Alternatives (Pro) – Each rewrite can return up to three variants. Switch between them with one-tap pills in the result modal.
+• Only the field you're typing in is checked, one sentence at a time; only changed sentences are sent again.
+• Password fields and fields marked as email, phone, address or payment details are skipped, as are code editors.
+• Text is processed by our backend with OpenAI's API. We keep check results (flagged words and suggestions, not your full text) to make repeated checks faster, and count characters checked for usage limits.
+• We never sell your text. Full policy: https://rewordly.store/privacy
 
-🔸 Auto Check Toggle – Turn proactive grammar checking on or off from the popup; status shows "Checking as you type" or "Off".
+Google Docs isn't supported yet.
 
-🔸 Rewordly Pro – Unlimited daily rewrites and grammar checks. Subscribe monthly or yearly on rewordly.store; manage billing from your dashboard.
-
-🔸 Upgrade in One Tap – Hit your limit? The popup and on-page modal link straight to checkout—no email workarounds.
-
-🔸 Stay Signed In – Session refreshes in the background after login so you’re not stuck re-authenticating.
-
-🔸 Modal Comfort – Press Esc to close the result modal.
-
-🔸 Keyboard Shortcuts – Rewrite with Ctrl+Shift+E and grammar check with Ctrl+Shift+L (defaults; configurable in Chrome). See the extension popup for a link to shortcut settings.
-
-🖋 How It Works
-
-1️⃣ Select the text you want to improve on any webpage.
-
-2️⃣ The rewrite button appears below your selection—click it for AI rewrite.
-
-3️⃣ Or right-click on selected text and choose "Rewrite" or "Check grammar" from the context menu.
-
-4️⃣ Review the improved text in a clean modal—refine with tone or Shorter / Longer, press Esc to close, or Apply back into the field.
-
-5️⃣ Copy the result with one click (check the popup for remaining usage when signed in).
-
-⚡ Quick Access
-
-• Select any text on any webpage
-• Rewrite button appears when you select
-• Right-click context menu for rewrite and grammar check
-• Toggle features on/off from the extension popup
-• Esc closes the result modal; see remaining usage in the popup when signed in
-
-🎯 Perfect For
-
-Business Professionals – Write clear, confident emails and documents without leaving your browser.
-
-Content Creators – Enhance articles, posts, and marketing copy instantly.
-
-Students – Improve essays and academic writing with better clarity and grammar.
-
-Writers – Refine your writing style and tone across any platform.
-
-Anyone – Eliminate daily writing struggles in seconds, wherever you write online.
-
-🔒 Privacy & Security
-
-• No API keys required—we handle everything securely
-• Your text is processed through our secure backend
-• No data stored locally or on our servers
-• Works entirely through your browser
-
-Need help or have a feature request? Contact us anytime.
+Questions or ideas? Contact us anytime.
 
 ↑ Changelog
 
 -----------------
+
+V1.8.0 – Live grammar check for everyone
+• Mistakes are underlined right where you type, on almost any website; hover to see the fix and why, click to apply. Replaces the old "Fix" badge.
+• Automatic language detection: each sentence is checked in its own language.
+• Fixes go through the site's own editor (formatting and undo keep working), including Slate (Medium), Draft.js (X) and Lexical editors.
+• Ignore, add to dictionary, and fix all.
+• Free to try without an account; free daily allowance when signed in; unlimited on Pro. Remaining allowance shown in the popup.
+• Fixed: the floating Rewrite / Check Grammar button didn't respond to clicks.
 
 V1.7.0 – Proactive grammar & rewrite alternatives
 • Auto grammar check (Pro): spelling and grammar checked as you type in inputs and editors. A Fix badge appears when a correction is ready—hover to preview, click to apply.
