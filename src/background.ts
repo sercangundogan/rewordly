@@ -8,7 +8,7 @@ import { API_BASE } from './config';
 import { IGNORED_MESSAGE, LIVE_CHECK_MESSAGE, type IgnoredMessage, type LiveCheckReply, type LiveCheckRequest } from './live/api';
 import { lookupResults, storeResults } from './live/result-cache';
 import { sanitizeIssues } from './live/text';
-import { siteOf, TRACK_MESSAGE, type TrackMessage } from './usage';
+import { messageSite, siteOf, TRACK_MESSAGE, type TrackMessage } from './usage';
 import { recordUsage, resumeUsageFlush } from './usage-buffer';
 
 resumeUsageFlush();
@@ -203,6 +203,9 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         return disabledUrl === currentUrl || disabledUrl === currentOrigin;
       });
 
+      // Which sites people turn Rewordly off on (or back on): site_usage, see src/usage.ts.
+      recordUsage(siteOf(currentUrl), isDisabled ? 'site_enable' : 'site_disable', 1, 0);
+
       if (isDisabled) {
         // Enable: Remove origin from disabled pages (remove all URLs from this origin)
         const updatedDisabledPages = disabledPages.filter(disabledUrl => {
@@ -315,8 +318,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     case TRACK_MESSAGE: {
       // The tab's site, also for fields inside iframes (a Gmail compose frame counts as Gmail).
-      const { event, count, chars } = request as TrackMessage;
-      recordUsage(siteOf(sender.tab?.url ?? sender.url), event, count, chars);
+      const { event, count, chars, site } = request as TrackMessage;
+      recordUsage(messageSite(sender.tab?.url ?? sender.url, Boolean(sender.tab), site), event, count, chars);
       sendResponse({ success: true });
       return false;
     }
