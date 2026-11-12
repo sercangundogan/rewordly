@@ -504,10 +504,11 @@ class LiveChecker implements SessionHost {
       const sessions = Array.from(this.sessions.values()).filter((s) => s.el.isConnected);
       this.overlay.render(sessions, this.focused, this.account);
 
-      // Underlines hidden under the caret come back once the user stops typing in that word.
-      const grace = this.focused?.graceRemaining() ?? 0;
+      // Underlines hidden under the caret come back once the user stops typing in that word,
+      // and the "all fixed" ✓ goes away on time even if nothing else happens on the page.
+      const waits = [this.focused?.graceRemaining() ?? 0, this.focused?.clearedRemaining() ?? 0].filter((ms) => ms > 0);
       if (this.graceTimer) clearTimeout(this.graceTimer);
-      this.graceTimer = grace > 0 ? setTimeout(() => this.requestRender(), grace + 20) : null;
+      this.graceTimer = waits.length > 0 ? setTimeout(() => this.requestRender(), Math.min(...waits) + 20) : null;
     });
   }
 }

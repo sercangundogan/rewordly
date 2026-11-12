@@ -807,8 +807,10 @@ test("page rules that hide undefined custom elements don't hide ours", async ({ 
 test('a suggestion that only repeats the next word is not shown, and an applied one is gone for good', async ({ page }) => {
   await page.click('#ta');
   await page.keyboard.type('Bence yanlışın var kanka.');
-  await expect.poll(() => badgeText(page), { timeout: 10000 }).toBe('✓');
+  await expect.poll(() => stats.texts.includes('Bence yanlışın var kanka.'), { timeout: 10000 }).toBe(true);
+  await new Promise((r) => setTimeout(r, 800));
   expect(await marks(page)).toHaveLength(0);
+  expect(await badgeText(page)).toBe('');
 
   // A real missing word: applied once, then no underline and no second "var".
   await page.$eval('#ta', (el) => ((el as HTMLTextAreaElement).value = ''));
@@ -850,39 +852,105 @@ async function badgeBox(page: Page): Promise<{ left: number; right: number; top:
   });
 }
 
-test('an empty field shows no badge: not on focus, and not after clearing it', async ({ page }) => {
+/** What the badge shows now: its text, "spinner", "!" for an error, "" when hidden. */
+function badgeState(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const roots = [document.querySelector('rewordly-live'), ...document.querySelectorAll('rewordly-anchor')].map((h) => h?.shadowRoot);
+    const badge = roots.map((r) => r?.querySelector('.badge.on')).find(Boolean);
+    return !badge ? '' : badge.classList.contains('checking') ? 'spinner' : badge.classList.contains('error') ? '!' : badge.textContent ?? '';
+  });
+}
+
+/**
+ * Starts recording what the badge shows: its text, "spinner" for the old checking state, "!" for
+ * an error, "" when hidden. Returns a function that stops and gives the distinct states in order.
+ */
+async function recordBadge(page: Page): Promise<() => Promise<string[]>> {
+  await page.evaluate(() => {
+    const w = window as unknown as { __badge: string[]; __badgeTimer: number };
+    w.__badge = [];
+    let last: string | null = null;
+    w.__badgeTimer = window.setInterval(() => {
+      const roots = [document.querySelector('rewordly-live'), ...document.querySelectorAll('rewordly-anchor')].map((h) => h?.shadowRoot);
+      const badge = roots.map((r) => r?.querySelector('.badge.on')).find(Boolean);
+      const state = !badge ? '' : badge.classList.contains('checking') ? 'spinner' : badge.classList.contains('error') ? '!' : badge.textContent ?? '';
+      if (state !== last) w.__badge.push(state);
+      last = state;
+    }, 25);
+  });
+  return () =>
+    page.evaluate(() => {
+      const w = window as unknown as { __badge: string[]; __badgeTimer: number };
+      clearInterval(w.__badgeTimer);
+      return w.__badge;
+    });
+}
+
+test('a clean field shows no badge: not after its check, not on refocus, not while the page scrolls', async ({ page }) => {
   await page.click('#ta');
   await new Promise((r) => setTimeout(r, 1500));
   expect(await badgeText(page)).toBe('');
 
+  const stop = await recordBadge(page);
   await page.keyboard.type('Nothing wrong here.');
-  await expect.poll(() => badgeText(page), { timeout: 10000 }).toBe('✓');
-  await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+a`);
-  await page.keyboard.press('Backspace');
-  await expect.poll(() => badgeText(page)).toBe('');
-
-  // Leaving and coming back to the empty field does not bring the ✓ back either.
+  await expect.poll(() => stats.texts.includes('Nothing wrong here.'), { timeout: 10000 }).toBe(true);
+  await new Promise((r) => setTimeout(r, 800));
   await page.click('#inp');
   await page.click('#ta');
-  await new Promise((r) => setTimeout(r, 1000));
-  expect(await badgeText(page)).toBe('');
-});
+  for (let i = 0; i < 3; i++) {
+    await page.mouse.wheel(0, 250);
+    await new Promise((r) => setTimeout(r, 300));
+    await page.mouse.wheel(0, -250);
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  expect(await stop()).toEqual(['']);
 
-test('the ✓ fades after a moment; issues stay', async ({ page }) => {
-  await page.click('#ta');
-  await page.keyboard.type('Nothing wrong here.');
-  await expect.poll(() => badgeText(page), { timeout: 10000 }).toBe('✓');
-  await expect.poll(() => badgeText(page), { timeout: 6000 }).toBe('');
-
-  // Back in the field: shown again for a moment.
-  await page.click('#inp');
-  await page.click('#ta');
-  await expect.poll(() => badgeText(page)).toBe('✓');
-
+  // Issues do show, and stay.
   await page.keyboard.type(' I dont know.');
   await expect.poll(() => badgeText(page), { timeout: 10000 }).toBe('1');
   await new Promise((r) => setTimeout(r, 3500));
   expect(await badgeText(page)).toBe('1');
+});
+
+test('pasting text shows no ✓ and no spinner, only the count once issues arrive', async ({ page }) => {
+  stats.latencyMs = 1500;
+  // Checked once already (cached), like text copied from an earlier draft.
+  await page.click('#ta');
+  await page.keyboard.type('Thanks for the update. I will check it tomorrow.');
+  await expect.poll(() => stats.texts.includes('I will check it tomorrow.'), { timeout: 10000 }).toBe(true);
+
+  // Pasted into another field with an unfinished last line under the caret, which waits for a pause.
+  await page.click('#ce');
+  const stop = await recordBadge(page);
+  await page.keyboard.insertText('Thanks for the update. I will check it tomorrow.\nBest regards');
+  await expect.poll(() => stats.texts.includes('Best regards'), { timeout: 10000 }).toBe(true);
+  await new Promise((r) => setTimeout(r, 2500));
+  await page.keyboard.insertText('\nI dont know.');
+  await expect.poll(() => badgeText(page), { timeout: 10000 }).toBe('1');
+  expect(await stop()).toEqual(['', '1']);
+});
+
+test('fixing the last issue shows ✓ for a moment, and scrolling or refocusing does not bring it back', async ({ page }) => {
+  await page.click('#ta');
+  await page.keyboard.type(SENTENCE);
+  await expect.poll(() => badgeText(page), { timeout: 10000 }).toBe('2');
+  const stop = await recordBadge(page);
+  await clickBadge(page);
+  await expect.poll(() => cardText(page)).toContain('Fix all (2)');
+  await page.evaluate(() => document.querySelector('rewordly-live')!.shadowRoot!.querySelector<HTMLButtonElement>('.card .all')!.click());
+  await expect(page.locator('#ta')).toHaveValue("I don't know the answer.");
+  await expect.poll(() => badgeText(page)).toBe('✓');
+  await expect.poll(() => badgeText(page), { timeout: 3000 }).toBe('');
+
+  await page.click('#inp');
+  await page.click('#ta');
+  await page.mouse.wheel(0, 250);
+  await new Promise((r) => setTimeout(r, 300));
+  await page.mouse.wheel(0, -250);
+  await new Promise((r) => setTimeout(r, 1000));
+  const states = await stop();
+  expect(states.filter((x) => x === '✓')).toHaveLength(1);
+  expect(states.at(-1)).toBe('');
 });
 
 test('the badge stays in its corner when text runs under it: small, and out of the way while typing', async ({ page }) => {
@@ -906,44 +974,32 @@ test('the badge stays in its corner when text runs under it: small, and out of t
   expect(Math.abs(back.right - roomy.right)).toBeLessThan(12);
 });
 
-/** Whether any of our spinners showed up while `ms` went by. */
-const sawSpinner = (page: Page, ms: number) =>
-  page.evaluate(
-    (duration) =>
-      new Promise<boolean>((resolve) => {
-        let seen = false;
-        const started = performance.now();
-        const tick = () => {
-          if (document.querySelector('rewordly-live')?.shadowRoot?.querySelector('.badge.on.checking')) seen = true;
-          if (performance.now() - started < duration) setTimeout(tick, 25);
-          else resolve(seen);
-        };
-        tick();
-      }),
-    ms
-  );
-
-test('quick checks never flash the spinner, not for the first one and not while typing more', async ({ page }) => {
-  await page.click('#ta');
-  const first = sawSpinner(page, 2500);
-  await page.keyboard.type(SENTENCE);
-  expect(await first).toBe(false);
-  await expect.poll(() => badgeText(page), { timeout: 10000 }).toBe('2');
-
-  const later = sawSpinner(page, 2800);
-  await page.keyboard.type(' More words here, that need a check teh.', { delay: 30 });
-  expect(await later).toBe(false);
-  // The last result stays on the badge in the meantime.
-  expect(await badgeText(page)).toMatch(/^[0-9]/);
-});
-
-test('a slow first check shows the spinner after a short delay', async ({ page }) => {
+test('a check in flight shows nothing: the last count stays, a slow first check stays quiet', async ({ page }) => {
   stats.latencyMs = 2500;
   await page.click('#ta');
+  const first = await recordBadge(page);
   await page.keyboard.type(SENTENCE);
-  await new Promise((r) => setTimeout(r, 300));
-  expect(await sawSpinner(page, 200)).toBe(false);
-  await expect.poll(() => sawSpinner(page, 100), { timeout: 4000 }).toBe(true);
+  await expect.poll(() => badgeText(page), { timeout: 10000 }).toBe('2');
+  expect(await first()).toEqual(['', '2']);
+
+  const later = await recordBadge(page);
+  await page.keyboard.type(' More words here, that need a check teh.', { delay: 30 });
+  await expect.poll(() => badgeText(page), { timeout: 10000 }).toBe('3');
+  expect(await later()).toEqual(['2', '3']);
+});
+
+test('one failed check stays quiet; a check that keeps failing shows "!", and it goes once checks work again', async ({ page }) => {
+  await page.click('#ta');
+  stats.failAll = true;
+  const stop = await recordBadge(page);
+  await page.keyboard.type('Nothing wrong here.');
+  await expect.poll(() => stats.failures, { timeout: 10000 }).toBe(1);
+  await new Promise((r) => setTimeout(r, 500));
+  expect(await badgeState(page)).toBe('');
+  await expect.poll(() => badgeState(page), { timeout: 10000 }).toBe('!');
+  stats.failAll = false;
+  await expect.poll(() => badgeState(page), { timeout: 15000 }).toBe('');
+  expect(await stop()).toEqual(['', '!', '']);
 });
 
 test('"Always ignore" silences a suggestion for good, also after a reload', async ({ page }) => {

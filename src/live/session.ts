@@ -40,6 +40,10 @@ export interface SessionHost {
   isComposing(): boolean;
 }
 
+/** After a fix clears the field's last issue, the badge shows ✓ this long (see clearedRemaining). */
+export const CLEARED_VISIBLE_MS = 1500;
+/** Failed requests in a row before the badge shows "!": a single failure is retried quietly. */
+const FAILURES_BEFORE_SHOWN = 2;
 /** Pause after the last keystroke before checking finished sentences. */
 const TYPING_DEBOUNCE_MS = 800;
 /** The unfinished sentence under the caret is checked only after this much idle time. */
@@ -62,7 +66,7 @@ const WINDOW_AFTER_CARET = 1000;
 export class FieldSession {
   text = '';
   status: SessionStatus = 'idle';
-  /** True once a check has completed: from then on the badge keeps showing the last result while a new check runs. */
+  /** True once a check has completed (a sentence that keeps failing is only set aside after that). */
   hasResult = false;
   /** Sentences that look like secrets (see sensitive.ts), by hash: never sent. */
   private readonly sensitive = new Map<string, boolean>();
@@ -72,8 +76,8 @@ export class FieldSession {
   private readonly parked = new Map<string, number>();
   private maxBatch = MAX_UNITS_PER_REQUEST;
   private coolOffUntil = 0;
-  /** When the current check started (0 when none is running). */
-  checkingSince = 0;
+  /** When one of our fixes cleared the field's last issue (0: not recently). */
+  private clearedAt = 0;
   private issues: FieldIssue[] = [];
   private inflight = new Set<string>();
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -132,6 +136,23 @@ export class FieldSession {
   /** True while the user is typing (the last input was less than `ms` ago). */
   typedWithin(ms: number): boolean {
     return Date.now() - this.lastInputAt < ms;
+  }
+
+  /**
+   * True while checking keeps failing, until a request works again: not after a single failure (it is
+   * retried quietly), and not switching off while a retry runs, so the badge doesn't blink with every try.
+   */
+  failingRepeatedly(): boolean {
+    return this.failures >= FAILURES_BEFORE_SHOWN || Date.now() < this.coolOffUntil;
+  }
+
+  /**
+   * Milliseconds the "all fixed" ✓ still shows: only right after one of our fixes removed the field's
+   * last issue. Counted from that moment, so scrolling or refocusing never brings it back.
+   */
+  clearedRemaining(): number {
+    if (!this.clearedAt || this.issues.length > 0) return 0;
+    return Math.max(0, CLEARED_VISIBLE_MS - (Date.now() - this.clearedAt));
   }
 
   /** Milliseconds until the caret grace period ends (so the host can re-render then). */
@@ -332,7 +353,6 @@ export class FieldSession {
   private setStatus(status: SessionStatus): void {
     if (this.status === status) return;
     this.status = status;
-    this.checkingSince = status === 'checking' ? Date.now() : 0;
     this.host.changed(this);
   }
 
@@ -344,6 +364,7 @@ export class FieldSession {
     if (!current || this.text.slice(current.offset, current.offset + current.length) !== current.original) {
       return false;
     }
+    const hadIssues = this.visibleIssues().length > 0;
     let start = current.offset;
     let end = current.offset + current.length;
     // Sentences are checked on their own, so a deletion doesn't include the space that separates
@@ -364,6 +385,7 @@ export class FieldSession {
         const written = start + replacement.length;
         this.issues = this.issues.filter((i) => !(i.offset < Math.max(written, start + 1) && start < i.offset + i.length));
         this.rememberAsChecked(start, written);
+        if (hadIssues && this.visibleIssues().length === 0) this.clearedAt = Date.now();
       }
       return ok;
     } finally {

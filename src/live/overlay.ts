@@ -52,10 +52,6 @@ interface FieldLayer {
 /** How long after the last scroll event the underlines stay hidden. */
 export const SCROLL_SETTLE_MS = 140;
 
-/** A clean field's ✓ stays this long, then fades: the badge only stays for what the user may act on. */
-const CLEAN_VISIBLE_MS = 2500;
-/** The spinner shows only for a first check that takes this long: quick checks while typing never flash it. */
-const SPINNER_DELAY_MS = 700;
 /** A badge that sits on text stays out of the way for this long after each keystroke. */
 const TYPING_HIDE_MS = 1200;
 const TEXT_RECTS_TTL_MS = 150;
@@ -150,7 +146,7 @@ const CSS = `
 /* Sitting on a line of text: smaller, and hidden while typing (see renderBadge). */
 .badge.compact { margin: 3px; width: 16px; height: 16px; font-size: 9px; }
 .badge.clean { background: #30a46c; }
-.badge.checking, .badge.error { background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+.badge.error { background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
 .badge.limit { background: #8b8d98; }
 /* Pause glyph: checking has stopped until the user logs in or upgrades. */
 .badge.limit::after { content: ""; width: 3px; height: 8px; border-left: 2px solid #fff; border-right: 2px solid #fff; }
@@ -159,12 +155,7 @@ const CSS = `
   content: ""; position: absolute; top: -2px; right: -2px; width: 7px; height: 7px; border-radius: 50%;
   background: #6e56cf; box-shadow: 0 0 0 2px #fff;
 }
-.badge.checking::after {
-  content: ""; width: 12px; height: 12px; border-radius: 50%;
-  border: 2px solid #6e56cf; border-right-color: transparent; animation: spin .8s linear infinite;
-}
 .badge.error::after { content: "!"; color: #8b8d98; }
-@keyframes spin { to { transform: rotate(360deg); } }
 .card {
   position: fixed; width: 300px; max-width: calc(100vw - 16px); pointer-events: auto;
   font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -204,7 +195,7 @@ const CSS = `
   .foot, .note { border-top-color: #2e3135; }
   .note { color: #b0b4ba; }
   .foot button:hover { background: #2e3135; color: #edeef0; }
-  .badge.checking, .badge.error { background: #2e3135; }
+  .badge.error { background: #2e3135; }
 }
 `;
 
@@ -232,8 +223,6 @@ export class Overlay {
   /** The open card was reached with the badge: after a fix (or ignore) we move on to the next issue. */
   private cardFromBadge = false;
   private readonly pinned = new WeakMap<Element, { value: boolean; at: number }>();
-  /** When each badge started showing ✓ (see CLEAN_VISIBLE_MS). */
-  private readonly cleanSince = new WeakMap<HTMLElement, number>();
   private scrollAreas = new WeakMap<Element, { scroller: Element | null; container: Element | null; at: number }>();
   private readonly anchors = new Map<Element, Anchor>();
   /** Containers where an added child is not rendered (e.g. a web component showing only named slots). */
@@ -654,34 +643,27 @@ export class Overlay {
     anchorShift: { x: number; y: number } | null,
     overlaps: boolean
   ): void {
-    const limit = this.account.limit;
-    const checking = session.status === 'checking';
-    // A check in flight is not news: the last result stays (count or ✓) and the spinner only appears
-    // for a first check that is slow. Otherwise it would flash on every typing pause.
-    const slowFirstCheck = checking && !session.hasResult && Date.now() - session.checkingSince > SPINNER_DELAY_MS;
-    // An empty field has nothing to report: no ✓, no spinner (only a reached limit is still worth showing).
+    // The badge is there only when there is something to act on: issues, a reached limit, checking that
+    // keeps failing. A clean field shows nothing, and neither does a check in flight: a ✓ or a spinner
+    // came and went with every paste, scroll and refocus, which reads as noise. The one exception is a
+    // short ✓ right after a fix cleared the last issue (see FieldSession.clearedRemaining).
     const empty = !session.text.replace(/[\s\u200B-\u200D\uFEFF]/g, '');
-    const state = limit
+    const state = this.account.limit
       ? 'limit'
       : empty
         ? 'idle'
-        : checking
-        ? slowFirstCheck ? 'checking' : count > 0 ? 'issues' : session.hasResult ? 'clean' : 'idle'
-        : session.status === 'error' ? 'error' : count > 0 ? 'issues' : session.status === 'done' ? 'clean' : 'idle';
-    // ✓ is feedback, not a permanent fixture: it fades after a moment. Issues, checking and
-    // limit/error stay, since those are what the user may want to act on.
-    if (state === 'clean' && show) {
-      if (!this.cleanSince.has(badge)) this.cleanSince.set(badge, Date.now());
-    } else {
-      this.cleanSince.delete(badge);
-    }
-    const faded = state === 'clean' && Date.now() - (this.cleanSince.get(badge) ?? Date.now()) > CLEAN_VISIBLE_MS;
+        : count > 0
+          ? 'issues'
+          : session.failingRepeatedly()
+            ? 'error'
+            : session.clearedRemaining() > 0
+              ? 'clean'
+              : 'idle';
     // On top of text: out of the way while typing, back a moment after the last keystroke.
     const inTheWay = overlaps && session.typedWithin(TYPING_HIDE_MS);
-    const shown = show && state !== 'idle' && !faded && spot !== null && !inTheWay;
+    const shown = show && state !== 'idle' && spot !== null && !inTheWay;
     badge.classList.toggle('on', shown);
     badge.classList.toggle('compact', overlaps);
-    badge.classList.toggle('checking', state === 'checking');
     badge.classList.toggle('error', state === 'error');
     badge.classList.toggle('clean', state === 'clean');
     badge.classList.toggle('limit', state === 'limit');
@@ -689,8 +671,7 @@ export class Overlay {
     badge.textContent = state === 'issues' ? (count > 9 ? '9+' : String(count)) : state === 'clean' ? '✓' : '';
     badge.title =
       state === 'issues' ? `Rewordly: ${count} issue${count === 1 ? '' : 's'}` :
-      state === 'clean' ? 'Rewordly: no issues found' :
-      state === 'checking' ? 'Rewordly: checking…' :
+      state === 'clean' ? 'Rewordly: all fixed' :
       state === 'limit' ? `Rewordly: ${limitNudge(this.account).text}` : state === 'error' ? 'Rewordly: check failed, retrying' : '';
     badge.style.pointerEvents = shown ? 'auto' : 'none';
 
