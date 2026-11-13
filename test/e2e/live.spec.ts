@@ -731,7 +731,8 @@ test('after a fix from the badge, the next issue opens by itself (scrolling to i
   for (let i = 0; i < 40; i++) await page.keyboard.press('Enter');
   await page.keyboard.type('We recieve mail.');
   await expect.poll(() => badgeText(page), { timeout: 10000 }).toBe('3');
-  await page.evaluate(() => scrollTo(0, 0));
+  // Scroll, then let the overlay redraw: nobody clicks in the same frame as their scroll.
+  await page.evaluate(() => new Promise<void>((done) => { scrollTo(0, 0); requestAnimationFrame(() => requestAnimationFrame(() => done())); }));
 
   await clickBadge(page);
   await expect.poll(() => cardText(page)).toContain('dont→');

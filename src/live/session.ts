@@ -15,6 +15,7 @@ import { getCached, requestCheck, setCached, type LimitInfo, type QuotaInfo } fr
 import { looksSensitive } from './sensitive';
 import { debug } from './targets';
 import {
+  delayAfterTyping,
   diffText,
   isTerminated,
   protectedRanges,
@@ -23,6 +24,7 @@ import {
   splitUnits,
   toFieldIssues,
   touchesProtected,
+  TYPING_DEBOUNCE_MS,
   type FieldIssue,
   type TextUnit,
 } from './text';
@@ -44,8 +46,6 @@ export interface SessionHost {
 export const CLEARED_VISIBLE_MS = 1500;
 /** Failed requests in a row before the badge shows "!": a single failure is retried quietly. */
 const FAILURES_BEFORE_SHOWN = 2;
-/** Pause after the last keystroke before checking finished sentences. */
-const TYPING_DEBOUNCE_MS = 800;
 /** The unfinished sentence under the caret is checked only after this much idle time. */
 const IDLE_MS = 2000;
 /** While the user is typing inside a flagged word, hide its underline for this long. */
@@ -81,7 +81,11 @@ export class FieldSession {
   private issues: FieldIssue[] = [];
   private inflight = new Set<string>();
   private timer: ReturnType<typeof setTimeout> | null = null;
+  /** When the check for a sentence that was just finished is due (0: no such check pending). */
+  private sentenceEndDue = 0;
   private lastInputAt = 0;
+  /** Where the caret was at the last keystroke (null before any). */
+  private lastInputCaret: number | null = null;
   private failures = 0;
   private disposed = false;
   /**
@@ -103,7 +107,10 @@ export class FieldSession {
   sync(typed: boolean): void {
     if (this.disposed) return;
     const next = this.adapter.readText();
-    if (typed) this.lastInputAt = Date.now();
+    if (typed) {
+      this.lastInputAt = Date.now();
+      this.lastInputCaret = this.adapter.caret();
+    }
     if (next === this.text) {
       if (typed) this.host.changed(this);
       return;
@@ -114,7 +121,14 @@ export class FieldSession {
     this.text = next;
     this.rebuild();
     this.host.changed(this);
-    this.schedule(typed ? TYPING_DEBOUNCE_MS : 150);
+    if (!typed) return this.schedule(150);
+
+    const caret = this.adapter.caret() ?? next.length;
+    const delay = delayAfterTyping(next.slice(Math.max(0, caret - 40), caret));
+    // Typing on into the next sentence must not push back the check of the one just finished.
+    if (this.timer && this.sentenceEndDue && this.sentenceEndDue <= Date.now() + delay) return;
+    this.schedule(delay);
+    if (delay < TYPING_DEBOUNCE_MS) this.sentenceEndDue = Date.now() + delay;
   }
 
   /** The caret moved (click, arrow keys): in long texts that can bring new sentences into the window. */
@@ -125,11 +139,14 @@ export class FieldSession {
   /** Issues to draw right now. */
   visibleIssues(): FieldIssue[] {
     const typingRecently = Date.now() - this.lastInputAt < CARET_GRACE_MS;
+    // Only the word being typed in steps aside. A caret that was put into a flagged word with a click
+    // right after typing elsewhere is someone going for the suggestion: that underline stays.
     const caret = typingRecently ? this.adapter.caret() : null;
+    const typingHere = caret !== null && caret === this.lastInputCaret;
     return this.issues.filter(
       (issue) =>
         !this.host.isIgnored(issue) &&
-        !(caret !== null && caret >= issue.offset && caret <= issue.offset + issue.length)
+        !(typingHere && caret! >= issue.offset && caret! <= issue.offset + issue.length)
     );
   }
 
@@ -204,8 +221,10 @@ export class FieldSession {
 
   schedule(delay: number): void {
     if (this.timer) clearTimeout(this.timer);
+    this.sentenceEndDue = 0;
     this.timer = setTimeout(() => {
       this.timer = null;
+      this.sentenceEndDue = 0;
       void this.check();
     }, delay);
   }

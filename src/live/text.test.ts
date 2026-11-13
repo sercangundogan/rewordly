@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { diffText, hashText, isTerminated, protectedRanges, repeatsNeighbour, sanitizeIssues, shiftIssues, splitUnits, toFieldIssues, touchesProtected, MAX_UNIT_CHARS, type FieldIssue } from './text';
+import { diffText, hashText, isTerminated, protectedRanges, repeatsNeighbour, sanitizeIssues, shiftIssues, splitUnits, toFieldIssues, touchesProtected, MAX_UNIT_CHARS, type FieldIssue,
+  delayAfterTyping,
+  PERIOD_MS,
+  SENTENCE_END_MS,
+  TYPING_DEBOUNCE_MS,
+} from './text';
 
 function issue(text: string, original: string, from = 0): FieldIssue {
   const offset = text.indexOf(original, from);
@@ -218,5 +223,25 @@ describe('sanitizeIssues: a reply is checked against the sentence it is about', 
     const at = t.indexOf('teh');
     expect(sanitizeIssues(t, [{ offset: at, length: 3, original: 'teh', replacements: ['the'], message: '', type: 'spelling' }])).toHaveLength(1);
     expect(sanitizeIssues(t, [{ offset: at - 1, length: 3, original: 'teh', replacements: ['the'], message: '', type: 'spelling' }])).toHaveLength(0);
+  });
+});
+
+describe('delayAfterTyping: how soon a check starts after a keystroke', () => {
+  it('a sentence that was clearly finished is checked almost at once', () => {
+    for (const text of ['Thanks for the update. ', 'Really?', 'Stop!', 'He said "no." ', 'Tamam mı?', 'Bitti.\n', 'そうです。']) {
+      expect(delayAfterTyping(text), text).toBe(SENTENCE_END_MS);
+    }
+  });
+
+  it('a bare period waits a little: it may still become 3.5, e.g. or ...', () => {
+    for (const text of ['It costs 3.', 'Use a tool, e.', 'Well..', 'Done.', 'He said "no."']) {
+      expect(delayAfterTyping(text), text).toBe(PERIOD_MS);
+    }
+  });
+
+  it('anything else waits for the usual typing pause', () => {
+    for (const text of ['', 'I dont', 'It costs 3.5', 'Hello, ', 'Thanks for the update. W', 'one\ntwo']) {
+      expect(delayAfterTyping(text), text).toBe(TYPING_DEBOUNCE_MS);
+    }
   });
 });
