@@ -5,6 +5,7 @@
 
 import { API_BASE, AUTH_ENABLED } from './config';
 import { getSession, setSession, SESSION_KEY, getApiHeaders } from './auth';
+import { NO_SITE, siteOf, track } from './usage';
 
 interface RewordlySettings {
   rewriteEnabled: boolean;
@@ -405,6 +406,18 @@ class RewordlyPopup {
     this.settings.proactiveEnabled = !this.settings.proactiveEnabled;
     this.setProactiveStatus(this.settings.proactiveEnabled);
     await this.saveSettings();
+    // Who turns the live check off, and on which site they were: site_usage, see src/usage.ts.
+    track(this.settings.proactiveEnabled ? 'live_on' : 'live_off', 1, 0, await this.activeSite());
+  }
+
+  /** The site of the tab the popup was opened on, or NO_SITE (new tab page, settings, no permission). */
+  private async activeSite(): Promise<string> {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      return siteOf(tab?.url) ?? NO_SITE;
+    } catch {
+      return NO_SITE;
+    }
   }
 
   private async toggleRewrite(): Promise<void> {

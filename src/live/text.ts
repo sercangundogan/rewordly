@@ -99,6 +99,29 @@ export function isTerminated(text: string): boolean {
   return /[.!?…。！？][\s"'”’)\]]*$/u.test(text);
 }
 
+/** Pause after a keystroke before checking, while the user is in the middle of something. */
+export const TYPING_DEBOUNCE_MS = 800;
+/** A sentence that was clearly just finished ("... done. ", "really?") is checked almost at once. */
+export const SENTENCE_END_MS = 150;
+/** A bare "." may still become "3.5", "e.g." or "...": wait a little longer, so those are not sent half-typed. */
+export const PERIOD_MS = 400;
+
+const CLOSERS = '["\'”’)\\]]*';
+const ENDED_THEN_SPACE = new RegExp(`[.!?…。！？]${CLOSERS}\\s+$`, 'u');
+const ENDED_FOR_SURE = new RegExp(`[!?…。！？]${CLOSERS}$`, 'u');
+const ENDED_WITH_PERIOD = new RegExp(`\\.${CLOSERS}$`, 'u');
+
+/**
+ * How long to wait before checking, from the text right before the caret after a keystroke.
+ * Waiting the full pause after every sentence made each one feel slow: the user had finished it,
+ * and the check only started 0.8 s later.
+ */
+export function delayAfterTyping(beforeCaret: string): number {
+  if (ENDED_THEN_SPACE.test(beforeCaret) || ENDED_FOR_SURE.test(beforeCaret)) return SENTENCE_END_MS;
+  if (ENDED_WITH_PERIOD.test(beforeCaret)) return PERIOD_MS;
+  return TYPING_DEBOUNCE_MS;
+}
+
 const sentenceSegmenter =
   typeof Intl !== 'undefined' && 'Segmenter' in Intl ? new Intl.Segmenter(undefined, { granularity: 'sentence' }) : null;
 

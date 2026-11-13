@@ -159,3 +159,77 @@ describe('sensitive text never leaves the field', () => {
     expect(allSent().some((t) => t.includes('a1B2c3D4'))).toBe(false);
   });
 });
+
+describe('a finished sentence is checked without the full typing pause', () => {
+  it('goes out about 150 ms after ". ", and typing on does not push it back', async () => {
+    requestCheck.mockImplementation(async (p) => ok(p));
+    const s = await session();
+    await type(s, 'Thanks for the update. ', 100);
+    expect(allSent()).toEqual([]);
+    // The next sentence is already being typed.
+    await type(s, 'I', 30);
+    await type(s, ' will', 60);
+    expect(allSent()).toEqual(['Thanks for the update.']);
+  });
+
+  it('"?" and "!" need no space after them', async () => {
+    requestCheck.mockImplementation(async (p) => ok(p));
+    const s = await session();
+    await type(s, 'Are you sure?', 200);
+    expect(allSent()).toEqual(['Are you sure?']);
+  });
+
+  it('a bare period waits 400 ms, so "3.5" typed in one go is never sent as "3."', async () => {
+    requestCheck.mockImplementation(async (p) => ok(p));
+    const s = await session();
+    await type(s, 'It costs 3.', 250);
+    expect(allSent()).toEqual([]);
+    await type(s, '5 dollars', 500);
+    expect(allSent()).toEqual([]);
+
+    const t = await session();
+    await type(t, 'It is done.', 450);
+    expect(allSent()).toEqual(['It is done.']);
+  });
+
+  it('editing inside a finished sentence still waits for the full pause', async () => {
+    requestCheck.mockImplementation(async (p) => ok(p));
+    const s = await session();
+    s.field.text = 'I dont know the answer.';
+    (s.adapter as unknown as { caret: () => number }).caret = () => 6;
+    s.session.sync(true);
+    await vi.advanceTimersByTimeAsync(600);
+    expect(allSent()).toEqual([]);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(allSent()).toEqual(['I dont know the answer.']);
+  });
+});
+
+describe('the underline under the caret hides only while typing in that word', () => {
+  const flagged = (p: Array<{ id: string }>) => ({
+    kind: 'ok' as const,
+    quota: null,
+    results: new Map(p.map((x) => [x.id, [{ offset: 2, length: 4, original: 'dont', replacements: ["don't"], message: '', type: 'spelling' as const }]])),
+  });
+
+  it('a click into a flagged word right after typing elsewhere keeps its underline', async () => {
+    requestCheck.mockImplementation(async (p) => flagged(p));
+    const s = await session();
+    await type(s, 'I dont know.', 500);
+    expect(s.session.visibleIssues().map((i) => i.original)).toEqual(['dont']);
+    // The caret is put into "dont" less than 1.5 s after the last keystroke.
+    (s.adapter as unknown as { caret: () => number }).caret = () => 4;
+    expect(s.session.visibleIssues().map((i) => i.original)).toEqual(['dont']);
+  });
+
+  it('typing right at a flagged word still hides it for a moment', async () => {
+    requestCheck.mockImplementation(async (p) => flagged(p));
+    const s = await session();
+    await type(s, 'I dont know.', 2000);
+    (s.adapter as unknown as { caret: () => number }).caret = () => 6;
+    s.session.sync(true);
+    expect(s.session.visibleIssues()).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1600);
+    expect(s.session.visibleIssues().map((i) => i.original)).toEqual(['dont']);
+  });
+});
